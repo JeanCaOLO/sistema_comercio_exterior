@@ -18,18 +18,139 @@ export default function Configuracion() {
   });
   const { perfil } = useAuth();
 
+  // Estados para notificaciones de Arribo de Carga
+  const [correosNotificacion, setCorreosNotificacion] = useState<string[]>([]);
+  const [nuevoCorreo, setNuevoCorreo] = useState('');
+  const [loadingCorreos, setLoadingCorreos] = useState(false);
+  const [savingCorreos, setSavingCorreos] = useState(false);
+
   // Roles disponibles
   const rolesDisponibles = [
-    { id: 'Administrador', nombre: 'Administrador', descripcion: 'Acceso completo a todos los módulos' },
-    { id: 'Gestor Dropship', nombre: 'Gestor Dropship', descripcion: 'Gestión de Expedientes Dropship y Lista' },
-    { id: 'Gestor ZF', nombre: 'Gestor ZF', descripcion: 'Gestión de Expedientes ZF y Lista' }
+    { 
+      id: 'administrador', 
+      nombre: 'Administrador', 
+      descripcion: 'Acceso completo al sistema',
+      color: 'bg-purple-100 text-purple-800 border-purple-300'
+    },
+    { 
+      id: 'gestor_dropship', 
+      nombre: 'Gestor Dropship', 
+      descripcion: 'Gestión de expedientes Dropship',
+      color: 'bg-blue-100 text-blue-800 border-blue-300'
+    },
+    { 
+      id: 'gestor_zf', 
+      nombre: 'Gestor ZF', 
+      descripcion: 'Gestión de expedientes ZF',
+      color: 'bg-green-100 text-green-800 border-green-300'
+    },
+    { 
+      id: 'bodega', 
+      nombre: 'Bodega', 
+      descripcion: 'Gestión de recepción y almacenamiento',
+      color: 'bg-orange-100 text-orange-800 border-orange-300'
+    }
   ];
 
   useEffect(() => {
     if (activeTab === 'usuarios') {
       cargarUsuarios();
+    } else if (activeTab === 'general') {
+      cargarCorreosNotificacion();
     }
   }, [activeTab]);
+
+  const cargarCorreosNotificacion = async () => {
+    try {
+      setLoadingCorreos(true);
+      const { data, error } = await supabase
+        .from('configuracion_sistema')
+        .select('valor')
+        .eq('clave', 'correos_notificacion_arribo_carga')
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      if (data && data.valor) {
+        setCorreosNotificacion(data.valor as string[]);
+      } else {
+        setCorreosNotificacion([]);
+      }
+    } catch (error) {
+      console.error('Error al cargar correos de notificación:', error);
+      setCorreosNotificacion([]);
+    } finally {
+      setLoadingCorreos(false);
+    }
+  };
+
+  const agregarCorreo = () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!nuevoCorreo.trim()) {
+      alert('Por favor ingrese un correo electrónico');
+      return;
+    }
+    if (!emailRegex.test(nuevoCorreo)) {
+      alert('Por favor ingrese un correo electrónico válido');
+      return;
+    }
+    if (correosNotificacion.includes(nuevoCorreo)) {
+      alert('Este correo ya está en la lista');
+      return;
+    }
+    setCorreosNotificacion([...correosNotificacion, nuevoCorreo]);
+    setNuevoCorreo('');
+  };
+
+  const eliminarCorreo = (correo: string) => {
+    setCorreosNotificacion(correosNotificacion.filter(c => c !== correo));
+  };
+
+  const guardarCorreosNotificacion = async () => {
+    try {
+      setSavingCorreos(true);
+      
+      // Verificar si existe el registro
+      const { data: existente } = await supabase
+        .from('configuracion_sistema')
+        .select('id')
+        .eq('clave', 'correos_notificacion_arribo_carga')
+        .single();
+
+      if (existente) {
+        // Actualizar
+        const { error } = await supabase
+          .from('configuracion_sistema')
+          .update({ 
+            valor: correosNotificacion,
+            updated_at: new Date().toISOString()
+          })
+          .eq('clave', 'correos_notificacion_arribo_carga');
+
+        if (error) throw error;
+      } else {
+        // Insertar
+        const { error } = await supabase
+          .from('configuracion_sistema')
+          .insert([{
+            clave: 'correos_notificacion_arribo_carga',
+            valor: correosNotificacion,
+            descripcion: 'Lista de correos que reciben notificación cuando un expediente ZF pasa a Arribo de Carga'
+          }]);
+
+        if (error) throw error;
+      }
+
+      alert('Correos de notificación guardados correctamente');
+    } catch (error: any) {
+      console.error('Error al guardar correos:', error);
+      alert('Error al guardar correos: ' + error.message);
+    } finally {
+      setSavingCorreos(false);
+    }
+  };
 
   const cargarUsuarios = async () => {
     try {
@@ -380,6 +501,100 @@ export default function Configuracion() {
           {activeTab === 'general' && (
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-6">Configuración General</h2>
+              
+              {/* Sección de Notificaciones de Arribo de Carga */}
+              <div className="mb-8 p-6 bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-200 rounded-xl">
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-10 h-10 flex items-center justify-center bg-teal-600 rounded-lg flex-shrink-0">
+                    <i className="ri-mail-send-line text-white text-xl"></i>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                      Notificaciones de Arribo de Carga (ZF)
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Configure los correos electrónicos que recibirán notificaciones automáticas cuando un expediente ZF cambie al estado "Arribo de Carga"
+                    </p>
+                  </div>
+                </div>
+
+                {loadingCorreos ? (
+                  <div className="text-center py-8">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+                    <p className="mt-2 text-sm text-gray-600">Cargando configuración...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex gap-3">
+                      <input
+                        type="email"
+                        value={nuevoCorreo}
+                        onChange={(e) => setNuevoCorreo(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && agregarCorreo()}
+                        placeholder="ejemplo@empresa.com"
+                        className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                      />
+                      <button
+                        onClick={agregarCorreo}
+                        className="px-6 py-2.5 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer"
+                      >
+                        <i className="ri-add-line mr-2"></i>
+                        Agregar
+                      </button>
+                    </div>
+
+                    {correosNotificacion.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-gray-700 mb-2">
+                          Correos configurados ({correosNotificacion.length}):
+                        </p>
+                        {correosNotificacion.map((correo, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center justify-between bg-white px-4 py-3 rounded-lg border border-gray-200"
+                          >
+                            <div className="flex items-center gap-3">
+                              <i className="ri-mail-line text-teal-600"></i>
+                              <span className="text-sm text-gray-900">{correo}</span>
+                            </div>
+                            <button
+                              onClick={() => eliminarCorreo(correo)}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"
+                              title="Eliminar"
+                            >
+                              <i className="ri-delete-bin-line text-lg"></i>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 bg-white rounded-lg border border-gray-200">
+                        <i className="ri-mail-line text-4xl text-gray-300 mb-2"></i>
+                        <p className="text-sm text-gray-500">No hay correos configurados</p>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={guardarCorreosNotificacion}
+                      disabled={savingCorreos}
+                      className="w-full px-6 py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {savingCorreos ? (
+                        <>
+                          <i className="ri-loader-4-line animate-spin mr-2"></i>
+                          Guardando...
+                        </>
+                      ) : (
+                        <>
+                          <i className="ri-save-line mr-2"></i>
+                          Guardar Configuración
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-6 max-w-2xl">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">

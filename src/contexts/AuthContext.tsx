@@ -19,6 +19,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshPerfil: () => Promise<void>;
+  isBodega: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,6 +28,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const hasRole = (role: string) => {
+    if (!user?.roles) return false;
+    const roles = user.roles.split(',').map(r => r.trim().toLowerCase());
+    return roles.includes(role.toLowerCase());
+  };
+
+  const isAdmin = () => hasRole('administrador');
+  const isGestorDropship = () => hasRole('gestor_dropship');
+  const isGestorZF = () => hasRole('gestor_zf');
+  const isBodega = () => hasRole('bodega');
 
   const cargarPerfil = async (userEmail: string) => {
     try {
@@ -115,8 +127,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPerfil(null);
   };
 
+  const value = {
+    user,
+    perfil,
+    loading,
+    signIn,
+    signOut,
+    refreshPerfil,
+    isBodega
+  };
+
   return (
-    <AuthContext.Provider value={{ user, perfil, loading, signIn, signOut, refreshPerfil }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

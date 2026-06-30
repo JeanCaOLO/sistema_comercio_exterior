@@ -9,6 +9,7 @@ import Reportes from './components/Reportes';
 import CargaMasiva from './components/CargaMasiva';
 import Configuracion from './components/Configuracion';
 import FormularioExpediente from './components/FormularioExpediente';
+import CargaDocumentosCAA from './components/CargaDocumentosCAA';
 
 export default function Home() {
   const [activeView, setActiveView] = useState('');
@@ -29,15 +30,8 @@ export default function Home() {
     if (perfil?.roles && perfil.roles.length > 0 && !activeView) {
       const roles = perfil.roles;
       
-      if (roles.includes('Administrador')) {
-        setActiveView('dashboard');
-      } else if (roles.includes('Gestor Dropship')) {
-        setActiveView('gestion-dropship');
-      } else if (roles.includes('Gestor ZF')) {
-        setActiveView('gestion-zf');
-      } else {
-        setActiveView('dashboard');
-      }
+      // Todos los roles arrancan en dashboard
+      setActiveView('dashboard');
     }
   }, [perfil, activeView]);
 
@@ -115,10 +109,11 @@ export default function Home() {
             tipoModulo="zf"
           />
         )}
-        {activeView === 'lista' && <ListaExpedientes />}
+        {activeView === 'lista-expedientes' && <ListaExpedientes />}
         {activeView === 'reportes' && <Reportes />}
-        {activeView === 'carga' && <CargaMasiva />}
+        {activeView === 'carga-masiva' && <CargaMasiva />}
         {activeView === 'configuracion' && <Configuracion />}
+        {activeView === 'carga-caa' && <CargaDocumentosCAA />}
       </div>
 
       {showFormulario && (

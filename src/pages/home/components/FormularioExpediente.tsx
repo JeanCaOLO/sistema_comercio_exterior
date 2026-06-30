@@ -109,7 +109,9 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
     responsableCreacion: '',
     observaciones: '',
     etd: '', // Para Dropship
-    etaReal: '' // Para ZF
+    etaReal: '', // Para ZF
+    transitoCorto: false, // Para Dropship
+    blCargado: false
   });
 
   const [showSuccess, setShowSuccess] = useState(false);
@@ -305,6 +307,15 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
     try {
       console.log('📝 Creando expediente...');
       
+      // Validación: si BL cargado pero sin documentos adjuntos
+      if (formData.blCargado && uploadedFiles.length === 0) {
+        setErrorMessage('Marcaste BL cargado pero no adjuntaste documentos. Sube el BL antes de continuar.');
+        setShowError(true);
+        setLoading(false);
+        setUploadingFiles(false);
+        return;
+      }
+      
       // Crear el expediente primero
       const { data: expedienteData, error: expedienteError } = await supabase
         .from('expedientes')
@@ -332,7 +343,10 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
             fecha_apertura: new Date().toISOString(),
             tipo_modulo: tipoModulo,
             etd: tipoModulo === 'dropship' && formData.etd ? formData.etd : null,
-            eta_real: tipoModulo === 'zf' && formData.etaReal ? formData.etaReal : null
+            eta_real: tipoModulo === 'zf' && formData.etaReal ? formData.etaReal : null,
+            transito_corto: formData.transitoCorto,
+            ok_pais: false,
+            bl_cargado: formData.blCargado
           }
         ])
         .select()
@@ -394,7 +408,9 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
           responsableCreacion: '',
           observaciones: '',
           etd: '',
-          etaReal: ''
+          etaReal: '',
+          transitoCorto: false,
+          blCargado: false
         });
         setUploadedFiles([]);
         onClose();
@@ -479,7 +495,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Tipo PO <span className="text-red-500">*</span>
+                    Ruta Logística <span className="text-red-500">*</span>
                   </label>
                   <select
                     name="tipoPO"
@@ -489,15 +505,15 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
                   >
                     <option value="">Seleccione tipo</option>
-                    <option value="CR">CR</option>
-                    <option value="GLGT">GLGT</option>
-                    <option value="GLSV">GLSV</option>
-                    <option value="GT">GT</option>
-                    <option value="SV">SV</option>
-                    <option value="VZ">VZ</option>
-                    <option value="INT">INT</option>
-                    <option value="MI">MI</option>
-                    <option value="C.E.">C.E.</option>
+                    <option value="ZF - OVERSEAS">ZF - OVERSEAS LOGISTICS OPERATIONS</option>
+                    <option value="Directo CR - CONSORCIO">Directo CR - CONSORCIO FERRETERO DE SAN JOSE, S.A.</option>
+                    <option value="Directo CR - EPA CR">Directo CR - FERRETERIA EPA, S.A.</option>
+                    <option value="Directo GT - EPA GT">Directo GT - FERRETERIA EPA, S.A.</option>
+                    <option value="Directo SV - EPA SV">Directo SV - FERRETERIA EPA, C.A.</option>
+                    <option value="Directo VE - FEBECA">Directo VE - FEBECA C.A.</option>
+                    <option value="Directo VE - EPA VE">Directo VE - FERRETERIA EPA, C.A.</option>
+                    <option value="GL GT - EPA GT">GL GT - FERRETERIA EPA, S.A. (Guatemala)</option>
+                    <option value="GL SV - EPA SV">GL SV - FERRETERIA EPA, S.A. DE C.V.</option>
                   </select>
                 </div>
                 <div>
@@ -683,6 +699,29 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                     />
                   </div>
                 )}
+
+                {/* Checkbox Tránsito Corto - disponible para Dropship y ZF */}
+                <div className="flex items-center gap-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-semibold text-amber-800 mb-1">
+                        Tránsito Corto
+                      </label>
+                      <p className="text-xs text-amber-600">Marcar si el expediente es de tránsito corto</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, transitoCorto: !prev.transitoCorto }))}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        formData.transitoCorto ? 'bg-amber-500' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          formData.transitoCorto ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 
                 {/* Campo ETA Real solo para ZF */}
                 {tipoModulo === 'zf' && (
@@ -741,6 +780,37 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Checkbox BL Cargado */}
+                <div className="md:col-span-2">
+                  <div className="flex items-center gap-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-semibold text-blue-800 mb-1">
+                        BL (Bill of Lading) cargado
+                      </label>
+                      <p className="text-xs text-blue-600">Marca esta opción si el BL ya fue cargado o está adjunto</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, blCargado: !prev.blCargado }))}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        formData.blCargado ? 'bg-blue-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          formData.blCargado ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {formData.blCargado && uploadedFiles.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                      <i className="ri-alert-line"></i>
+                      Marcaste BL cargado pero no adjuntaste documentos. Recuerda subir el BL antes de guardar.
+                    </p>
+                  )}
                 </div>
                 
                 <div>

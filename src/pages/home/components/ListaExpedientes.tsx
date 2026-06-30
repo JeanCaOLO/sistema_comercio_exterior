@@ -28,6 +28,7 @@ interface Expediente {
   tiempo_real_minutos?: number;
   dias_entrega_real?: number;
   tipo_modulo?: 'dropship' | 'zf';
+  bl_cargado?: boolean;
 }
 
 // Estados combinados de ambos módulos
@@ -259,6 +260,43 @@ export default function ListaExpedientes() {
     const fin = new Date(fechaFin);
     const diffMs = fin.getTime() - inicio.getTime();
     return Math.max(0, Math.round(diffMs / (1000 * 60)));
+  };
+
+  const registrarTiempoEstado = async (expedienteId: string, estadoAnterior: string, estadoNuevo: string) => {
+    try {
+      const ahora = new Date().toISOString();
+      // Cerrar el registro abierto del estado anterior
+      const { data: registroAbierto } = await supabase
+        .from('expedientes_tiempos_estados')
+        .select('*')
+        .eq('expediente_id', expedienteId)
+        .eq('estado_nuevo', estadoAnterior)
+        .is('fecha_fin', null)
+        .order('fecha_inicio', { ascending: false })
+        .limit(1);
+
+      if (registroAbierto && registroAbierto.length > 0) {
+        const registro = registroAbierto[0];
+        const fechaInicio = new Date(registro.fecha_inicio);
+        const fechaFin = new Date(ahora);
+        const minutosTranscurridos = Math.round((fechaFin.getTime() - fechaInicio.getTime()) / (1000 * 60));
+        await supabase
+          .from('expedientes_tiempos_estados')
+          .update({ fecha_fin: ahora, minutos_transcurridos: minutosTranscurridos })
+          .eq('id', registro.id);
+      }
+      // Abrir nuevo registro para el estado nuevo
+      await supabase.from('expedientes_tiempos_estados').insert([{
+        expediente_id: expedienteId,
+        estado_anterior: estadoAnterior,
+        estado_nuevo: estadoNuevo,
+        fecha_inicio: ahora,
+        fecha_fin: null,
+        minutos_transcurridos: null
+      }]);
+    } catch (error) {
+      console.error('Error al registrar tiempo de estado:', error);
+    }
   };
 
   const calcularDiasHabilesReales = (fechaApertura: string, fechaLiberacion: string): number => {
@@ -500,7 +538,8 @@ export default function ListaExpedientes() {
         motivo_revision: selectedExpediente.estado_expediente === 'En Revisión' ? selectedExpediente.motivo_revision : null,
         responsable_creacion: selectedExpediente.responsable_creacion,
         instrucciones_adicionales: selectedExpediente.instrucciones_adicionales,
-        usuario_modificador: emailUsuario
+        usuario_modificador: emailUsuario,
+        bl_cargado: selectedExpediente.bl_cargado ?? false
       };
 
       if (uploadedFiles.length > 0) {
@@ -536,7 +575,7 @@ export default function ListaExpedientes() {
 
       const camposAComparar = [
         { key: 'po_tiquetera', label: 'PO/Tiquetera' },
-        { key: 'tipo_po', label: 'Tipo PO' },
+        { key: 'tipo_po', label: 'Ruta Logística' },
         { key: 'solicitante', label: 'Solicitante' },
         { key: 'prioridad', label: 'Prioridad' },
         { key: 'prioridad_urgente', label: 'Prioridad Urgente' },
@@ -591,6 +630,11 @@ export default function ListaExpedientes() {
         .eq('id', selectedExpediente.id);
 
       if (error) throw error;
+
+      // Registrar tiempo si cambió el estado
+      if (estadoAnterior && estadoNuevo && estadoAnterior !== estadoNuevo) {
+        await registrarTiempoEstado(selectedExpediente.id, estadoAnterior, estadoNuevo);
+      }
 
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -1092,22 +1136,22 @@ export default function ListaExpedientes() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Tipo PO</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Ruta Logística</label>
                   {editMode ? (
                     <select
                       value={selectedExpediente.tipo_po}
                       onChange={(e) => handleChange('tipo_po', e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
                     >
-                      <option value="CR">CR</option>
-                      <option value="GLGT">GLGT</option>
-                      <option value="GLSV">GLSV</option>
-                      <option value="GT">GT</option>
-                      <option value="SV">SV</option>
-                      <option value="VZ">VZ</option>
-                      <option value="INT">INT</option>
-                      <option value="MI">MI</option>
-                      <option value="C.E.">C.E.</option>
+                      <option value="ZF - OVERSEAS">ZF - OVERSEAS LOGISTICS OPERATIONS</option>
+                      <option value="Directo CR - CONSORCIO">Directo CR - CONSORCIO FERRETERO DE SAN JOSE, S.A.</option>
+                      <option value="Directo CR - EPA CR">Directo CR - FERRETERIA EPA, S.A.</option>
+                      <option value="Directo GT - EPA GT">Directo GT - FERRETERIA EPA, S.A.</option>
+                      <option value="Directo SV - EPA SV">Directo SV - FERRETERIA EPA, C.A.</option>
+                      <option value="Directo VE - FEBECA">Directo VE - FEBECA C.A.</option>
+                      <option value="Directo VE - EPA VE">Directo VE - FERRETERIA EPA, C.A.</option>
+                      <option value="GL GT - EPA GT">GL GT - FERRETERIA EPA, S.A. (Guatemala)</option>
+                      <option value="GL SV - EPA SV">GL SV - FERRETERIA EPA, S.A. DE C.V.</option>
                     </select>
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">{selectedExpediente.tipo_po}</p>
@@ -1279,6 +1323,35 @@ export default function ListaExpedientes() {
                     )}
                   </div>
                 )}
+
+                {/* BL Cargado — ambos módulos */}
+                <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.bl_cargado ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex-1">
+                    <label className="block text-sm font-semibold text-gray-800 mb-1">
+                      BL (Bill of Lading) cargado
+                    </label>
+                    <p className="text-xs text-gray-500">Estado del Bill of Lading para este expediente</p>
+                  </div>
+                  {editMode ? (
+                    <button
+                      type="button"
+                      onClick={() => handleChange('bl_cargado', !selectedExpediente.bl_cargado)}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        selectedExpediente.bl_cargado ? 'bg-blue-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          selectedExpediente.bl_cargado ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.bl_cargado ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {selectedExpediente.bl_cargado ? 'BL Cargado' : 'Sin BL'}
+                    </span>
+                  )}
+                </div>
 
                 {selectedExpediente.prioridad_urgente && selectedExpediente.motivo_urgencia && (
                   <div className="md:col-span-2">

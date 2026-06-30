@@ -15,44 +15,60 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
   const esAdministrador = userRoles.includes('Administrador');
   const esGestorDropship = userRoles.includes('Gestor Dropship');
   const esGestorZF = userRoles.includes('Gestor ZF');
+  const esBodega = userRoles.includes('Bodega');
+  const esSolicitante = userRoles.includes('Solicitante') || userRoles.length > 0;
 
   // Construir menú según roles
-  const menuItems = [];
-
-  // Dashboard - solo Administrador
-  if (esAdministrador) {
-    menuItems.push({ id: 'dashboard', label: 'Dashboard', icon: 'ri-dashboard-line' });
-  }
-
-  // Gestión Dropship - Administrador y Gestor Dropship
-  if (esAdministrador || esGestorDropship) {
-    menuItems.push({ id: 'gestion-dropship', label: 'Gestión Expedientes Dropship', icon: 'ri-file-list-3-line' });
-  }
-
-  // Gestión ZF - Administrador y Gestor ZF
-  if (esAdministrador || esGestorZF) {
-    menuItems.push({ id: 'gestion-zf', label: 'Gestión Expedientes ZF', icon: 'ri-file-list-3-line' });
-  }
-
-  // Lista de Expedientes - Administrador, Gestor Dropship y Gestor ZF
-  if (esAdministrador || esGestorDropship || esGestorZF) {
-    menuItems.push({ id: 'lista', label: 'Lista de Expedientes', icon: 'ri-list-check-2' });
-  }
-
-  // Reportes - solo Administrador
-  if (esAdministrador) {
-    menuItems.push({ id: 'reportes', label: 'Reportes', icon: 'ri-bar-chart-box-line' });
-  }
-
-  // Carga Masiva - solo Administrador
-  if (esAdministrador) {
-    menuItems.push({ id: 'carga', label: 'Carga Masiva', icon: 'ri-upload-cloud-line' });
-  }
-
-  // Configuración - solo Administrador
-  if (esAdministrador) {
-    menuItems.push({ id: 'configuracion', label: 'Configuración', icon: 'ri-settings-3-line' });
-  }
+  const menuItems = [
+    { 
+      id: 'dashboard', 
+      label: 'Dashboard', 
+      icon: 'ri-dashboard-line',
+      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega
+    },
+    { 
+      id: 'gestion-dropship', 
+      label: 'Gestión Dropship', 
+      icon: 'ri-ship-line',
+      visible: esAdministrador || esGestorDropship
+    },
+    { 
+      id: 'gestion-zf', 
+      label: 'Gestión ZF', 
+      icon: 'ri-building-line',
+      visible: esAdministrador || esGestorZF || esBodega
+    },
+    { 
+      id: 'lista-expedientes', 
+      label: 'Lista de Expedientes', 
+      icon: 'ri-file-list-3-line',
+      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega
+    },
+    { 
+      id: 'reportes', 
+      label: 'Reportes', 
+      icon: 'ri-bar-chart-box-line',
+      visible: esAdministrador
+    },
+    { 
+      id: 'carga-masiva', 
+      label: 'Carga Masiva', 
+      icon: 'ri-upload-cloud-line',
+      visible: esAdministrador
+    },
+    { 
+      id: 'carga-caa', 
+      label: 'Carga CAA', 
+      icon: 'ri-file-upload-line',
+      visible: esSolicitante
+    },
+    { 
+      id: 'configuracion', 
+      label: 'Configuración', 
+      icon: 'ri-settings-3-line',
+      visible: esAdministrador
+    }
+  ];
 
   return (
     <div className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 relative`}>
