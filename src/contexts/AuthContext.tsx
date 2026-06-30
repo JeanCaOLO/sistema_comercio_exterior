@@ -17,6 +17,7 @@ interface AuthContextType {
   perfil: Perfil | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshPerfil: () => Promise<void>;
   isBodega: () => boolean;
@@ -121,6 +122,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw error;
   };
 
+  const signInWithGoogle = async () => {
+    const basePath = __BASE_PATH__.split('/').filter(Boolean).join('/');
+    const pathPrefix = basePath ? `/${basePath}` : '';
+    const redirectTo = `${window.location.origin}${pathPrefix}/`;
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+
+    if (error) throw error;
+  };
+
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
@@ -132,6 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     perfil,
     loading,
     signIn,
+    signInWithGoogle,
     signOut,
     refreshPerfil,
     isBodega
