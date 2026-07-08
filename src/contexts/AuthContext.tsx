@@ -30,16 +30,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const hasRole = (role: string) => {
-    if (!user?.roles) return false;
-    const roles = user.roles.split(',').map(r => r.trim().toLowerCase());
-    return roles.includes(role.toLowerCase());
+  const isBodega = () => {
+    if (!perfil?.roles || perfil.roles.length === 0) return false;
+    return perfil.roles.some(r => r.toLowerCase() === 'bodega');
   };
-
-  const isAdmin = () => hasRole('administrador');
-  const isGestorDropship = () => hasRole('gestor_dropship');
-  const isGestorZF = () => hasRole('gestor_zf');
-  const isBodega = () => hasRole('bodega');
 
   const cargarPerfil = async (userEmail: string) => {
     try {
@@ -59,16 +53,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data) {
         console.log('✅ Perfil cargado:', data);
         
-        // Convertir el campo rol a array de roles
+        // Obtener roles desde la tabla usuario_roles (nueva estructura)
         let rolesArray: string[] = [];
         
-        if (data.rol) {
-          // Si el campo rol contiene múltiples roles separados por coma
+        try {
+          const { data: rolesData, error: rolesError } = await supabase
+            .from('usuario_roles')
+            .select('rol_id, roles!inner(nombre)')
+            .eq('usuario_id', data.id);
+
+          if (!rolesError && rolesData && rolesData.length > 0) {
+            rolesArray = rolesData.map((r: any) => r.roles.nombre);
+            console.log('✅ Roles desde usuario_roles:', rolesArray);
+          }
+        } catch (e) {
+          console.warn('⚠️ Error consultando usuario_roles, usando fallback:', e);
+        }
+
+        // Fallback: si no hay roles en usuario_roles, parsear del campo rol (compatibilidad)
+        if (rolesArray.length === 0 && data.rol) {
           if (typeof data.rol === 'string' && data.rol.includes(',')) {
             rolesArray = data.rol.split(',').map((r: string) => r.trim());
           } else if (typeof data.rol === 'string') {
             rolesArray = [data.rol];
           }
+          console.log('⚠️ Roles desde campo rol (fallback):', rolesArray);
         }
 
         setPerfil({

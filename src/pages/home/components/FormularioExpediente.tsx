@@ -186,7 +186,10 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
       
       // Extraer nombres para responsables (solo Gestores y Administradores)
       const nombresResponsables = usuariosActivos
-        .filter(u => u.rol === 'Gestor' || u.rol === 'Administrador')
+        .filter(u => {
+          const rol = (u.rol || '').toLowerCase();
+          return rol.includes('gestor') || rol.includes('administrador');
+        })
         .map(u => u.nombre);
 
       console.log('👥 Solicitantes:', nombresSolicitantes);

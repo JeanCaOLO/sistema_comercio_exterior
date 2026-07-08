@@ -85,6 +85,19 @@ export default function CargaDocumentosCAA() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const sanitizeFileName = (name: string): string => {
+    const dotIndex = name.lastIndexOf('.');
+    const base = dotIndex > 0 ? name.substring(0, dotIndex) : name;
+    const ext = dotIndex > 0 ? name.substring(dotIndex) : '';
+    const sanitized = base
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // quita acentos
+      .replace(/[^a-zA-Z0-9_-]/g, '_') // reemplaza espacios y caracteres especiales
+      .replace(/_+/g, '_')              // colapsa guiones bajos múltiples
+      .replace(/^_|_$/g, '');           // quita guiones al inicio/final
+    return sanitized + ext;
+  };
+
   const handleSubmit = async () => {
     setError(null);
     const posValidas = pos.map(p => p.value.trim()).filter(v => v !== '');
@@ -126,7 +139,7 @@ export default function CargaDocumentosCAA() {
       const urlsDocumentos: string[] = [];
       for (const file of files) {
         const tempId = crypto.randomUUID();
-        const fileName = `caa/${tempId}/${Date.now()}_${file.name}`;
+        const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(file.name)}`;
         const { error: uploadError } = await supabase.storage
           .from('expedientes-documentos')
           .upload(fileName, file, { cacheControl: '3600', upsert: false });
@@ -147,13 +160,13 @@ export default function CargaDocumentosCAA() {
         }
       }
 
-      // Crear UN solo expediente con todas las POs unidas
+      // Guardar en Documentación — NO se crea ticket aún
       const ahora = new Date().toISOString();
       const hoy = new Date().toISOString().split('T')[0];
       const posCombinadas = posValidas.join(' / ');
 
-      const { data: expediente, error: insertError } = await supabase
-        .from('expedientes')
+      const { data: docCAA, error: insertError } = await supabase
+        .from('documentos_caa')
         .insert([{
           po_tiquetera: posCombinadas,
           tipo_po: tipoRuta,
@@ -171,7 +184,7 @@ export default function CargaDocumentosCAA() {
           lineas_oc: 0,
           bl_cargado: blCargado,
           fecha_creacion_expediente: hoy,
-          estado_expediente: 'No Asignado',
+          estado_expediente: 'Documentación',
           responsable_creacion: nombreUsuario,
           instrucciones_adicionales: null,
           tipo_modulo: tipoModulo,
@@ -180,29 +193,9 @@ export default function CargaDocumentosCAA() {
         .select()
         .single();
 
-      if (insertError) throw new Error(`Error al crear el expediente: ${insertError.message}`);
+      if (insertError) throw new Error(`Error al guardar en Documentación: ${insertError.message}`);
 
-      // Registrar tiempo inicial en estado "No Asignado"
-      await supabase.from('expedientes_tiempos_estados').insert([{
-        expediente_id: expediente.id,
-        estado_anterior: null,
-        estado_nuevo: 'No Asignado',
-        fecha_inicio: ahora,
-        fecha_fin: null,
-        minutos_transcurridos: null
-      }]);
-
-      // Registrar en historial
-      await supabase.from('expedientes_historial').insert([{
-        expediente_id: expediente.id,
-        campo_modificado: 'Estado',
-        valor_anterior: '',
-        valor_nuevo: 'No Asignado',
-        usuario: nombreUsuario,
-        fecha_cambio: ahora
-      }]);
-
-      setSolicitudesCreadas([{ pos: posValidas, id: expediente.id, modulo: tipoModulo }]);
+      setSolicitudesCreadas([{ pos: posValidas, id: docCAA.id, modulo: tipoModulo }]);
       // Reset form
       setFiles([]);
       setPos([{ id: crypto.randomUUID(), value: '' }]);
@@ -244,11 +237,11 @@ export default function CargaDocumentosCAA() {
               <i className="ri-checkbox-circle-line text-green-600 text-2xl"></i>
             </div>
             <div className="flex-1">
-              <h3 className="text-green-800 font-bold text-lg mb-2">¡Solicitud creada!</h3>
+              <h3 className="text-green-800 font-bold text-lg mb-2">¡Documentos guardados!</h3>
               <p className="text-green-700 text-sm mb-4">
-                El expediente está ahora en la columna <strong>"No Asignado"</strong> del Kanban{' '}
-                <strong>{solicitudesCreadas[0]?.modulo === 'dropship' ? 'Dropship' : 'ZF'}</strong> con{' '}
-                <strong>{solicitudesCreadas[0]?.pos.length} PO(s)</strong> y los documentos adjuntos.
+                Los documentos y POs se guardaron en el módulo <strong>"Documentación"</strong>.{' '}
+                Desde allí podrás seleccionarlos y <strong>generar el ticket</strong> que creará el expediente en el Kanban de{' '}
+                <strong>{solicitudesCreadas[0]?.modulo === 'dropship' ? 'Dropship' : 'ZF'}</strong> cuando estés listo.
               </p>
               <div className="bg-white rounded-lg p-4 border border-green-200">
                 <div className="flex items-center gap-2 mb-3">
@@ -272,6 +265,16 @@ export default function CargaDocumentosCAA() {
                 <i className="ri-add-line mr-2"></i>
                 Cargar más documentos
               </button>
+              <button
+                onClick={() => {
+                  const event = new CustomEvent('navigateTo', { detail: { view: 'documentacion' } });
+                  window.dispatchEvent(event);
+                }}
+                className="mt-4 ml-3 px-5 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <i className="ri-folder-open-line mr-2"></i>
+                Ir a Documentación
+              </button>
             </div>
           </div>
         </div>
@@ -288,7 +291,7 @@ export default function CargaDocumentosCAA() {
             <div className="grid grid-cols-2 gap-4 mb-5">
               <button
                 type="button"
-                onClick={() => setTipoModulo('dropship')}
+                onClick={() => { setTipoModulo('dropship'); setTipoRuta(''); }}
                 className={`relative p-5 rounded-xl border-2 transition-all cursor-pointer text-left ${
                   tipoModulo === 'dropship'
                     ? 'border-teal-500 bg-teal-50'
@@ -311,7 +314,7 @@ export default function CargaDocumentosCAA() {
 
               <button
                 type="button"
-                onClick={() => setTipoModulo('zf')}
+                onClick={() => { setTipoModulo('zf'); setTipoRuta(''); }}
                 className={`relative p-5 rounded-xl border-2 transition-all cursor-pointer text-left ${
                   tipoModulo === 'zf'
                     ? 'border-sky-500 bg-sky-50'
@@ -338,33 +341,42 @@ export default function CargaDocumentosCAA() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Ruta Logística <span className="text-red-400">*</span>
               </label>
-              <div className="grid grid-cols-1 gap-2">
-                {[
-                { key: 'ZF - OVERSEAS', label: 'ZF - OVERSEAS LOGISTICS OPERATIONS' },
-                { key: 'Directo CR - CONSORCIO', label: 'Directo CR - CONSORCIO FERRETERO DE SAN JOSE, S.A.' },
-                { key: 'Directo CR - EPA CR', label: 'Directo CR - FERRETERIA EPA, S.A.' },
-                { key: 'Directo GT - EPA GT', label: 'Directo GT - FERRETERIA EPA, S.A.' },
-                { key: 'Directo SV - EPA SV', label: 'Directo SV - FERRETERIA EPA, C.A.' },
-                { key: 'Directo VE - FEBECA', label: 'Directo VE - FEBECA C.A.' },
-                { key: 'Directo VE - EPA VE', label: 'Directo VE - FERRETERIA EPA, C.A.' },
-                { key: 'GL GT - EPA GT', label: 'GL GT - FERRETERIA EPA, S.A. (Guatemala)' },
-                { key: 'GL SV - EPA SV', label: 'GL SV - FERRETERIA EPA, S.A. DE C.V.' },
-              ].map(ruta => (
-                  <button
-                    key={ruta.key}
-                    type="button"
-                    onClick={() => setTipoRuta(ruta.key)}
-                    title={ruta.label}
-                    className={`py-2 px-3 rounded-lg border-2 text-xs font-semibold transition-all cursor-pointer text-left leading-tight ${
-                      tipoRuta === ruta.key
-                        ? 'border-teal-500 bg-teal-50 text-teal-700'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    {ruta.label}
-                  </button>
-                ))}
-              </div>
+              {!tipoModulo ? (
+                <div className="py-6 px-4 bg-gray-50 rounded-lg border border-dashed border-gray-300 text-center">
+                  <i className="ri-arrow-up-line text-gray-400 text-2xl block mb-2"></i>
+                  <p className="text-sm text-gray-400">Selecciona primero el tipo de módulo para ver las rutas disponibles</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2">
+                  {[
+                    { key: 'ZF - OVERSEAS', label: 'ZF - OVERSEAS LOGISTICS OPERATIONS', modulo: 'zf' },
+                    { key: 'Directo CR - CONSORCIO', label: 'Directo CR - CONSORCIO FERRETERO DE SAN JOSE, S.A.', modulo: 'dropship' },
+                    { key: 'Directo CR - EPA CR', label: 'Directo CR - FERRETERIA EPA, S.A.', modulo: 'dropship' },
+                    { key: 'Directo GT - EPA GT', label: 'Directo GT - FERRETERIA EPA, S.A.', modulo: 'dropship' },
+                    { key: 'Directo SV - EPA SV', label: 'Directo SV - FERRETERIA EPA, C.A.', modulo: 'dropship' },
+                    { key: 'Directo VE - FEBECA', label: 'Directo VE - FEBECA C.A.', modulo: 'dropship' },
+                    { key: 'Directo VE - EPA VE', label: 'Directo VE - FERRETERIA EPA, C.A.', modulo: 'dropship' },
+                    { key: 'GL GT - EPA GT', label: 'GL GT - FERRETERIA EPA, S.A. (Guatemala)', modulo: 'dropship' },
+                    { key: 'GL SV - EPA SV', label: 'GL SV - FERRETERIA EPA, S.A. DE C.V.', modulo: 'dropship' },
+                  ]
+                    .filter(ruta => ruta.modulo === tipoModulo)
+                    .map(ruta => (
+                      <button
+                        key={ruta.key}
+                        type="button"
+                        onClick={() => setTipoRuta(ruta.key)}
+                        title={ruta.label}
+                        className={`py-2 px-3 rounded-lg border-2 text-xs font-semibold transition-all cursor-pointer text-left leading-tight ${
+                          tipoRuta === ruta.key
+                            ? 'border-teal-500 bg-teal-50 text-teal-700'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        {ruta.label}
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -503,7 +515,7 @@ export default function CargaDocumentosCAA() {
 
             <p className="text-xs text-gray-400 mt-3 flex items-center gap-1">
               <i className="ri-information-line"></i>
-              Se creará <strong className="text-gray-600">1 expediente</strong> en el Kanban de {tipoModulo === 'dropship' ? 'Dropship' : tipoModulo === 'zf' ? 'ZF' : 'el módulo seleccionado'} con las {pos.filter(p => p.value.trim()).length || 0} PO(s) y todos los documentos adjuntos.
+              Los documentos se guardarán en <strong className="text-gray-600">Documentación</strong>. Luego podrás seleccionarlos y enviarlos como ticket al módulo que elijas (Dropship o ZF).
             </p>
           </div>
 
@@ -549,23 +561,29 @@ export default function CargaDocumentosCAA() {
                 </div>
                 <p className="text-xs text-gray-500">BL</p>
               </div>
+              <div className="text-center p-4 bg-amber-50 rounded-xl border border-amber-200">
+                <div className="text-lg font-bold mb-1 text-amber-600">
+                  <i className="ri-folder-open-line"></i>
+                </div>
+                <p className="text-xs text-amber-700">Documentación</p>
+              </div>
             </div>
 
             <button
               type="button"
               onClick={handleSubmit}
               disabled={submitting}
-              className="w-full py-3.5 bg-teal-600 text-white rounded-xl font-semibold text-sm hover:bg-teal-700 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap"
+              className="w-full py-3.5 bg-amber-600 text-white rounded-xl font-semibold text-sm hover:bg-amber-700 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap"
             >
               {submitting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin flex-shrink-0"></div>
-                  Creando solicitudes...
+                  Guardando en Documentación...
                 </>
               ) : (
                 <>
-                  <i className="ri-send-plane-line text-lg"></i>
-                  Crear expediente en el Kanban
+                  <i className="ri-folder-open-line text-lg"></i>
+                  Guardar en Documentación
                 </>
               )}
             </button>

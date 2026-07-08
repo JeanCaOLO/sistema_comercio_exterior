@@ -10,6 +10,8 @@ import CargaMasiva from './components/CargaMasiva';
 import Configuracion from './components/Configuracion';
 import FormularioExpediente from './components/FormularioExpediente';
 import CargaDocumentosCAA from './components/CargaDocumentosCAA';
+import Documentacion from './components/Documentacion';
+import RepositorioDocumentacion from './components/RepositorioDocumentacion';
 
 export default function Home() {
   const [activeView, setActiveView] = useState('');
@@ -42,10 +44,17 @@ export default function Home() {
       setShowFormulario(true);
     };
 
+    const handleNavigateTo = (event: any) => {
+      const view = event.detail?.view;
+      if (view) setActiveView(view);
+    };
+
     window.addEventListener('openFormularioExpediente', handleOpenFormulario);
+    window.addEventListener('navigateTo', handleNavigateTo);
 
     return () => {
       window.removeEventListener('openFormularioExpediente', handleOpenFormulario);
+      window.removeEventListener('navigateTo', handleNavigateTo);
     };
   }, []);
 
@@ -114,6 +123,8 @@ export default function Home() {
         {activeView === 'carga-masiva' && <CargaMasiva />}
         {activeView === 'configuracion' && <Configuracion />}
         {activeView === 'carga-caa' && <CargaDocumentosCAA />}
+        {activeView === 'documentacion' && <Documentacion />}
+        {activeView === 'repositorio' && <RepositorioDocumentacion />}
       </div>
 
       {showFormulario && (

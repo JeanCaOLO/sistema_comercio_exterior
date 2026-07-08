@@ -33,8 +33,8 @@ interface Expediente {
 }
 
 // Estados según el tipo de módulo
-const ESTADOS_DROPSHIP = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado'];
-const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado', 'Arribo de Carga', 'Pendiente Proforma', 'Liberación'];
+const ESTADOS_DROPSHIP = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
+const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado', 'Arribo de Carga', 'Pendiente Proforma', 'Liberación', 'Visto Listo'];
 
 interface GestionExpedientesProps {
   onNuevoExpediente?: () => void;
@@ -168,7 +168,10 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
       if (usuarios && usuarios.length > 0) {
         const todosSolicitantes = usuarios.map(u => u.nombre);
-        const todosResponsables = usuarios.filter(u => u.rol === 'Gestor' || u.rol === 'Administrador').map(u => u.nombre);
+        const todosResponsables = usuarios.filter(u => {
+          const rol = (u.rol || '').toLowerCase();
+          return rol.includes('gestor') || rol.includes('administrador');
+        }).map(u => u.nombre);
         
         console.log('✅ Usuarios cargados:', todosSolicitantes.length);
         console.log('✅ Responsables cargados:', todosResponsables.length);
@@ -833,7 +836,8 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     // Caso especial: No Asignado → Asignado abre modal para completar campos
     if (draggedItem.estado_expediente === 'No Asignado' && nuevoEstado === 'Asignado') {
       // Validar que tenga BL cargado y documentos
-      if (!draggedItem.bl_cargado) {
+      // Usamos comparación estricta !== true para cubrir null, undefined, false y cualquier valor corrupto
+      if (draggedItem.bl_cargado !== true) {
         setErrorMessage('No se puede asignar este expediente: debe tener el BL cargado (marcado en el módulo CAA o desde edición).');
         setShowError(true);
         setTimeout(() => setShowError(false), 5000);
@@ -972,6 +976,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       case 'Espera de Respuesta': return 'bg-amber-400';
       case 'Liberación': return 'bg-green-500';
       case 'Notificado': return 'bg-lime-500';
+      case 'Visto Listo': return 'bg-rose-500';
       default: return 'bg-gray-500';
     }
   };

@@ -32,8 +32,8 @@ interface Expediente {
 }
 
 // Estados combinados de ambos módulos
-const ESTADOS_DROPSHIP = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado'];
-const ESTADOS_ZF = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado', 'Liberación'];
+const ESTADOS_DROPSHIP = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
+const ESTADOS_ZF = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado', 'Liberación', 'Visto Listo'];
 const TODOS_ESTADOS = Array.from(new Set([...ESTADOS_DROPSHIP, ...ESTADOS_ZF])).sort();
 
 export default function ListaExpedientes() {
@@ -116,7 +116,10 @@ export default function ListaExpedientes() {
 
       if (usuarios && usuarios.length > 0) {
         const todosSolicitantes = usuarios.map(u => u.nombre);
-        const todosResponsables = usuarios.filter(u => u.rol === 'Gestor' || u.rol === 'Administrador').map(u => u.nombre);
+        const todosResponsables = usuarios.filter(u => {
+          const rol = (u.rol || '').toLowerCase();
+          return rol.includes('gestor') || rol.includes('administrador');
+        }).map(u => u.nombre);
         
         setSolicitantes(todosSolicitantes);
         setResponsables(todosResponsables.length > 0 ? todosResponsables : todosSolicitantes);
@@ -134,10 +137,11 @@ export default function ListaExpedientes() {
       setLoading(true);
       console.log('🔄 Cargando TODOS los expedientes en segundo plano...');
       
-      // CAMBIO: Cargar TODOS los expedientes sin límite (ambos módulos)
+      // Cargar TODOS los expedientes excepto los que están en Documentación
       const { data, error } = await supabase
         .from('expedientes')
         .select('*')
+        .neq('estado_expediente', 'Documentación')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -672,6 +676,7 @@ export default function ListaExpedientes() {
       case 'Facturación': return 'bg-pink-500 text-white';
       case 'Notificado': return 'bg-teal-500 text-white';
       case 'Completado': return 'bg-blue-500 text-white';
+      case 'Visto Listo': return 'bg-rose-500 text-white';
       default: return 'bg-gray-500 text-white';
     }
   };

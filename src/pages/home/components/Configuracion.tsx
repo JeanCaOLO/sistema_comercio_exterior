@@ -202,6 +202,29 @@ export default function Configuracion() {
           .eq('id', editingUser.id);
 
         if (error) throw error;
+
+        // Sincronizar usuario_roles: borrar existentes y crear nuevos
+        await supabase.from('usuario_roles').delete().eq('usuario_id', editingUser.id);
+        
+        const rolesInserts = formData.roles.map(roleId => {
+          const roleNombre = rolesDisponibles.find(r => r.id === roleId)?.nombre;
+          return roleNombre ? { usuario_id: editingUser.id, rol_nombre: roleNombre } : null;
+        }).filter(Boolean);
+
+        if (rolesInserts.length > 0) {
+          // Obtener IDs de la tabla roles
+          const { data: rolesData } = await supabase.from('roles').select('id, nombre');
+          const rolMap: Record<string, string> = {};
+          (rolesData || []).forEach((r: any) => { rolMap[r.nombre] = r.id; });
+
+          const insertsConId = rolesInserts
+            .map((ri: any) => ({ usuario_id: ri.usuario_id, rol_id: rolMap[ri.rol_nombre] }))
+            .filter((ri: any) => ri.rol_id);
+
+          if (insertsConId.length > 0) {
+            await supabase.from('usuario_roles').insert(insertsConId);
+          }
+        }
       } else {
         // Crear nuevo usuario con Supabase Auth
         if (!formData.password || formData.password.length < 6) {
@@ -236,6 +259,24 @@ export default function Configuracion() {
             }]);
 
           if (perfilError) throw perfilError;
+
+          // Insertar en usuario_roles
+          const { data: rolesData } = await supabase.from('roles').select('id, nombre');
+          const rolMap: Record<string, string> = {};
+          (rolesData || []).forEach((r: any) => { rolMap[r.nombre] = r.id; });
+
+          const insertsConId = formData.roles
+            .map(roleId => {
+              const roleNombre = rolesDisponibles.find(r => r.id === roleId)?.nombre;
+              return roleNombre && rolMap[roleNombre]
+                ? { usuario_id: authData.user.id, rol_id: rolMap[roleNombre] }
+                : null;
+            })
+            .filter(Boolean);
+
+          if (insertsConId.length > 0) {
+            await supabase.from('usuario_roles').insert(insertsConId);
+          }
         }
       }
 
@@ -256,12 +297,32 @@ export default function Configuracion() {
     }
   };
 
-  const handleEdit = (usuario: any) => {
+  const handleEdit = async (usuario: any) => {
     setEditingUser(usuario);
     
-    // Convertir el string de roles a array
+    // Obtener roles desde usuario_roles (nueva estructura)
     let rolesArray: string[] = [];
-    if (usuario.rol) {
+    
+    try {
+      const { data: rolesData, error: rolesError } = await supabase
+        .from('usuario_roles')
+        .select('rol_id, roles!inner(nombre)')
+        .eq('usuario_id', usuario.id);
+
+      if (!rolesError && rolesData && rolesData.length > 0) {
+        // Mapear nombres de roles a IDs del formulario
+        const nombreToId: Record<string, string> = {};
+        rolesDisponibles.forEach(r => { nombreToId[r.nombre] = r.id; });
+        rolesArray = rolesData
+          .map((r: any) => nombreToId[r.roles.nombre])
+          .filter(Boolean);
+      }
+    } catch (e) {
+      console.warn('Error consultando usuario_roles, usando fallback:', e);
+    }
+
+    // Fallback: parsear del campo rol
+    if (rolesArray.length === 0 && usuario.rol) {
       if (usuario.rol.includes(',')) {
         rolesArray = usuario.rol.split(',').map((r: string) => r.trim());
       } else {
@@ -332,7 +393,7 @@ export default function Configuracion() {
   };
 
   // Verificar si el usuario actual es administrador
-  const esAdministrador = perfil?.rol === 'Administrador';
+  const esAdministrador = perfil?.roles?.includes('Administrador') ?? false;
 
   if (!esAdministrador && activeTab === 'usuarios') {
     return (
