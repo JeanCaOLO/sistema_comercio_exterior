@@ -18,7 +18,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
   const esBodega = userRoles.includes('Bodega');
   const esDocumentos = userRoles.includes('Documentos');
   const esExpedientes = userRoles.includes('Expedientes');
-  const esSolicitante = userRoles.includes('Solicitante') || userRoles.length > 0;
+  const esSolicitante = userRoles.includes('Solicitante');
 
   // Construir menú según roles
   const menuItems = [
@@ -110,7 +110,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
       </div>
 
       <nav className="flex-1 p-4 space-y-1">
-        {menuItems.map((item) => (
+        {menuItems.filter(item => item.visible).map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveView(item.id)}
