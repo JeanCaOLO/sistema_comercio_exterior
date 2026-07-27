@@ -49,6 +49,18 @@ export default function Configuracion() {
       nombre: 'Bodega', 
       descripcion: 'Gestión de recepción y almacenamiento',
       color: 'bg-orange-100 text-orange-800 border-orange-300'
+    },
+    { 
+      id: 'documentos', 
+      nombre: 'Documentos', 
+      descripcion: 'Visualización de CCA, Repositorio Docs y Lista de Expedientes',
+      color: 'bg-teal-100 text-teal-800 border-teal-300'
+    },
+    { 
+      id: 'expedientes', 
+      nombre: 'Expedientes', 
+      descripcion: 'Gestión de Dropship, ZF, Lista de Expedientes y Repositorio Docs',
+      color: 'bg-indigo-100 text-indigo-800 border-indigo-300'
     }
   ];
 
@@ -512,6 +524,9 @@ export default function Configuracion() {
                                       rol === 'Administrador' ? 'bg-purple-100 text-purple-800' :
                                       rol === 'Gestor Dropship' ? 'bg-blue-100 text-blue-800' :
                                       rol === 'Gestor ZF' ? 'bg-green-100 text-green-800' :
+                                      rol === 'Bodega' ? 'bg-orange-100 text-orange-800' :
+                                      rol === 'Documentos' ? 'bg-teal-100 text-teal-800' :
+                                      rol === 'Expedientes' ? 'bg-indigo-100 text-indigo-800' :
                                       'bg-gray-100 text-gray-800'
                                     }`}
                                   >
@@ -835,9 +850,13 @@ export default function Configuracion() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900">{rol.nombre}</span>
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                              rol.id === 'Administrador' ? 'bg-purple-100 text-purple-800' :
-                              rol.id === 'Gestor Dropship' ? 'bg-blue-100 text-blue-800' :
-                              'bg-green-100 text-green-800'
+                              rol.id === 'administrador' ? 'bg-purple-100 text-purple-800' :
+                              rol.id === 'gestor_dropship' ? 'bg-blue-100 text-blue-800' :
+                              rol.id === 'gestor_zf' ? 'bg-green-100 text-green-800' :
+                              rol.id === 'bodega' ? 'bg-orange-100 text-orange-800' :
+                              rol.id === 'documentos' ? 'bg-teal-100 text-teal-800' :
+                              rol.id === 'expedientes' ? 'bg-indigo-100 text-indigo-800' :
+                              'bg-teal-100 text-teal-800'
                             }`}>
                               {rol.id}
                             </span>

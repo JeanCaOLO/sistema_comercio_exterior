@@ -16,6 +16,8 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
   const esGestorDropship = userRoles.includes('Gestor Dropship');
   const esGestorZF = userRoles.includes('Gestor ZF');
   const esBodega = userRoles.includes('Bodega');
+  const esDocumentos = userRoles.includes('Documentos');
+  const esExpedientes = userRoles.includes('Expedientes');
   const esSolicitante = userRoles.includes('Solicitante') || userRoles.length > 0;
 
   // Construir menú según roles
@@ -30,19 +32,19 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
       id: 'gestion-dropship', 
       label: 'Gestión Dropship', 
       icon: 'ri-ship-line',
-      visible: esAdministrador || esGestorDropship
+      visible: esAdministrador || esGestorDropship || esExpedientes
     },
     { 
       id: 'gestion-zf', 
       label: 'Gestión ZF', 
       icon: 'ri-building-line',
-      visible: esAdministrador || esGestorZF || esBodega
+      visible: esAdministrador || esGestorZF || esBodega || esExpedientes
     },
     { 
       id: 'lista-expedientes', 
       label: 'Lista de Expedientes', 
       icon: 'ri-file-list-3-line',
-      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega
+      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega || esDocumentos || esExpedientes
     },
     { 
       id: 'reportes', 
@@ -60,7 +62,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
       id: 'carga-caa', 
       label: 'Carga CAA', 
       icon: 'ri-file-upload-line',
-      visible: esSolicitante
+      visible: esSolicitante || esDocumentos
     },
     { 
       id: 'documentacion', 
@@ -72,7 +74,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
       id: 'repositorio', 
       label: 'Repositorio Docs', 
       icon: 'ri-archive-line',
-      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega || esSolicitante
+      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega || esSolicitante || esDocumentos || esExpedientes
     },
     { 
       id: 'configuracion', 
