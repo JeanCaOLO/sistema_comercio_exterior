@@ -171,8 +171,11 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
 
       console.log('✅ Total usuarios obtenidos:', data.length);
       
-      // Filtrar usuarios activos en el cliente
-      const usuariosActivos = data.filter(u => u.estado === 'Activo');
+      // Filtrar usuarios activos en el cliente (case-insensitive, incluye null/vacío como activo)
+      const usuariosActivos = data.filter(u => {
+        const estado = (u.estado || '').toLowerCase().trim();
+        return estado === '' || estado === 'activo';
+      });
       console.log('✅ Usuarios activos:', usuariosActivos.length);
       console.log('📋 Lista de usuarios activos:', usuariosActivos);
 
@@ -181,23 +184,16 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
         return;
       }
 
-      // Extraer nombres para solicitantes (todos los usuarios activos)
+      // Extraer nombres para solicitantes y responsables (todos los usuarios activos)
       const nombresSolicitantes = usuariosActivos.map(u => u.nombre);
-      
-      // Extraer nombres para responsables (solo Gestores y Administradores)
-      const nombresResponsables = usuariosActivos
-        .filter(u => {
-          const rol = (u.rol || '').toLowerCase();
-          return rol.includes('gestor') || rol.includes('administrador');
-        })
-        .map(u => u.nombre);
+      const nombresResponsables = usuariosActivos.map(u => u.nombre);
 
       console.log('👥 Solicitantes:', nombresSolicitantes);
-      console.log('👤 Responsables:', nombresResponsables);
+      console.log('👤 Responsables (todos los usuarios):', nombresResponsables);
 
       // Actualizar estados
       setSolicitantes(nombresSolicitantes);
-      setResponsables(nombresResponsables.length > 0 ? nombresResponsables : nombresSolicitantes);
+      setResponsables(nombresResponsables);
 
       console.log('✅ Estados actualizados - Solicitantes:', nombresSolicitantes.length, 'Responsables:', nombresResponsables.length);
     } catch (error) {

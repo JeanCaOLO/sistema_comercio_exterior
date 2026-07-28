@@ -106,25 +106,27 @@ export default function ListaExpedientes() {
 
   const cargarUsuarios = async () => {
     try {
-      const { data: usuarios, error } = await supabase
+      // Traer todos los usuarios y filtrar activos de forma case-insensitive en el cliente
+      const { data: usuariosData, error } = await supabase
         .from('usuarios')
-        .select('nombre, rol, email')
-        .eq('estado', 'Activo')
+        .select('nombre, rol, email, estado')
         .order('nombre');
 
       if (error) throw error;
 
+      // Filtro case-insensitive: activo, Activo, ACTIVO o sin estado son válidos
+      const usuarios = (usuariosData || []).filter(u => {
+        const estado = (u.estado || '').toLowerCase().trim();
+        return estado === '' || estado === 'activo';
+      });
+
       if (usuarios && usuarios.length > 0) {
-        const todosSolicitantes = usuarios.map(u => u.nombre);
-        const todosResponsables = usuarios.filter(u => {
-          const rol = (u.rol || '').toLowerCase();
-          return rol.includes('gestor') || rol.includes('administrador');
-        }).map(u => u.nombre);
+        const todosNombres = usuarios.map(u => u.nombre);
         
-        setSolicitantes(todosSolicitantes);
-        setResponsables(todosResponsables.length > 0 ? todosResponsables : todosSolicitantes);
+        setSolicitantes(todosNombres);
+        setResponsables(todosNombres);
         
-        const personasUnicas = Array.from(new Set([...todosSolicitantes, ...todosResponsables]));
+        const personasUnicas = todosNombres;
         setTodasPersonas(personasUnicas);
       }
     } catch (error) {

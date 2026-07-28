@@ -26,6 +26,7 @@ export default function Documentacion() {
   const [usuarioActual, setUsuarioActual] = useState('Sistema');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [searchPO, setSearchPO] = useState('');
 
   useEffect(() => {
     cargarDocumentos();
@@ -83,10 +84,10 @@ export default function Documentacion() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === documentos.length) {
+    if (selectedIds.size === documentosFiltrados.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(documentos.map(d => d.id)));
+      setSelectedIds(new Set(documentosFiltrados.map(d => d.id)));
     }
   };
 
@@ -280,6 +281,17 @@ export default function Documentacion() {
     });
   };
 
+  const documentosFiltrados = searchPO.trim()
+    ? documentos.filter(doc => {
+        const term = searchPO.toLowerCase();
+        return (
+          (doc.po_tiquetera && doc.po_tiquetera.toLowerCase().includes(term)) ||
+          (doc.solicitante && doc.solicitante.toLowerCase().includes(term)) ||
+          (doc.responsable_creacion && doc.responsable_creacion.toLowerCase().includes(term))
+        );
+      })
+    : documentos;
+
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
@@ -344,6 +356,26 @@ export default function Documentacion() {
       {documentos.length > 0 && (
         <>
           <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex flex-wrap items-center gap-4">
+            {/* Buscador PO */}
+            <div className="relative flex-1 min-w-[260px] max-w-md">
+              <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+              <input
+                type="text"
+                value={searchPO}
+                onChange={(e) => setSearchPO(e.target.value)}
+                placeholder="Buscar por PO, solicitante o responsable..."
+                className="w-full pl-9 pr-9 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              />
+              {searchPO && (
+                <button
+                  type="button"
+                  onClick={() => setSearchPO('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full cursor-pointer"
+                >
+                  <i className="ri-close-line text-sm"></i>
+                </button>
+              )}
+            </div>
             {/* Selector de módulo destino */}
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Enviar a:</span>
@@ -379,7 +411,10 @@ export default function Documentacion() {
 
             {/* Contador */}
             <span className="text-sm text-gray-500 whitespace-nowrap">
-              <span className="font-bold text-amber-600">{selectedIds.size}</span> de {documentos.length} seleccionado(s)
+              <span className="font-bold text-amber-600">{selectedIds.size}</span> de {documentosFiltrados.length} seleccionado(s)
+              {searchPO && documentosFiltrados.length !== documentos.length && (
+                <span className="text-gray-400 ml-1">(filtrado de {documentos.length})</span>
+              )}
             </span>
 
             {/* Botón eliminar */}
@@ -427,7 +462,7 @@ export default function Documentacion() {
                     <th className="px-4 py-3 w-12">
                       <input
                         type="checkbox"
-                        checked={selectedIds.size === documentos.length && documentos.length > 0}
+                        checked={documentosFiltrados.length > 0 && selectedIds.size === documentosFiltrados.length}
                         onChange={toggleSelectAll}
                         className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
                       />
@@ -442,7 +477,7 @@ export default function Documentacion() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {documentos.map((doc) => {
+                  {documentosFiltrados.map((doc) => {
                     const isSelected = selectedIds.has(doc.id);
                     return (
                       <tr

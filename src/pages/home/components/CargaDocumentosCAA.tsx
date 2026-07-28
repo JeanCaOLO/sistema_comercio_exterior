@@ -22,6 +22,7 @@ export default function CargaDocumentosCAA() {
   const [submitting, setSubmitting] = useState(false);
   const [solicitudesCreadas, setSolicitudesCreadas] = useState<SolicitudCreada[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [comentario, setComentario] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -186,7 +187,7 @@ export default function CargaDocumentosCAA() {
           fecha_creacion_expediente: hoy,
           estado_expediente: 'Documentación',
           responsable_creacion: nombreUsuario,
-          instrucciones_adicionales: null,
+          instrucciones_adicionales: comentario.trim() || null,
           tipo_modulo: tipoModulo,
           created_at: ahora
         }])
@@ -202,6 +203,7 @@ export default function CargaDocumentosCAA() {
       setTipoModulo(null);
       setTipoRuta('');
       setBlCargado(false);
+      setComentario('');
     } catch (err: any) {
       setError(err.message || 'Error al crear las solicitudes.');
     } finally {
@@ -517,6 +519,34 @@ export default function CargaDocumentosCAA() {
               <i className="ri-information-line"></i>
               Los documentos se guardarán en <strong className="text-gray-600">Documentación</strong>. Luego podrás seleccionarlos y enviarlos como ticket al módulo que elijas (Dropship o ZF).
             </p>
+          </div>
+
+          {/* Comentario */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-6 h-6 flex items-center justify-center bg-gray-400 text-white rounded-full text-xs font-bold flex-shrink-0">
+                <i className="ri-chat-1-line"></i>
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Comentario</h2>
+              <span className="text-xs text-gray-400">(opcional)</span>
+            </div>
+            <textarea
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              placeholder="Agrega notas, instrucciones adicionales o cualquier información relevante para este documento..."
+              maxLength={500}
+              rows={3}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
+            />
+            <div className="flex justify-between items-center mt-1.5">
+              <p className="text-xs text-gray-400">
+                <i className="ri-information-line mr-1"></i>
+                Este comentario se guardará junto con los documentos en el módulo de Documentación
+              </p>
+              <span className={`text-xs font-medium ${comentario.length > 450 ? 'text-amber-600' : 'text-gray-400'}`}>
+                {comentario.length}/500
+              </span>
+            </div>
           </div>
 
           {/* Error */}
