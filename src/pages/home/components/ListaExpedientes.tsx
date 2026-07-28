@@ -192,10 +192,13 @@ export default function ListaExpedientes() {
 
     // Filtrar por búsqueda
     if (searchTerm) {
+      const term = searchTerm.toLowerCase();
       filtered = filtered.filter(exp => 
-        exp.po_tiquetera.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.exp_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.solicitante.toLowerCase().includes(searchTerm.toLowerCase())
+        (exp.po_tiquetera || '').toLowerCase().includes(term) ||
+        (exp.exp_id || '').toLowerCase().includes(term) ||
+        (exp.solicitante || '').toLowerCase().includes(term) ||
+        (exp.responsable_creacion || '').toLowerCase().includes(term) ||
+        (exp.tipo_po || '').toLowerCase().includes(term)
       );
       console.log('🔎 Después de búsqueda:', filtered.length);
     }
@@ -736,13 +739,24 @@ export default function ListaExpedientes() {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="PO, EXP ID o Solicitante..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-            />
+            <div className="relative">
+              <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="PO, EXP ID, Solicitante, Responsable..."
+                className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  <i className="ri-close-circle-line text-sm"></i>
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Módulo</label>
@@ -791,7 +805,7 @@ export default function ListaExpedientes() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
             >
               <option value="Todos">Todos</option>
-              {(selectedExpediente?.tipo_modulo === 'dropship' ? ESTADOS_DROPSHIP : ESTADOS_ZF).map(estado => (
+              {TODOS_ESTADOS.map(estado => (
                 <option key={estado} value={estado}>{estado}</option>
               ))}
             </select>

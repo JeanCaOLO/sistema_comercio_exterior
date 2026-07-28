@@ -127,10 +127,12 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
     // Filtrar por búsqueda
     if (searchTerm) {
+      const term = searchTerm.toLowerCase();
       filtered = filtered.filter(exp => 
-        exp.po_tiquetera.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.exp_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.solicitante.toLowerCase().includes(searchTerm.toLowerCase())
+        (exp.po_tiquetera || '').toLowerCase().includes(term) ||
+        (exp.exp_id || '').toLowerCase().includes(term) ||
+        (exp.solicitante || '').toLowerCase().includes(term) ||
+        (exp.responsable_creacion || '').toLowerCase().includes(term)
       );
     }
 
@@ -1052,13 +1054,24 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="PO, EXP ID o Solicitante..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-            />
+            <div className="relative">
+              <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="PO, EXP ID, Solicitante, Responsable..."
+                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  <i className="ri-close-circle-line text-sm"></i>
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Persona</label>
@@ -1088,6 +1101,20 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
             </select>
           </div>
         </div>
+        {(searchTerm || filterPersona !== 'Todos' || filterPrioridad !== 'Todos') && (
+          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Mostrando <span className="font-semibold text-teal-600">{filteredExpedientes.length}</span> expediente(s) con los filtros activos
+            </p>
+            <button
+              onClick={() => { setSearchTerm(''); setFilterPersona('Todos'); setFilterPrioridad('Todos'); }}
+              className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1 cursor-pointer"
+            >
+              <i className="ri-filter-off-line"></i>
+              Limpiar filtros
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tablero Kanban */}
