@@ -114,11 +114,11 @@ export default function RepositorioDocumentacion() {
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(doc =>
-        doc.po_tiquetera.toLowerCase().includes(term) ||
-        doc.exp_id.toLowerCase().includes(term) ||
-        doc.solicitante.toLowerCase().includes(term) ||
-        doc.responsable_creacion.toLowerCase().includes(term) ||
-        doc.tipo_po.toLowerCase().includes(term)
+        (doc.po_tiquetera || '').toLowerCase().includes(term) ||
+        (doc.exp_id || '').toLowerCase().includes(term) ||
+        (doc.solicitante || '').toLowerCase().includes(term) ||
+        (doc.responsable_creacion || '').toLowerCase().includes(term) ||
+        (doc.tipo_po || '').toLowerCase().includes(term)
       );
     }
 
