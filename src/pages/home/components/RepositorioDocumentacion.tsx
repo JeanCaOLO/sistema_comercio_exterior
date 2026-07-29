@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import EditarDocumentoModal from './EditarDocumentoModal';
+import HistorialDocumentoModal from './HistorialDocumentoModal';
 
 interface ExpedienteRepo {
   id: string;
@@ -54,6 +56,10 @@ export default function RepositorioDocumentacion() {
   const [filtroModulo, setFiltroModulo] = useState('Todos');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [registroEditando, setRegistroEditando] = useState<ExpedienteRepo | null>(null);
+  const [historialOpen, setHistorialOpen] = useState(false);
+  const [registroHistorial, setRegistroHistorial] = useState<ExpedienteRepo | null>(null);
 
   useEffect(() => {
     cargarDocumentos();
@@ -338,12 +344,14 @@ export default function RepositorioDocumentacion() {
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">BL</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Cargado por</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Acción</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Historial</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredDocs.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-4 py-12 text-center">
+                      <td colSpan={12} className="px-4 py-12 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <i className="ri-file-search-line text-4xl text-gray-300"></i>
                           <p className="text-gray-500 font-medium">No se encontraron documentos con esos filtros</p>
@@ -425,11 +433,39 @@ export default function RepositorioDocumentacion() {
                             <td className="px-3 py-3 whitespace-nowrap">
                               <span className="text-xs text-gray-500">{formatDate(doc.created_at)}</span>
                             </td>
+                            <td className="px-3 py-3 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRegistroEditando(doc);
+                                  setEditModalOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-amber-700 bg-amber-50 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors cursor-pointer whitespace-nowrap"
+                                title="Editar registro"
+                              >
+                                <i className="ri-edit-line"></i>
+                                Editar
+                              </button>
+                            </td>
+                            <td className="px-3 py-3 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRegistroHistorial(doc);
+                                  setHistorialOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-gray-600 bg-gray-100 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
+                                title="Ver historial de modificaciones"
+                              >
+                                <i className="ri-history-line"></i>
+                                Historial
+                              </button>
+                            </td>
                           </tr>
                           {/* Fila expandible con la lista de archivos */}
                           {isExpanded && docCount > 0 && (
                             <tr key={`${doc.id}-expanded`}>
-                              <td colSpan={10} className="px-4 py-0 bg-gray-50/60">
+                              <td colSpan={12} className="px-4 py-0 bg-gray-50/60">
                                 <div className="py-3 space-y-2">
                                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                                     Archivos ({docCount})
@@ -498,6 +534,35 @@ export default function RepositorioDocumentacion() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Modal de edición */}
+      {registroEditando && (
+        <EditarDocumentoModal
+          isOpen={editModalOpen}
+          onClose={() => {
+            setEditModalOpen(false);
+            setRegistroEditando(null);
+          }}
+          registro={registroEditando}
+          onSaved={() => {
+            cargarDocumentos();
+          }}
+        />
+      )}
+
+      {/* Modal de historial */}
+      {registroHistorial && (
+        <HistorialDocumentoModal
+          isOpen={historialOpen}
+          onClose={() => {
+            setHistorialOpen(false);
+            setRegistroHistorial(null);
+          }}
+          registroId={registroHistorial.id}
+          poTiquetera={registroHistorial.po_tiquetera}
+          expId={registroHistorial.exp_id}
+        />
       )}
     </div>
   );
