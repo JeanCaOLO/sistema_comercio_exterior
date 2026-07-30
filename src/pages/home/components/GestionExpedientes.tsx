@@ -223,11 +223,13 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
   };
 
   const calcularTiempoTranscurrido = (expediente: Expediente): { minutos: number; dias: number } => {
-    // Determinar el estado final según el tipo de módulo
-    const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
+    // Para Dropship: 'Notificado' y 'Visto Listo' son estados finales (timer congelado)
+    const esFinalDropship = expediente.tipo_modulo === 'dropship' &&
+      (expediente.estado_expediente === 'Notificado' || expediente.estado_expediente === 'Visto Listo');
+    const esFinalZF = expediente.tipo_modulo === 'zf' && expediente.estado_expediente === 'Completado';
     
-    // Si está en el estado final, usar el tiempo ya calculado
-    if (expediente.estado_expediente === estadoFinal && expediente.tiempo_real_minutos && expediente.dias_entrega_real) {
+    // Si está en un estado final, usar el tiempo ya calculado (congelado al llegar a Notificado)
+    if ((esFinalDropship || esFinalZF) && expediente.tiempo_real_minutos && expediente.dias_entrega_real) {
       return {
         minutos: expediente.tiempo_real_minutos,
         dias: expediente.dias_entrega_real
@@ -1137,8 +1139,10 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
               <div className="p-3 space-y-3 max-h-[calc(100vh-320px)] overflow-y-auto">
                 {expedientesEstado.map(expediente => {
                   const tiempoTranscurrido = calcularTiempoTranscurrido(expediente);
-                  const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
-                  const esFinalizado = expediente.estado_expediente === estadoFinal;
+                  // Para Dropship: tanto Notificado como Visto Listo son estados finales
+                  const esFinalizado = expediente.tipo_modulo === 'dropship'
+                    ? (expediente.estado_expediente === 'Notificado' || expediente.estado_expediente === 'Visto Listo')
+                    : expediente.estado_expediente === 'Completado';
                   
                   return (
                     <div

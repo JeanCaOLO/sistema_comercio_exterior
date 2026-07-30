@@ -120,8 +120,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   const [kpisZF, setKpisZF] = useState({
-    creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-    arriboALiberacion: { minutos: 0, cumpleMeta: true }
+    creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
   });
 
   const [notificadoOkPais, setNotificadoOkPais] = useState(0);
@@ -285,8 +284,7 @@ export default function Dashboard() {
 
       if (errorExp || !expedientesZF || expedientesZF.length === 0) {
         setKpisZF({
-          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-          arriboALiberacion: { minutos: 0, cumpleMeta: true }
+          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
         });
         return;
       }
@@ -302,52 +300,36 @@ export default function Dashboard() {
 
       if (error || !tiempos || tiempos.length === 0) {
         setKpisZF({
-          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-          arriboALiberacion: { minutos: 0, cumpleMeta: true }
+          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
         });
         return;
       }
 
-      // KPI 1: Creado → Espera de Respuesta (meta ≤15 días)
-      const tiemposCreadoAEspera = tiempos.filter(t => 
-        (t.estado_anterior === 'Creado' || t.estado_anterior === 'Asignado' || t.estado_anterior === 'En Proceso') &&
-        t.estado_nuevo === 'Espera de Respuesta'
-      );
+      // KPI 1: Creado → Espera de Respuesta (meta <15 días)
+      // Buscamos cualquier transición cuyo destino sea "Espera de Respuesta",
+      // sin filtrar por estado_anterior, para capturar todos los tickets ZF
+      const tiemposCreadoAEspera = tiempos.filter((t: any) => {
+        const destino = (t.estado_nuevo || '').trim();
+        return destino === 'Espera de Respuesta' || destino === 'Espera de respuesta';
+      });
 
       let diasPromedioCreadoAEspera = 0;
       if (tiemposCreadoAEspera.length > 0) {
-        const totalMinutos = tiemposCreadoAEspera.reduce((sum, t) => sum + (t.minutos_transcurridos || 0), 0);
+        const totalMinutos = tiemposCreadoAEspera.reduce((sum: number, t: any) => sum + (t.minutos_transcurridos || 0), 0);
         const minutosPromedio = totalMinutos / tiemposCreadoAEspera.length;
-        diasPromedioCreadoAEspera = Math.round((minutosPromedio / 60 / 24) * 10) / 10; // Redondear a 1 decimal
-      }
-
-      // KPI 2: Arribo → Liberación (meta ≤45 minutos)
-      const tiemposArriboALiberacion = tiempos.filter(t => 
-        t.estado_anterior === 'Arribo de Carga' &&
-        (t.estado_nuevo === 'Liberación' || t.estado_nuevo === 'Liberado')
-      );
-
-      let minutosPromedioArriboALiberacion = 0;
-      if (tiemposArriboALiberacion.length > 0) {
-        const totalMinutos = tiemposArriboALiberacion.reduce((sum, t) => sum + (t.minutos_transcurridos || 0), 0);
-        minutosPromedioArriboALiberacion = Math.round(totalMinutos / tiemposArriboALiberacion.length);
+        diasPromedioCreadoAEspera = Math.round((minutosPromedio / 60 / 24) * 10) / 10;
       }
 
       setKpisZF({
         creadoAEsperaRespuesta: {
           dias: diasPromedioCreadoAEspera,
-          cumpleMeta: diasPromedioCreadoAEspera <= 15
-        },
-        arriboALiberacion: {
-          minutos: minutosPromedioArriboALiberacion,
-          cumpleMeta: minutosPromedioArriboALiberacion <= 45
+          cumpleMeta: diasPromedioCreadoAEspera > 0 && diasPromedioCreadoAEspera < 15
         }
       });
     } catch (error) {
       console.error('Error al cargar KPIs de ZF:', error);
       setKpisZF({
-        creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-        arriboALiberacion: { minutos: 0, cumpleMeta: true }
+        creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
       });
     }
   };
@@ -500,8 +482,7 @@ export default function Dashboard() {
           minutosPromedio: { mesAnterior: '0%', anoAnterior: '0%' }
         });
         setKpisZF({
-          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-          arriboALiberacion: { minutos: 0, cumpleMeta: true }
+          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
         });
       }
     } catch (error) {
@@ -1141,7 +1122,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="max-w-md">
           {/* KPI 1: Creado → Espera de Respuesta */}
           <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
             <div className="flex items-start justify-between mb-4">
@@ -1155,7 +1136,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-600">Creado → Espera de Respuesta</h4>
-                  <p className="text-xs text-gray-500 mt-1">Meta: ≤15 días</p>
+                  <p className="text-xs text-gray-500 mt-1">Meta: &lt;15 días</p>
                 </div>
               </div>
               <div className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -1163,7 +1144,9 @@ export default function Dashboard() {
                   ? 'bg-green-100 text-green-700' 
                   : 'bg-red-100 text-red-700'
               }`}>
-                {kpisZF.creadoAEsperaRespuesta.cumpleMeta ? '✓ Cumple' : '✗ No Cumple'}
+                {kpisZF.creadoAEsperaRespuesta.dias === 0 
+                  ? 'Sin datos' 
+                  : kpisZF.creadoAEsperaRespuesta.cumpleMeta ? '✓ Cumple' : '✗ No Cumple'}
               </div>
             </div>
             <div className="flex items-baseline gap-2">
@@ -1180,55 +1163,11 @@ export default function Dashboard() {
                 <span className={`font-semibold ${
                   kpisZF.creadoAEsperaRespuesta.cumpleMeta ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {kpisZF.creadoAEsperaRespuesta.dias <= 15 
-                    ? `${15 - kpisZF.creadoAEsperaRespuesta.dias} días bajo meta` 
-                    : `${kpisZF.creadoAEsperaRespuesta.dias - 15} días sobre meta`}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* KPI 2: Arribo → Liberación */}
-          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 flex items-center justify-center rounded-lg ${
-                  kpisZF.arriboALiberacion.cumpleMeta ? 'bg-green-100' : 'bg-red-100'
-                }`}>
-                  <i className={`ri-time-line text-2xl ${
-                    kpisZF.arriboALiberacion.cumpleMeta ? 'text-green-600' : 'text-red-600'
-                  }`}></i>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">Arribo → Liberación</h4>
-                  <p className="text-xs text-gray-500 mt-1">Meta: ≤45 minutos</p>
-                </div>
-              </div>
-              <div className={`px-3 py-1 rounded-full text-xs font-bold ${
-                kpisZF.arriboALiberacion.cumpleMeta 
-                  ? 'bg-green-100 text-green-700' 
-                  : 'bg-red-100 text-red-700'
-              }`}>
-                {kpisZF.arriboALiberacion.cumpleMeta ? '✓ Cumple' : '✗ No Cumple'}
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className={`text-4xl font-bold ${
-                kpisZF.arriboALiberacion.cumpleMeta ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {kpisZF.arriboALiberacion.minutos}
-              </span>
-              <span className="text-lg text-gray-600">min</span>
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">Tiempo promedio</span>
-                <span className={`font-semibold ${
-                  kpisZF.arriboALiberacion.cumpleMeta ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {kpisZF.arriboALiberacion.minutos <= 45 
-                    ? `${45 - kpisZF.arriboALiberacion.minutos} min bajo meta` 
-                    : `${kpisZF.arriboALiberacion.minutos - 45} min sobre meta`}
+                  {kpisZF.creadoAEsperaRespuesta.dias === 0
+                    ? 'Esperando datos'
+                    : kpisZF.creadoAEsperaRespuesta.dias < 15
+                    ? `${(15 - kpisZF.creadoAEsperaRespuesta.dias).toFixed(1)} días bajo meta` 
+                    : `${(kpisZF.creadoAEsperaRespuesta.dias - 15).toFixed(1)} días sobre meta`}
                 </span>
               </div>
             </div>
