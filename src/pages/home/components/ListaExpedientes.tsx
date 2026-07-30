@@ -33,7 +33,7 @@ interface Expediente {
 
 // Estados combinados de ambos módulos
 const ESTADOS_DROPSHIP = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
-const ESTADOS_ZF = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado', 'Liberación', 'Visto Listo'];
+const ESTADOS_ZF = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado'];
 const TODOS_ESTADOS = Array.from(new Set([...ESTADOS_DROPSHIP, ...ESTADOS_ZF])).sort();
 
 export default function ListaExpedientes() {
@@ -243,7 +243,7 @@ export default function ListaExpedientes() {
 
   const calcularTiempoTranscurrido = (expediente: Expediente): { minutos: number; dias: number } => {
     // Determinar el estado final según el tipo de módulo
-    const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Liberación';
+    const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
     
     // Si está en el estado final, usar el tiempo ya calculado
     if (expediente.estado_expediente === estadoFinal && expediente.tiempo_real_minutos && expediente.dias_entrega_real) {
@@ -618,7 +618,7 @@ export default function ListaExpedientes() {
       }
 
       // Determinar el estado final según el tipo de módulo
-      const estadoFinal = selectedExpediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Liberación';
+      const estadoFinal = selectedExpediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
       const estadoNuevo = selectedExpediente.estado_expediente;
       const estadoAnterior = expedienteOriginal.estado_expediente;
       
@@ -869,7 +869,7 @@ export default function ListaExpedientes() {
               ) : (
                 filteredExpedientes.map((expediente) => {
                   const tiempoTranscurrido = calcularTiempoTranscurrido(expediente);
-                  const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Liberación';
+                  const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
                   const esFinalizado = expediente.estado_expediente === estadoFinal;
                   
                   return (

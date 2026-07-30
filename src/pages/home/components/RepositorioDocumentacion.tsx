@@ -44,7 +44,7 @@ const getEstadoColor = (estado: string): string => {
 const ESTADOS_TODOS = [
   'Documentación', 'No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta',
   'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo',
-  'Completado', 'Arribo de Carga', 'Pendiente Proforma'
+  'Completado'
 ];
 
 export default function RepositorioDocumentacion() {

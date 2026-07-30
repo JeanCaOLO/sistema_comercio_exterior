@@ -235,7 +235,7 @@ export default function Dashboard() {
     const ahora = new Date();
     const evaluados = listaExpedientes.map(exp => {
       const fechaCreacion = exp.created_at || exp.fecha_creacion_expediente;
-      const estadoFinal = (exp.tipo_modulo || '').toLowerCase() === 'dropship' ? 'Notificado' : 'Liberación';
+      const estadoFinal = (exp.tipo_modulo || '').toLowerCase() === 'dropship' ? 'Notificado' : 'Completado';
       const esFinalizado = exp.estado_expediente === estadoFinal;
       const fechaFin = esFinalizado && exp.fecha_liberacion ? new Date(exp.fecha_liberacion) : ahora;
       const fechaIni = new Date(fechaCreacion);
@@ -557,7 +557,7 @@ export default function Dashboard() {
 
         const ordenEstados = [
           'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado',
-          'Arribo de Carga', 'Pendiente Proforma', 'Recepción de Carga',
+          'Recepción de Carga',
           'Facturación', 'Liberación', 'Notificado'
         ];
 
@@ -585,18 +585,16 @@ export default function Dashboard() {
         // Agrupa expedientes por estado actual y calcula días promedio desde creación
         const estadosOrden = [
           'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado',
-          'Arribo de Carga', 'Pendiente Proforma', 'Recepción de Carga',
+          'Recepción de Carga',
           'Facturación', 'Liberación', 'Notificado'
         ];
         const estadosPrevios: { [key: string]: string } = {
           'En Proceso': 'Asignado',
           'Espera de Respuesta': 'En Proceso',
           'Completado': 'Espera de Respuesta',
-          'Arribo de Carga': 'Completado',
-          'Pendiente Proforma': 'Arribo de Carga',
           'Recepción de Carga': 'Espera de Respuesta',
           'Facturación': 'Recepción de Carga',
-          'Liberación': 'Pendiente Proforma',
+          'Liberación': 'Facturación',
           'Notificado': 'Liberación'
         };
 
@@ -1429,9 +1427,6 @@ export default function Dashboard() {
               <ProgressBar label="En Proceso"        value={estadoDataZF.enProceso}       total={estadoDataZF.total} color="bg-amber-500" />
               <ProgressBar label="Espera de Respuesta" value={estadoDataZF.esperaRespuesta} total={estadoDataZF.total} color="bg-orange-400" />
               <ProgressBar label="Completado"        value={estadoDataZF.completado}      total={estadoDataZF.total} color="bg-emerald-500" />
-              <ProgressBar label="Arribo de Carga"   value={estadoDataZF.arriboCarga}     total={estadoDataZF.total} color="bg-cyan-500" />
-              <ProgressBar label="Pendiente Proforma" value={estadoDataZF.pendienteProforma} total={estadoDataZF.total} color="bg-violet-500" />
-              <ProgressBar label="Liberación"        value={estadoDataZF.liberado}        total={estadoDataZF.total} color="bg-teal-500" />
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="text-sm text-gray-600">Total ZF: <span className="font-semibold text-gray-900">{estadoDataZF.total}</span></div>
               </div>

@@ -34,7 +34,7 @@ interface Expediente {
 
 // Estados según el tipo de módulo
 const ESTADOS_DROPSHIP = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
-const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado', 'Arribo de Carga', 'Pendiente Proforma', 'Liberación', 'Visto Listo'];
+const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado'];
 
 interface GestionExpedientesProps {
   onNuevoExpediente?: () => void;
@@ -224,7 +224,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   const calcularTiempoTranscurrido = (expediente: Expediente): { minutos: number; dias: number } => {
     // Determinar el estado final según el tipo de módulo
-    const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Liberación';
+    const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
     
     // Si está en el estado final, usar el tiempo ya calculado
     if (expediente.estado_expediente === estadoFinal && expediente.tiempo_real_minutos && expediente.dias_entrega_real) {
@@ -768,7 +768,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       }
 
       // Determinar el estado final según el tipo de módulo
-      const estadoFinal = selectedExpediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Liberación';
+      const estadoFinal = selectedExpediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
       const estadoNuevo = selectedExpediente.estado_expediente;
       const estadoAnterior = expedienteOriginal.estado_expediente;
       
@@ -901,7 +901,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       };
 
       // Determinar el estado final según el tipo de módulo
-      const estadoFinal = draggedItem.tipo_modulo === 'dropship' ? 'Notificado' : 'Liberación';
+      const estadoFinal = draggedItem.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
       
       // Si cambia al estado final, calcular tiempos reales
       if (nuevoEstado === estadoFinal) {
@@ -1137,7 +1137,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
               <div className="p-3 space-y-3 max-h-[calc(100vh-320px)] overflow-y-auto">
                 {expedientesEstado.map(expediente => {
                   const tiempoTranscurrido = calcularTiempoTranscurrido(expediente);
-                  const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Liberación';
+                  const estadoFinal = expediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
                   const esFinalizado = expediente.estado_expediente === estadoFinal;
                   
                   return (
