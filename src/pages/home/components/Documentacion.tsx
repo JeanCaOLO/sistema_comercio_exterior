@@ -27,6 +27,7 @@ export default function Documentacion() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [searchPO, setSearchPO] = useState('');
+  const [filtroRuta, setFiltroRuta] = useState('');
 
   useEffect(() => {
     cargarDocumentos();
@@ -281,16 +282,22 @@ export default function Documentacion() {
     });
   };
 
-  const documentosFiltrados = searchPO.trim()
-    ? documentos.filter(doc => {
-        const term = searchPO.toLowerCase();
-        return (
-          (doc.po_tiquetera && doc.po_tiquetera.toLowerCase().includes(term)) ||
-          (doc.solicitante && doc.solicitante.toLowerCase().includes(term)) ||
-          (doc.responsable_creacion && doc.responsable_creacion.toLowerCase().includes(term))
-        );
-      })
-    : documentos;
+  const rutasDisponibles = [...new Set(documentos.map(doc => doc.tipo_po).filter(Boolean))].sort();
+
+  const documentosFiltrados = documentos.filter(doc => {
+    // Filtro por texto
+    if (searchPO.trim()) {
+      const term = searchPO.toLowerCase();
+      const coincideTexto =
+        (doc.po_tiquetera && doc.po_tiquetera.toLowerCase().includes(term)) ||
+        (doc.solicitante && doc.solicitante.toLowerCase().includes(term)) ||
+        (doc.responsable_creacion && doc.responsable_creacion.toLowerCase().includes(term));
+      if (!coincideTexto) return false;
+    }
+    // Filtro por ruta logística
+    if (filtroRuta && doc.tipo_po !== filtroRuta) return false;
+    return true;
+  });
 
   if (loading) {
     return (
@@ -376,6 +383,21 @@ export default function Documentacion() {
                 </button>
               )}
             </div>
+
+            {/* Filtro Ruta Logística */}
+            <div className="relative min-w-[220px]">
+              <select
+                value={filtroRuta}
+                onChange={(e) => setFiltroRuta(e.target.value)}
+                className="w-full pl-3 pr-9 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent appearance-none bg-white cursor-pointer"
+              >
+                <option value="">Todas las rutas</option>
+                {rutasDisponibles.map(ruta => (
+                  <option key={ruta} value={ruta}>{ruta}</option>
+                ))}
+              </select>
+              <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
+            </div>
             {/* Selector de módulo destino */}
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Enviar a:</span>
@@ -412,7 +434,7 @@ export default function Documentacion() {
             {/* Contador */}
             <span className="text-sm text-gray-500 whitespace-nowrap">
               <span className="font-bold text-amber-600">{selectedIds.size}</span> de {documentosFiltrados.length} seleccionado(s)
-              {searchPO && documentosFiltrados.length !== documentos.length && (
+              {(searchPO || filtroRuta) && documentosFiltrados.length !== documentos.length && (
                 <span className="text-gray-400 ml-1">(filtrado de {documentos.length})</span>
               )}
             </span>
