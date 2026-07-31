@@ -449,9 +449,9 @@ export default function Dashboard() {
         );
         setEstadoDataDropship(contarEstados(expDropship));
 
-        // KPI Notificado → OK País (Dropship)
+        // KPI OK País (Dropship) — cuenta Notificado y Visto Listo
         const countNotificadoOkPais = expDropship.filter(exp =>
-          exp.estado_expediente === 'Notificado' && exp.ok_pais === true
+          (exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo') && exp.ok_pais === true
         ).length;
         setNotificadoOkPais(countNotificadoOkPais);
 
@@ -1188,7 +1188,7 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Contador Notificado → OK País */}
+          {/* Contador OK País (Notificado + Visto Listo) */}
           <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow md:col-span-1">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -1196,8 +1196,8 @@ export default function Dashboard() {
                   <i className="ri-flag-line text-2xl text-green-600"></i>
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium text-gray-600">Notificado → OK País</h4>
-                  <p className="text-xs text-gray-500 mt-1">Expedientes cerrados con éxito</p>
+                  <h4 className="text-sm font-medium text-gray-600">Entregados con OK País</h4>
+                  <p className="text-xs text-gray-500 mt-1">Notificados y Visto Listo cerrados con éxito</p>
                 </div>
               </div>
             </div>
@@ -1210,17 +1210,17 @@ export default function Dashboard() {
                 <div className="flex-1 bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-green-500 h-2 rounded-full transition-all"
-                    style={{ width: estadoDataDropship.notificado > 0 ? `${Math.min(100, (notificadoOkPais / estadoDataDropship.notificado) * 100)}%` : '0%' }}
+                    style={{ width: (estadoDataDropship.notificado + (expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length)) > 0 ? `${Math.min(100, (notificadoOkPais / (estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length)) * 100)}%` : '0%' }}
                   ></div>
                 </div>
                 <span className="text-xs text-gray-600 font-medium whitespace-nowrap">
-                  {estadoDataDropship.notificado > 0
-                    ? `${Math.round((notificadoOkPais / estadoDataDropship.notificado) * 100)}% de Notificados`
-                    : '0% de Notificados'}
+                  {(estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length) > 0
+                    ? `${Math.round((notificadoOkPais / (estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length)) * 100)}% de entregados`
+                    : '0% de entregados'}
                 </span>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                {estadoDataDropship.notificado} en estado Notificado en el período
+                {estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length} en Notificado / Visto Listo en el período
               </p>
             </div>
           </div>
@@ -1259,14 +1259,17 @@ export default function Dashboard() {
                   <i className="ri-hourglass-line text-2xl text-orange-600"></i>
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium text-gray-600">Notificados Pendientes OK País</h4>
-                  <p className="text-xs text-gray-500 mt-1">Notificados sin cerrar aún</p>
+                  <h4 className="text-sm font-medium text-gray-600">Pendientes de OK País</h4>
+                  <p className="text-xs text-gray-500 mt-1">Entregados sin marca de cierre</p>
                 </div>
               </div>
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-5xl font-bold text-orange-600">
-                {Math.max(0, estadoDataDropship.notificado - notificadoOkPais)}
+                {(() => {
+                  const totalEntregados = estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length;
+                  return Math.max(0, totalEntregados - notificadoOkPais);
+                })()}
               </span>
               <span className="text-lg text-gray-500">expedientes</span>
             </div>
