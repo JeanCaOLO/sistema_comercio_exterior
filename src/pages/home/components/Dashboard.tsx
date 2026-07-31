@@ -125,6 +125,16 @@ export default function Dashboard() {
 
   const [notificadoOkPais, setNotificadoOkPais] = useState(0);
 
+  // KPI ETD vs Notificado (Dropship)
+  const META_ETD_DIAS = 5;
+  const [kpiEtdNotificado, setKpiEtdNotificado] = useState({
+    totalEvaluados: 0,
+    dentroRango: 0,
+    fueraRango: 0,
+    porcentajeOk: 0,
+    promedioDias: 0
+  });
+
   // KPI Duración Mínima 2 días
   const META_DURACION_DIAS = 2;
   const [kpiDuracion, setKpiDuracion] = useState({
@@ -270,60 +280,99 @@ export default function Dashboard() {
     setExpedientesReporte(evaluados.sort((a, b) => a.diasDuracion - b.diasDuracion));
   };
 
-  const cargarKPIsZF = async () => {
+  const cargarKPIsZF = async (expZF: any[]) => {
     try {
-      const { inicio, fin } = obtenerRangoFechas();
-
-      // Obtener IDs de expedientes ZF del período
-      const { data: expedientesZF, error: errorExp } = await supabase
-        .from('expedientes')
-        .select('id')
-        .eq('tipo_modulo', 'zf')
-        .gte('fecha_solicitud', inicio.toISOString().split('T')[0])
-        .lte('fecha_solicitud', fin.toISOString().split('T')[0]);
-
-      if (errorExp || !expedientesZF || expedientesZF.length === 0) {
+      if (!expZF || expZF.length === 0) {
         setKpisZF({
           creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
         });
         return;
       }
 
-      const expedienteIds = expedientesZF.map(exp => exp.id);
+      const expedienteIds = expZF.map(exp => exp.id);
 
-      // Obtener tiempos de estados
-      const { data: tiempos, error } = await supabase
+      // Mapa: expediente_id → created_at
+      const createdMap: Record<string, string> = {};
+      expZF.forEach(exp => {
+        createdMap[exp.id] = exp.created_at;
+      });
+
+      // ── Intento 1: tiempos de estados ──
+      let tiemposCreadoAEspera: { expediente_id: string; fechaEspera: string }[] = [];
+
+      const { data: tiempos, error: errorTiempos } = await supabase
         .from('expedientes_tiempos_estados')
-        .select('*')
+        .select('expediente_id, estado_nuevo, fecha_fin')
         .in('expediente_id', expedienteIds)
-        .not('minutos_transcurridos', 'is', null);
+        .not('fecha_fin', 'is', null);
 
-      if (error || !tiempos || tiempos.length === 0) {
-        setKpisZF({
-          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
+      if (!errorTiempos && tiempos && tiempos.length > 0) {
+        const filtrados = tiempos.filter((t: any) => {
+          const destino = (t.estado_nuevo || '').trim().toLowerCase();
+          return destino === 'espera de respuesta';
         });
-        return;
+
+        // Primera vez que llegó a Espera de Respuesta por ticket
+        const primeraPorExp: Record<string, string> = {};
+        filtrados.forEach((t: any) => {
+          if (!primeraPorExp[t.expediente_id] || t.fecha_fin < primeraPorExp[t.expediente_id]) {
+            primeraPorExp[t.expediente_id] = t.fecha_fin;
+          }
+        });
+
+        Object.entries(primeraPorExp).forEach(([expId, fechaEspera]) => {
+          tiemposCreadoAEspera.push({ expediente_id: expId, fechaEspera });
+        });
       }
 
-      // KPI 1: Creado → Espera de Respuesta (meta <15 días)
-      // Buscamos cualquier transición cuyo destino sea "Espera de Respuesta",
-      // sin filtrar por estado_anterior, para capturar todos los tickets ZF
-      const tiemposCreadoAEspera = tiempos.filter((t: any) => {
-        const destino = (t.estado_nuevo || '').trim();
-        return destino === 'Espera de Respuesta' || destino === 'Espera de respuesta';
+      // ── Intento 2 (fallback): historial de cambios ──
+      if (tiemposCreadoAEspera.length === 0) {
+        const { data: historial, error: errorHistorial } = await supabase
+          .from('expedientes_historial')
+          .select('expediente_id, campo_modificado, valor_nuevo, fecha_cambio')
+          .in('expediente_id', expedienteIds)
+          .eq('campo_modificado', 'Estado');
+
+        if (!errorHistorial && historial && historial.length > 0) {
+          const filtrados = historial.filter((h: any) => {
+            const destino = (h.valor_nuevo || '').trim().toLowerCase();
+            return destino === 'espera de respuesta';
+          });
+
+          // Primera vez que llegó a Espera de Respuesta por ticket
+          const primeraPorExp: Record<string, string> = {};
+          filtrados.forEach((h: any) => {
+            if (!primeraPorExp[h.expediente_id] || h.fecha_cambio < primeraPorExp[h.expediente_id]) {
+              primeraPorExp[h.expediente_id] = h.fecha_cambio;
+            }
+          });
+
+          Object.entries(primeraPorExp).forEach(([expId, fechaEspera]) => {
+            tiemposCreadoAEspera.push({ expediente_id: expId, fechaEspera });
+          });
+        }
+      }
+
+      // ── Calcular días desde creación hasta Espera de Respuesta ──
+      const diasPorExpediente: number[] = [];
+      tiemposCreadoAEspera.forEach(({ expediente_id: expId, fechaEspera }) => {
+        const fechaCreacion = createdMap[expId];
+        if (!fechaCreacion) return;
+        const diffMs = new Date(fechaEspera).getTime() - new Date(fechaCreacion).getTime();
+        const dias = diffMs / (1000 * 60 * 60 * 24);
+        diasPorExpediente.push(dias);
       });
 
       let diasPromedioCreadoAEspera = 0;
-      if (tiemposCreadoAEspera.length > 0) {
-        const totalMinutos = tiemposCreadoAEspera.reduce((sum: number, t: any) => sum + (t.minutos_transcurridos || 0), 0);
-        const minutosPromedio = totalMinutos / tiemposCreadoAEspera.length;
-        diasPromedioCreadoAEspera = Math.round((minutosPromedio / 60 / 24) * 10) / 10;
+      if (diasPorExpediente.length > 0) {
+        const totalDias = diasPorExpediente.reduce((sum, d) => sum + d, 0);
+        diasPromedioCreadoAEspera = Math.round((totalDias / diasPorExpediente.length) * 10) / 10;
       }
 
       setKpisZF({
         creadoAEsperaRespuesta: {
           dias: diasPromedioCreadoAEspera,
-          cumpleMeta: diasPromedioCreadoAEspera > 0 && diasPromedioCreadoAEspera < 15
+          cumpleMeta: diasPorExpediente.length > 0 && diasPromedioCreadoAEspera < 15
         }
       });
     } catch (error) {
@@ -455,6 +504,58 @@ export default function Dashboard() {
         ).length;
         setNotificadoOkPais(countNotificadoOkPais);
 
+        // KPI ETD vs Notificado (Dropship) — compara fecha ETD con fecha de llegada a Notificado
+        const expNotificadosConEtd = expDropship.filter(exp =>
+          (exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo') && exp.etd
+        );
+
+        if (expNotificadosConEtd.length > 0) {
+          const expNotIds = expNotificadosConEtd.map(e => e.id);
+          const { data: tiemposNotificado } = await supabase
+            .from('expedientes_tiempos_estados')
+            .select('expediente_id, fecha_inicio')
+            .in('expediente_id', expNotIds)
+            .eq('estado_nuevo', 'Notificado');
+
+          const tiempoPorExp: Record<string, string> = {};
+          if (tiemposNotificado) {
+            tiemposNotificado.forEach((t: any) => {
+              if (!tiempoPorExp[t.expediente_id] || t.fecha_inicio < tiempoPorExp[t.expediente_id]) {
+                tiempoPorExp[t.expediente_id] = t.fecha_inicio;
+              }
+            });
+          }
+
+          let dentroRango = 0;
+          let fueraRango = 0;
+          let sumaDias = 0;
+          let contados = 0;
+
+          expNotificadosConEtd.forEach(exp => {
+            const fechaNotificado = tiempoPorExp[exp.id];
+            if (!fechaNotificado) return;
+            const diffMs = new Date(fechaNotificado).getTime() - new Date(exp.etd).getTime();
+            const dias = diffMs / (1000 * 60 * 60 * 24);
+            contados++;
+            sumaDias += dias;
+            if (dias <= META_ETD_DIAS) {
+              dentroRango++;
+            } else {
+              fueraRango++;
+            }
+          });
+
+          setKpiEtdNotificado({
+            totalEvaluados: contados,
+            dentroRango,
+            fueraRango,
+            porcentajeOk: contados > 0 ? Math.round((dentroRango / contados) * 100) : 0,
+            promedioDias: contados > 0 ? Math.round(sumaDias / contados * 10) / 10 : 0
+          });
+        } else {
+          setKpiEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
+        }
+
         // Estados ZF — comparación case-insensitive
         const expZF = expedientes.filter(exp =>
           (exp.tipo_modulo || '').toLowerCase() === 'zf'
@@ -463,7 +564,7 @@ export default function Dashboard() {
 
         calcularKPIDuracionMinima(expedientes);
         await cargarTiemposEntreEstados(filtroModuloTiempos);
-        await cargarKPIsZF();
+        await cargarKPIsZF(expZF);
       } else {
         setExpedientes([]);
         setKpiData({ totalSolicitudes: 0, altaPrioridad: 0, cargaTrabajo: 0, volumenLineas: 0, minutosPromedio: 0 });
@@ -472,6 +573,7 @@ export default function Dashboard() {
         setEstadoDataDropship(estadoVacio);
         setEstadoDataZF(estadoVacio);
         setNotificadoOkPais(0);
+        setKpiEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
         setKpiDuracion({ totalEvaluados: 0, cumplen: 0, noCumplen: 0, porcentajeCumplimiento: 0, diasPromedioTotal: 0 });
         setExpedientesReporte([]);
         setComparativos({
@@ -1187,9 +1289,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Contador OK País (Notificado + Visto Listo) */}
-          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow md:col-span-1">
+          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-green-100">
@@ -1276,6 +1378,58 @@ export default function Dashboard() {
             <div className="mt-4 pt-4 border-t border-gray-200">
               <p className="text-xs text-gray-500">
                 Requieren marca de cierre "OK País"
+              </p>
+            </div>
+          </div>
+
+          {/* KPI ETD vs Notificado */}
+          <div className={`bg-white rounded-xl p-6 border-2 hover:shadow-lg transition-shadow ${
+            kpiEtdNotificado.fueraRango > 0 ? 'border-red-300' : 'border-gray-200'
+          }`}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 flex items-center justify-center rounded-lg ${
+                  kpiEtdNotificado.fueraRango > 0 ? 'bg-red-100' : 'bg-teal-100'
+                }`}>
+                  <i className={`ri-ship-line text-2xl ${
+                    kpiEtdNotificado.fueraRango > 0 ? 'text-red-600' : 'text-teal-600'
+                  }`}></i>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-600">ETD → Notificado</h4>
+                  <p className="text-xs text-gray-500 mt-1">Meta: ≤ {META_ETD_DIAS} días entre ETD y Notificado</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-5xl font-bold ${
+                kpiEtdNotificado.fueraRango > 0 ? 'text-red-600' : 'text-teal-600'
+              }`}>
+                {kpiEtdNotificado.dentroRango}
+              </span>
+              <span className="text-lg text-gray-500">OK / {kpiEtdNotificado.totalEvaluados}</span>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-gray-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      kpiEtdNotificado.porcentajeOk >= 80 ? 'bg-teal-500' :
+                      kpiEtdNotificado.porcentajeOk >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${kpiEtdNotificado.porcentajeOk}%` }}
+                  ></div>
+                </div>
+                <span className="text-xs text-gray-600 font-medium whitespace-nowrap">
+                  {kpiEtdNotificado.porcentajeOk}% OK
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                {kpiEtdNotificado.fueraRango > 0
+                  ? `${kpiEtdNotificado.fueraRango} expediente${kpiEtdNotificado.fueraRango !== 1 ? 's' : ''} fuera del KPI (promedio ${kpiEtdNotificado.promedioDias} días)`
+                  : kpiEtdNotificado.totalEvaluados > 0
+                  ? `Todos dentro del rango (promedio ${kpiEtdNotificado.promedioDias} días)`
+                  : 'Sin datos para evaluar'}
               </p>
             </div>
           </div>

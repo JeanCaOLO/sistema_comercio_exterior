@@ -289,7 +289,9 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
               registro_id: docCaaMatch.id,
               tabla_origen: 'documentos_caa',
             }]);
-          } catch { /* tabla puede no existir aún */ }
+          } catch (auditErr: any) {
+            console.error('[Auditoría] Error al insertar en documento_modificaciones (CCA match):', auditErr.message || auditErr);
+          }
         }
       }
 
@@ -312,14 +314,29 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
               registro_id: expMatch.id,
               tabla_origen: 'expedientes',
             }]);
-          } catch { /* tabla puede no existir aún */ }
+          } catch (auditErr: any) {
+            console.error('[Auditoría] Error al insertar en documento_modificaciones (expediente match):', auditErr.message || auditErr);
+          }
         }
       }
 
       // Insertar auditoría principal
       try {
-        await supabase.from('documento_modificaciones').insert([auditRecord]);
-      } catch { /* tabla puede no existir aún */ }
+        const { error: auditInsertError } = await supabase.from('documento_modificaciones').insert([auditRecord]);
+        if (auditInsertError) {
+          console.error('[Auditoría] Error al insertar en documento_modificaciones:', auditInsertError.message);
+        }
+      } catch (auditErr: any) {
+        console.error('[Auditoría] Error al insertar en documento_modificaciones (principal):', auditErr.message || auditErr);
+        // No bloqueamos el guardado, pero avisamos en el mensaje de éxito
+        setSuccessMsg('Registro actualizado correctamente. (El historial de modificaciones no se pudo guardar — revisá la consola para más detalles).');
+        setSaving(false);
+        setTimeout(() => {
+          onSaved();
+          onClose();
+        }, 2000);
+        return;
+      }
 
       setSuccessMsg('Registro actualizado correctamente.');
 

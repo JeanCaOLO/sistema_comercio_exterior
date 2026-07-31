@@ -30,6 +30,9 @@ interface Expediente {
   transito_corto?: boolean;
   ok_pais?: boolean;
   bl_cargado?: boolean;
+  etd?: string;
+  eta_real?: string;
+  tipo_modulo?: 'dropship' | 'zf';
 }
 
 // Estados según el tipo de módulo
@@ -686,8 +689,14 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         usuario_modificador: emailUsuario,
         transito_corto: tipoModulo === 'dropship' ? (selectedExpediente.transito_corto ?? false) : false,
         ok_pais: tipoModulo === 'dropship' ? (selectedExpediente.ok_pais ?? false) : false,
-        bl_cargado: selectedExpediente.bl_cargado ?? false
+        bl_cargado: selectedExpediente.bl_cargado ?? false,
+        etd: tipoModulo === 'dropship' ? (selectedExpediente.etd || null) : null,
+        eta_real: tipoModulo === 'zf' ? (selectedExpediente.eta_real || null) : null
       };
+
+      // Documentos: detectar si se agregaron archivos nuevos
+      let docsAgregados = false;
+      let countDocsNuevos = 0;
 
       // Subir nuevos archivos si hay
       if (uploadedFiles.length > 0) {
@@ -717,6 +726,9 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
           // Combinar documentos
           const todosLosDocs = [...docsExistentes, ...nuevasUrls];
           console.log('📦 Total documentos:', todosLosDocs.length);
+          
+          docsAgregados = true;
+          countDocsNuevos = nuevasUrls.length;
           
           // Guardar como array JSON
           updates.doc = todosLosDocs;
@@ -749,7 +761,12 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         { key: 'estado_expediente', label: 'Estado' },
         { key: 'motivo_revision', label: 'Motivo de Revisión' },
         { key: 'responsable_creacion', label: 'Responsable Creación' },
-        { key: 'instrucciones_adicionales', label: 'Observaciones' }
+        { key: 'instrucciones_adicionales', label: 'Observaciones' },
+        { key: 'transito_corto', label: 'Tránsito Corto' },
+        { key: 'ok_pais', label: 'OK País' },
+        { key: 'bl_cargado', label: 'BL Cargado' },
+        { key: 'etd', label: 'ETD' },
+        { key: 'eta_real', label: 'ETA Real' }
       ];
 
       for (const campo of camposAComparar) {
@@ -767,6 +784,19 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
             fecha_cambio: new Date().toISOString()
           }]);
         }
+      }
+
+      // Registrar si se agregaron documentos nuevos
+      if (docsAgregados && countDocsNuevos > 0) {
+        await supabase.from('expedientes_historial').insert([{
+          expediente_id: selectedExpediente.id,
+          campo_modificado: 'Documentos',
+          valor_anterior: '',
+          valor_nuevo: `Se agregaron ${countDocsNuevos} documento(s)`,
+          usuario: nombreUsuario,
+          usuario_email: emailUsuario,
+          fecha_cambio: new Date().toISOString()
+        }]);
       }
 
       // Determinar el estado final según el tipo de módulo

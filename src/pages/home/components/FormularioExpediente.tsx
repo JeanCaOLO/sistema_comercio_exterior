@@ -355,6 +355,40 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
 
       console.log('✅ Expediente creado con ID:', expedienteData.id);
 
+      // Registrar en el historial: creación del expediente
+      const resumenCreacion = [
+        `PO: ${formData.poTiquetera}`,
+        `Ruta: ${formData.tipoPO}`,
+        `Solicitante: ${formData.solicitante}`,
+        `Prioridad: ${formData.prioridad}${formData.prioridadSi ? ' (URGENTE: ' + formData.motivoUrgencia + ')' : ''}`,
+        `Dificultad: ${formData.dificultad}`,
+        `Líneas OC: ${formData.lineasOC}`,
+        `Responsable: ${formData.responsableCreacion}`,
+        `EXP ID: ${formData.exp || 'No asignado'}`,
+        `Transito Corto: ${formData.transitoCorto ? 'Sí' : 'No'}`,
+        `BL Cargado: ${formData.blCargado ? 'Sí' : 'No'}`
+      ].join(' | ');
+
+      await supabase.from('expedientes_historial').insert([{
+        expediente_id: expedienteData.id,
+        campo_modificado: 'Expediente creado',
+        valor_anterior: '',
+        valor_nuevo: resumenCreacion,
+        usuario: usuarioActualNombre,
+        usuario_email: usuarioActualEmail,
+        fecha_cambio: new Date().toISOString()
+      }]);
+
+      // Abrir registro de tiempo inicial
+      await supabase.from('expedientes_tiempos_estados').insert([{
+        expediente_id: expedienteData.id,
+        estado_anterior: 'Nuevo',
+        estado_nuevo: 'Asignado',
+        fecha_inicio: new Date().toISOString(),
+        fecha_fin: null,
+        minutos_transcurridos: null
+      }]);
+
       // Subir archivos si hay
       if (uploadedFiles.length > 0 && expedienteData) {
         console.log('📤 Subiendo', uploadedFiles.length, 'archivo(s)...');
@@ -375,6 +409,17 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
             throw updateError;
           } else {
             console.log('✅ Documentos guardados correctamente en la base de datos');
+            
+            // Registrar documentos en el historial
+            await supabase.from('expedientes_historial').insert([{
+              expediente_id: expedienteData.id,
+              campo_modificado: 'Documentos',
+              valor_anterior: '',
+              valor_nuevo: `Se agregaron ${documentosUrls.length} documento(s) al crear`,
+              usuario: usuarioActualNombre,
+              usuario_email: usuarioActualEmail,
+              fecha_cambio: new Date().toISOString()
+            }]);
           }
         } catch (uploadError) {
           console.error('❌ Error al subir archivos:', uploadError);
