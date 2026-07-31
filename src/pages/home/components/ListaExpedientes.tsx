@@ -209,10 +209,10 @@ export default function ListaExpedientes() {
       console.log('🔎 Después de búsqueda:', filtered.length);
     }
 
-    // Filtrar por persona (solicitante O responsable)
+    // Filtrar por persona (Responsable de Creación)
     if (filterPersona !== 'Todos') {
       filtered = filtered.filter(exp => 
-        exp.solicitante === filterPersona || exp.responsable_creacion === filterPersona
+        exp.responsable_creacion === filterPersona
       );
       console.log('👤 Después de filtro persona:', filtered.length);
     }

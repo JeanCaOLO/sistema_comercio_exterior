@@ -139,10 +139,10 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       );
     }
 
-    // Filtrar por persona
+    // Filtrar por persona (Responsable de Creación)
     if (filterPersona !== 'Todos') {
       filtered = filtered.filter(exp => 
-        exp.solicitante === filterPersona || exp.responsable_creacion === filterPersona
+        exp.responsable_creacion === filterPersona
       );
     }
 
