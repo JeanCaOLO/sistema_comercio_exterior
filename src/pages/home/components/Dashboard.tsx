@@ -123,6 +123,9 @@ export default function Dashboard() {
     creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
   });
 
+  const [kpiDsPromedioNotificado, setKpiDsPromedioNotificado] = useState<number>(0);
+  const [kpiZfPromedioCompletado, setKpiZfPromedioCompletado] = useState<number>(0);
+
   const [notificadoOkPais, setNotificadoOkPais] = useState(0);
 
   // KPI ETD vs Notificado (Dropship)
@@ -562,6 +565,110 @@ export default function Dashboard() {
         );
         setEstadoDataZF(contarEstados(expZF));
 
+        // ── KPI Dropship: Promedio días Creación → Notificado ──
+        const expDsNotificados = expDropship.filter(exp => exp.estado_expediente === 'Notificado');
+        let promedioDsNoti = 0;
+        if (expDsNotificados.length > 0) {
+          const dsIds = expDsNotificados.map(e => e.id);
+          const dsCreated: Record<string, string> = {};
+          expDsNotificados.forEach(exp => { dsCreated[exp.id] = exp.created_at; });
+          
+          const { data: dsTiempos } = await supabase
+            .from('expedientes_tiempos_estados')
+            .select('expediente_id, fecha_inicio')
+            .in('expediente_id', dsIds)
+            .eq('estado_nuevo', 'Notificado');
+          
+          const dsFechaLlegada: Record<string, string> = {};
+          if (dsTiempos) {
+            dsTiempos.forEach((t: any) => {
+              if (!dsFechaLlegada[t.expediente_id] || t.fecha_inicio < dsFechaLlegada[t.expediente_id]) {
+                dsFechaLlegada[t.expediente_id] = t.fecha_inicio;
+              }
+            });
+          }
+          
+          const dsFaltantes = dsIds.filter(id => !dsFechaLlegada[id]);
+          if (dsFaltantes.length > 0) {
+            const { data: dsHist } = await supabase
+              .from('expedientes_historial')
+              .select('expediente_id, fecha_cambio')
+              .in('expediente_id', dsFaltantes)
+              .eq('campo_modificado', 'Estado')
+              .eq('valor_nuevo', 'Notificado');
+            if (dsHist) {
+              dsHist.forEach((h: any) => {
+                if (!dsFechaLlegada[h.expediente_id] || h.fecha_cambio < dsFechaLlegada[h.expediente_id]) {
+                  dsFechaLlegada[h.expediente_id] = h.fecha_cambio;
+                }
+              });
+            }
+          }
+          
+          const dsDias: number[] = [];
+          Object.entries(dsFechaLlegada).forEach(([expId, fecha]) => {
+            const created = dsCreated[expId];
+            if (!created) return;
+            dsDias.push((new Date(fecha).getTime() - new Date(created).getTime()) / (1000 * 60 * 60 * 24));
+          });
+          if (dsDias.length > 0) {
+            promedioDsNoti = Math.round((dsDias.reduce((a, b) => a + b, 0) / dsDias.length) * 10) / 10;
+          }
+        }
+        setKpiDsPromedioNotificado(promedioDsNoti);
+
+        // ── KPI ZF: Promedio días Creación → Completado ──
+        const expZfCompletados = expZF.filter(exp => exp.estado_expediente === 'Completado');
+        let promedioZfCompl = 0;
+        if (expZfCompletados.length > 0) {
+          const zfIds = expZfCompletados.map(e => e.id);
+          const zfCreated: Record<string, string> = {};
+          expZfCompletados.forEach(exp => { zfCreated[exp.id] = exp.created_at; });
+          
+          const { data: zfTiempos } = await supabase
+            .from('expedientes_tiempos_estados')
+            .select('expediente_id, fecha_inicio')
+            .in('expediente_id', zfIds)
+            .eq('estado_nuevo', 'Completado');
+          
+          const zfFechaLlegada: Record<string, string> = {};
+          if (zfTiempos) {
+            zfTiempos.forEach((t: any) => {
+              if (!zfFechaLlegada[t.expediente_id] || t.fecha_inicio < zfFechaLlegada[t.expediente_id]) {
+                zfFechaLlegada[t.expediente_id] = t.fecha_inicio;
+              }
+            });
+          }
+          
+          const zfFaltantes = zfIds.filter(id => !zfFechaLlegada[id]);
+          if (zfFaltantes.length > 0) {
+            const { data: zfHist } = await supabase
+              .from('expedientes_historial')
+              .select('expediente_id, fecha_cambio')
+              .in('expediente_id', zfFaltantes)
+              .eq('campo_modificado', 'Estado')
+              .eq('valor_nuevo', 'Completado');
+            if (zfHist) {
+              zfHist.forEach((h: any) => {
+                if (!zfFechaLlegada[h.expediente_id] || h.fecha_cambio < zfFechaLlegada[h.expediente_id]) {
+                  zfFechaLlegada[h.expediente_id] = h.fecha_cambio;
+                }
+              });
+            }
+          }
+          
+          const zfDias: number[] = [];
+          Object.entries(zfFechaLlegada).forEach(([expId, fecha]) => {
+            const created = zfCreated[expId];
+            if (!created) return;
+            zfDias.push((new Date(fecha).getTime() - new Date(created).getTime()) / (1000 * 60 * 60 * 24));
+          });
+          if (zfDias.length > 0) {
+            promedioZfCompl = Math.round((zfDias.reduce((a, b) => a + b, 0) / zfDias.length) * 10) / 10;
+          }
+        }
+        setKpiZfPromedioCompletado(promedioZfCompl);
+
         calcularKPIDuracionMinima(expedientes);
         await cargarTiemposEntreEstados(filtroModuloTiempos);
         await cargarKPIsZF(expZF);
@@ -586,6 +693,8 @@ export default function Dashboard() {
         setKpisZF({
           creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
         });
+        setKpiDsPromedioNotificado(0);
+        setKpiZfPromedioCompletado(0);
       }
     } catch (error) {
       console.error('Error al cargar datos:', error);
@@ -892,7 +1001,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
         <KPICard
           title="Total Solicitudes"
           value={kpiData.totalSolicitudes}
@@ -926,12 +1035,16 @@ export default function Dashboard() {
           subtitle={`vs año anterior: ${comparativos.volumenLineas.anoAnterior}`}
         />
         <KPICard
-          title="Minutos Promedio"
-          value={kpiData.minutosPromedio}
-          icon="ri-timer-line"
-          color="bg-purple-500"
-          trend={comparativos.minutosPromedio.mesAnterior}
-          subtitle={`vs año anterior: ${comparativos.minutosPromedio.anoAnterior}`}
+          title="Promedio → Notificado (DS)"
+          value={kpiDsPromedioNotificado > 0 ? `${kpiDsPromedioNotificado} días` : '—'}
+          icon="ri-ship-line"
+          color="bg-sky-500"
+        />
+        <KPICard
+          title="Promedio → Completado (ZF)"
+          value={kpiZfPromedioCompletado > 0 ? `${kpiZfPromedioCompletado} días` : '—'}
+          icon="ri-building-line"
+          color="bg-violet-500"
         />
       </div>
 

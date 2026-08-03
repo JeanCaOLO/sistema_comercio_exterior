@@ -28,11 +28,27 @@ export default function Documentacion() {
   const [deleting, setDeleting] = useState(false);
   const [searchPO, setSearchPO] = useState('');
   const [filtroRuta, setFiltroRuta] = useState('');
+  const [loadTimeout, setLoadTimeout] = useState(false);
 
   useEffect(() => {
     cargarDocumentos();
     obtenerUsuarioActual();
   }, []);
+
+  // Safety net: si loading queda true más de 15 segundos, lo forzamos a false
+  useEffect(() => {
+    if (!loading) {
+      setLoadTimeout(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      console.warn('Documentacion: carga bloqueada por más de 15s, forzando salida del loading');
+      setLoadTimeout(true);
+      setLoading(false);
+      setDocumentos([]);
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const obtenerUsuarioActual = async () => {
     try {
@@ -53,6 +69,7 @@ export default function Documentacion() {
   const cargarDocumentos = async () => {
     try {
       setLoading(true);
+      setLoadTimeout(false);
 
       const { data, error } = await supabase
         .from('documentos_caa')
@@ -61,14 +78,28 @@ export default function Documentacion() {
 
       if (error) throw error;
 
-      const documentos = data || [];
-      setDocumentos(documentos);
+      const documentosData = data || [];
+      setDocumentos(documentosData);
       setSelectedIds(new Set());
     } catch (error) {
       console.error('Error al cargar documentos:', error);
       setDocumentos([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Recarga en segundo plano sin mostrar spinner — evita bloquear la UI
+  const recargarSilencioso = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('documentos_caa')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setDocumentos(data || []);
+    } catch (error) {
+      console.error('Error en recarga silenciosa:', error);
     }
   };
 
@@ -231,8 +262,15 @@ export default function Documentacion() {
       setSuccessMessage(`¡Ticket consolidado generado! 1 expediente con ${poUnicas.length} PO(s) y ${docsUnicos.length} documento(s) enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}.`);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 5000);
+
+      // === Limpiar estado local al instante sin esperar recarga del servidor ===
+      // Esto evita que la UI se quede bloqueada si la recarga tarda o se cuelga
+      const idsSet = new Set(ids);
+      setDocumentos(prev => prev.filter(d => !idsSet.has(d.id)));
       setSelectedIds(new Set());
-      await cargarDocumentos();
+
+      // Recargar en segundo plano para sincronizar con BD (no bloquea la UI)
+      recargarSilencioso();
     } catch (error: any) {
       console.error('Error al generar ticket:', error);
       setErrorMessage(error.message || 'Error al generar el ticket.');
