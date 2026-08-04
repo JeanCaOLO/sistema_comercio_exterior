@@ -75,9 +75,33 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const tituloModulo = tipoModulo === 'dropship' ? 'Gestión de Expedientes Dropship' : 'Gestión de Expedientes ZF';
   const ESTADOS = tipoModulo === 'dropship' ? ESTADOS_DROPSHIP : ESTADOS_ZF;
+
+  const descargarDocumento = async (url: string, fileName: string) => {
+    try {
+      setDownloadingId(url);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Error al descargar');
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+    } catch (error) {
+      console.error('Error al descargar documento:', error);
+      // Fallback: abrir en nueva pestaña si fetch falla (CORS, auth, etc.)
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   useEffect(() => {
     cargarExpedientes();
@@ -1427,20 +1451,27 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                             <p className="text-xs text-gray-500">Documento {index + 1}</p>
                           </div>
                         </div>
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          download
-                          className="ml-3 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap"
+                        <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            console.log('Descargando documento:', url);
+                            descargarDocumento(url, fileName);
                           }}
+                          disabled={downloadingId === url}
+                          className="ml-3 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <i className="ri-download-line"></i>
-                          <span className="text-sm font-medium">Descargar</span>
-                        </a>
+                          {downloadingId === url ? (
+                            <>
+                              <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin flex-shrink-0"></div>
+                              <span className="text-sm font-medium">Descargando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <i className="ri-download-line"></i>
+                              <span className="text-sm font-medium">Descargar</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     );
                   })}

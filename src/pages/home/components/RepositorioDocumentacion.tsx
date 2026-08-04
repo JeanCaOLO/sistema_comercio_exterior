@@ -198,10 +198,10 @@ export default function RepositorioDocumentacion() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
     } catch (error) {
       console.error('Error al descargar:', error);
-      window.open(url, '_blank');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } finally {
       setDownloadingId(null);
     }
