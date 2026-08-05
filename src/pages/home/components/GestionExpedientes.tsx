@@ -107,6 +107,19 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     cargarExpedientes();
     cargarUsuarios();
     obtenerUsuarioActual();
+
+    // Safety net: si loading queda en true más de 15s, forzarlo a false
+    const safetyTimer = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) {
+          console.warn('⚠️ Safety net: loading forzado a false después de 15s');
+          return false;
+        }
+        return prev;
+      });
+    }, 15000);
+
+    return () => clearTimeout(safetyTimer);
   }, []);
 
   useEffect(() => {
@@ -556,6 +569,23 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     setUploadedFiles([]);
   };
 
+  // Recarga silenciosa: sincroniza con Supabase en background sin bloquear la UI
+  const recargaSilenciosa = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('expedientes')
+        .select('*')
+        .eq('tipo_modulo', tipoModulo)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        setExpedientes(data);
+      }
+    } catch (err) {
+      console.error('Error en recarga silenciosa:', err);
+    }
+  };
+
   const handleEdit = (expediente?: Expediente) => {
     if (expediente) {
       setSelectedExpediente(expediente);
@@ -855,12 +885,18 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         await enviarCorreoCambioEstado(selectedExpediente, estadoAnterior, estadoNuevo);
       }
 
+      // Actualizar el expediente en el estado local al instante (sin bloquear la UI)
+      setExpedientes(prev =>
+        prev.map(exp => exp.id === selectedExpediente.id ? { ...exp, ...updates } : exp)
+      );
+
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
       setEditMode(false);
       setIsAsignarMode(false);
       cerrarModal();
-      cargarExpedientes();
+      // Recarga silenciosa en background — no bloquea la UI si falla o tarda
+      recargaSilenciosa();
     } catch (error: any) {
       console.error('❌ Error al guardar cambios:', error);
       setErrorMessage(error.message || 'Error al guardar los cambios');
@@ -994,9 +1030,15 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
       await enviarCorreoCambioEstado(draggedItem, estadoAnterior, nuevoEstado);
 
+      // Actualizar el expediente en el estado local al instante
+      setExpedientes(prev =>
+        prev.map(exp => exp.id === draggedItem.id ? { ...exp, ...updates } : exp)
+      );
+
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 2000);
-      cargarExpedientes();
+      // Recarga silenciosa en background
+      recargaSilenciosa();
     } catch (error) {
       console.error('Error al actualizar estado:', error);
       setShowError(true);
