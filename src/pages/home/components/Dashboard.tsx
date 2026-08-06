@@ -262,7 +262,7 @@ export default function Dashboard() {
         solicitante: exp.solicitante,
         responsable_creacion: exp.responsable_creacion,
         diasDuracion: Math.round(diasDuracion * 10) / 10,
-        cumpleMeta: diasDuracion >= META_DURACION_DIAS,
+        cumpleMeta: diasDuracion <= META_DURACION_DIAS,
         fechaCreacion: fechaCreacion,
         fechaFin: esFinalizado && exp.fecha_liberacion ? exp.fecha_liberacion : null
       };
@@ -1069,7 +1069,7 @@ export default function Dashboard() {
             </div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">Indicador de Duración Mínima de Expedientes</h3>
-              <p className="text-sm text-gray-600">Meta: cada expediente debe durar al menos <strong>2 días</strong> desde su creación</p>
+              <p className="text-sm text-gray-600">Meta: cada expediente debe durar como máximo <strong>2 días</strong> desde su creación</p>
             </div>
           </div>
           {/* Alerta global */}
@@ -1078,7 +1078,7 @@ export default function Dashboard() {
               <i className="ri-alarm-warning-fill text-red-600 text-xl"></i>
               <div className="text-sm">
                 <p className="font-bold text-red-700">{kpiDuracion.noCumplen} expediente{kpiDuracion.noCumplen !== 1 ? 's' : ''} fuera de rango</p>
-                <p className="text-red-600 text-xs">Duración menor a 2 días</p>
+                <p className="text-red-600 text-xs">Duración mayor a 2 días</p>
               </div>
             </div>
           )}
@@ -1126,7 +1126,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-1 mt-3">
               <i className="ri-checkbox-circle-fill text-teal-500 text-lg"></i>
-              <span className="text-xs text-teal-700 font-medium">≥ 2 días de duración</span>
+              <span className="text-xs text-teal-700 font-medium">≤ 2 días de duración</span>
             </div>
             <p className="text-xs text-gray-500 mt-1">Dentro del rango aceptable</p>
           </div>
@@ -1148,9 +1148,9 @@ export default function Dashboard() {
               }`}></i>
               <span className={`text-xs font-medium ${
                 kpiDuracion.noCumplen > 0 ? 'text-red-700' : 'text-gray-400'
-              }`}>&lt; 2 días de duración</span>
+              }`}>&gt; 2 días de duración</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Requieren atención</p>
+            <p className="text-xs text-gray-500 mt-1">Superan el límite permitido</p>
           </div>
 
           {/* Promedio general */}
@@ -1188,7 +1188,7 @@ export default function Dashboard() {
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">Reporte de Duración Mínima</h2>
-                <p className="text-sm text-gray-500 mt-1">Expedientes que cumplen o no la meta de ≥2 días de duración</p>
+                <p className="text-sm text-gray-500 mt-1">Expedientes que cumplen o no la meta de ≤2 días de duración</p>
               </div>
               <button
                 onClick={() => setShowReporteDuracion(false)}
@@ -1207,13 +1207,13 @@ export default function Dashboard() {
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-teal-600">{kpiDuracion.cumplen}</p>
-                  <p className="text-xs text-gray-500">Cumplen (≥2 días)</p>
+                  <p className="text-xs text-gray-500">Cumplen (≤2 días)</p>
                 </div>
                 <div className="text-center">
                   <p className={`text-2xl font-bold ${
                     kpiDuracion.noCumplen > 0 ? 'text-red-600' : 'text-gray-400'
                   }`}>{kpiDuracion.noCumplen}</p>
-                  <p className="text-xs text-gray-500">No Cumplen (&lt;2 días)</p>
+                  <p className="text-xs text-gray-500">No Cumplen (&gt;2 días)</p>
                 </div>
               </div>
             </div>
