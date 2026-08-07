@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { crearNotificacion } from '../../../lib/notificaciones';
 
 interface DocumentoCAA {
   id: string;
@@ -266,6 +267,18 @@ export default function Documentacion() {
       setSuccessMessage(`¡Ticket consolidado generado! 1 expediente con ${poUnicas.length} PO(s) y ${docsUnicos.length} documento(s) enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}.`);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 5000);
+
+      // === Notificación ===
+      crearNotificacion({
+        poTiquetera: poUnicas.join(' / '),
+        solicitante: primerDoc.solicitante || '',
+        responsable: primerDoc.responsable_creacion || '',
+        usuarioGenero: nombreUsuario,
+        tipo: 'ticket_creado',
+        mensaje: `${nombreUsuario} consolidó ${docsUnicos.length} documento(s) en 1 ticket para las POs: ${poUnicas.slice(0, 3).join(', ')}${poUnicas.length > 3 ? ' y más' : ''} — enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}`,
+        icono: 'ri-send-plane-line',
+        expedienteId: nuevoExpId,
+      });
 
       // === Limpiar estado local al instante sin esperar recarga del servidor ===
       // Esto evita que la UI se quede bloqueada si la recarga tarda o se cuelga

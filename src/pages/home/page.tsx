@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import GestionExpedientes from './components/GestionExpedientes';
@@ -12,12 +13,14 @@ import FormularioExpediente from './components/FormularioExpediente';
 import CargaDocumentosCAA from './components/CargaDocumentosCAA';
 import Documentacion from './components/Documentacion';
 import RepositorioDocumentacion from './components/RepositorioDocumentacion';
+import CampanitaNotificaciones from './components/CampanitaNotificaciones';
 
 export default function Home() {
   const [activeView, setActiveView] = useState('');
   const [showFormulario, setShowFormulario] = useState(false);
   const [refreshExpedientes, setRefreshExpedientes] = useState(0);
   const [tipoModuloActual, setTipoModuloActual] = useState<'dropship' | 'zf'>('dropship');
+  const [usuarioId, setUsuarioId] = useState('');
   const navigate = useNavigate();
   const { user, perfil, loading, signOut } = useAuth();
 
@@ -30,12 +33,24 @@ export default function Home() {
   // Establecer vista inicial según roles
   useEffect(() => {
     if (perfil?.roles && perfil.roles.length > 0 && !activeView) {
-      const roles = perfil.roles;
-      
-      // Todos los roles arrancan en dashboard
       setActiveView('dashboard');
     }
   }, [perfil, activeView]);
+
+  // Obtener usuarioId para las notificaciones
+  useEffect(() => {
+    const obtenerUsuarioId = async () => {
+      if (user?.email) {
+        const { data: usuario } = await supabase
+          .from('usuarios')
+          .select('id')
+          .eq('email', user.email)
+          .maybeSingle();
+        if (usuario) setUsuarioId(usuario.id);
+      }
+    };
+    obtenerUsuarioId();
+  }, [user]);
 
   useEffect(() => {
     const handleOpenFormulario = (event: any) => {
@@ -84,13 +99,13 @@ export default function Home() {
 
   const handleCloseFormulario = () => {
     setShowFormulario(false);
-    // Recargar la vista de expedientes si está activa
     if (activeView === 'gestion-dropship' || activeView === 'gestion-zf') {
       setRefreshExpedientes(prev => prev + 1);
     }
   };
 
   const userRoles = perfil?.roles || [];
+  const userName = perfil?.nombre || user.email || '';
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -98,33 +113,43 @@ export default function Home() {
         activeView={activeView} 
         setActiveView={setActiveView}
         onLogout={handleLogout}
-        userName={perfil?.nombre || user.email || ''}
+        userName={userName}
         userRoles={userRoles}
       />
       
-      <div className="flex-1 overflow-auto">
-        {activeView === 'dashboard' && <Dashboard />}
-        {activeView === 'gestion-dropship' && (
-          <GestionExpedientes 
-            onNuevoExpediente={() => setShowFormulario(true)}
-            refreshTrigger={refreshExpedientes}
-            tipoModulo="dropship"
-          />
-        )}
-        {activeView === 'gestion-zf' && (
-          <GestionExpedientes 
-            onNuevoExpediente={() => setShowFormulario(true)}
-            refreshTrigger={refreshExpedientes}
-            tipoModulo="zf"
-          />
-        )}
-        {activeView === 'lista-expedientes' && <ListaExpedientes />}
-        {activeView === 'reportes' && <Reportes />}
-        {activeView === 'carga-masiva' && <CargaMasiva />}
-        {activeView === 'configuracion' && <Configuracion />}
-        {activeView === 'carga-caa' && <CargaDocumentosCAA />}
-        {activeView === 'documentacion' && <Documentacion />}
-        {activeView === 'repositorio' && <RepositorioDocumentacion />}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Barra superior con campanita */}
+        <div className="flex items-center justify-end px-6 py-3 bg-white border-b border-gray-100 flex-shrink-0">
+          {usuarioId && (
+            <CampanitaNotificaciones usuarioId={usuarioId} usuarioNombre={userName} />
+          )}
+        </div>
+
+        {/* Contenido principal */}
+        <div className="flex-1 overflow-auto">
+          {activeView === 'dashboard' && <Dashboard />}
+          {activeView === 'gestion-dropship' && (
+            <GestionExpedientes 
+              onNuevoExpediente={() => setShowFormulario(true)}
+              refreshTrigger={refreshExpedientes}
+              tipoModulo="dropship"
+            />
+          )}
+          {activeView === 'gestion-zf' && (
+            <GestionExpedientes 
+              onNuevoExpediente={() => setShowFormulario(true)}
+              refreshTrigger={refreshExpedientes}
+              tipoModulo="zf"
+            />
+          )}
+          {activeView === 'lista-expedientes' && <ListaExpedientes />}
+          {activeView === 'reportes' && <Reportes />}
+          {activeView === 'carga-masiva' && <CargaMasiva />}
+          {activeView === 'configuracion' && <Configuracion />}
+          {activeView === 'carga-caa' && <CargaDocumentosCAA />}
+          {activeView === 'documentacion' && <Documentacion />}
+          {activeView === 'repositorio' && <RepositorioDocumentacion />}
+        </div>
       </div>
 
       {showFormulario && (

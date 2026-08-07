@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { crearNotificacion } from '../../../lib/notificaciones';
 
 interface RegistroDocumento {
   id: string;
@@ -347,6 +348,23 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       }
 
       setSuccessMsg('Registro actualizado correctamente.');
+
+      // === Notificación ===
+      const cambiosLista: string[] = [];
+      if (nuevosArchivos.length > 0) cambiosLista.push(`${nuevosArchivos.length} doc(s) agregado(s)`);
+      if (documentosEliminados.length > 0) cambiosLista.push(`${documentosEliminados.length} doc(s) eliminado(s)`);
+      const resumenCambios = cambiosLista.length > 0 ? cambiosLista.join(', ') : 'ajustes en metadatos (BL/TC/comentario)';
+
+      crearNotificacion({
+        poTiquetera: registro.po_tiquetera,
+        solicitante: registro.solicitante || '',
+        responsable: registro.responsable_creacion || '',
+        usuarioGenero: nombreUsuario,
+        tipo: 'documento_modificado',
+        mensaje: `${nombreUsuario} modificó el registro de ${registro.po_tiquetera}: ${resumenCambios}`,
+        icono: 'ri-edit-line',
+        expedienteId: registro.origen === 'expediente' ? registro.id : undefined,
+      });
 
       // Cerrar después de breve delay
       setTimeout(() => {

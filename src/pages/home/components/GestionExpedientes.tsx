@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { crearNotificacion } from '../../../lib/notificaciones';
 
 interface Expediente {
   id: string;
@@ -878,6 +879,20 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       if (error) throw error;
 
       console.log('✅ Expediente actualizado correctamente');
+
+      // === Notificación si se agregaron documentos ===
+      if (docsAgregados && countDocsNuevos > 0) {
+        crearNotificacion({
+          poTiquetera: selectedExpediente.po_tiquetera,
+          solicitante: selectedExpediente.solicitante || '',
+          responsable: selectedExpediente.responsable_creacion || '',
+          usuarioGenero: nombreUsuario,
+          tipo: 'documento_agregado',
+          mensaje: `${nombreUsuario} agregó ${countDocsNuevos} documento(s) al expediente ${selectedExpediente.po_tiquetera} (${selectedExpediente.exp_id})`,
+          icono: 'ri-file-add-line',
+          expedienteId: selectedExpediente.id,
+        });
+      }
 
       // Si cambió el estado, registrar tiempo y enviar correo
       if (estadoAnterior && estadoNuevo && estadoAnterior !== estadoNuevo) {

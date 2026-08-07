@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { crearNotificacion } from '../../../lib/notificaciones';
 
 interface POItem {
   id: string;
@@ -124,6 +125,91 @@ export default function CargaDocumentosCAA() {
     setSubmitting(true);
 
     try {
+      // ─── VALIDACIÓN: Verificar si alguna PO ya existe en documentos_caa O expedientes ───
+      const posDuplicadas: string[] = [];
+
+      try {
+        // Buscar en documentos_caa (staging)
+        const { data: docsCAA, error: errCAA } = await supabase
+          .from('documentos_caa')
+          .select('po_tiquetera');
+
+        if (errCAA) {
+          console.error('❌ Validación PO - Error documentos_caa:', errCAA);
+        }
+
+        // Buscar en expedientes (ya convertidos a tickets)
+        const { data: docsExp, error: errExp } = await supabase
+          .from('expedientes')
+          .select('po_tiquetera');
+
+        if (errExp) {
+          console.error('❌ Validación PO - Error expedientes:', errExp);
+        }
+
+        // Unir ambos resultados
+        const todasLasFilas = [
+          ...(docsCAA || []),
+          ...(docsExp || []),
+        ];
+
+        console.log('✅ Validación PO - Total filas revisadas:', todasLasFilas.length,
+          `(documentos_caa: ${docsCAA?.length || 0}, expedientes: ${docsExp?.length || 0})`);
+
+        if (todasLasFilas.length > 0) {
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.log('📋 VOLCADO COMPLETO de po_tiquetera en DB:');
+          todasLasFilas.forEach((registro: any, idx: number) => {
+            const valor = registro.po_tiquetera;
+            const tipo = valor === null ? 'NULL' : valor === '' ? 'VACÍO' : typeof valor;
+            console.log(`  [${idx}] tipo=${tipo} | valor="${valor}"`);
+          });
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+          for (const poVal of posValidas) {
+            const poLower = poVal.trim().toLowerCase();
+            let encontrada = false;
+            let donde = '';
+
+            for (const registro of todasLasFilas) {
+              const tiqueteras = String(registro.po_tiquetera || '').toLowerCase();
+              if (tiqueteras.includes(poLower)) {
+                encontrada = true;
+                // Determinar si viene de documentos_caa o expedientes
+                const idx = todasLasFilas.indexOf(registro);
+                const enCAA = idx < (docsCAA?.length || 0);
+                donde = enCAA ? 'documentos_caa' : 'expedientes';
+                console.log(`  ⛔ PO "${poVal}" ENCONTRADA en ${donde}: "${registro.po_tiquetera}"`);
+                break;
+              }
+            }
+
+            if (encontrada) {
+              posDuplicadas.push(poVal);
+            } else {
+              console.log(`  ✅ PO "${poVal}" NO encontrada en ninguna fila`);
+            }
+          }
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        } else {
+          console.warn('⚠️ Validación PO - SELECT devolvió 0 filas en ambas tablas.');
+        }
+      } catch (fetchErr: any) {
+        console.error('❌ Validación PO - Error:', fetchErr);
+        setError('Error de conexión al validar las POs. Revisa tu conexión e intenta de nuevo.');
+        setSubmitting(false);
+        return;
+      }
+
+      if (posDuplicadas.length > 0) {
+        setError(
+          `La${posDuplicadas.length > 1 ? 's' : ''} siguiente${posDuplicadas.length > 1 ? 's' : ''} PO${posDuplicadas.length > 1 ? 's' : ''} ya existe${posDuplicadas.length > 1 ? 'n' : ''} asociada${posDuplicadas.length > 1 ? 's' : ''} a documentos: ${posDuplicadas.join(', ')}. No se puede duplicar.`
+        );
+        setSubmitting(false);
+        return;
+      }
+      // ─── FIN VALIDACIÓN ───
+
       // Obtener usuario actual
       const { data: { user } } = await supabase.auth.getUser();
       let nombreUsuario = 'Sistema';
@@ -197,6 +283,17 @@ export default function CargaDocumentosCAA() {
         .single();
 
       if (insertError) throw new Error(`Error al guardar en Documentación: ${insertError.message}`);
+
+      // === Notificación ===
+      crearNotificacion({
+        poTiquetera: posCombinadas,
+        solicitante: nombreUsuario,
+        responsable: nombreUsuario,
+        usuarioGenero: nombreUsuario,
+        tipo: 'documento_agregado',
+        mensaje: `${nombreUsuario} subió ${urlsDocumentos.length} documento(s) a Repositorio Docs para las POs: ${posValidas.slice(0, 3).join(', ')}${posValidas.length > 3 ? ' y más' : ''} (${tipoModulo === 'dropship' ? 'Dropship' : 'ZF'})`,
+        icono: 'ri-file-upload-line',
+      });
 
       setSolicitudesCreadas([{ pos: posValidas, id: docCAA.id, modulo: tipoModulo }]);
       // Reset form
