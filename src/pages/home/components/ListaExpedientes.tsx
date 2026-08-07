@@ -1481,6 +1481,35 @@ export default function ListaExpedientes() {
                   )}
                 </div>
 
+                {/* Tránsito Corto — ambos módulos */}
+                <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.transito_corto ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex-1">
+                    <label className="block text-sm font-semibold text-gray-800 mb-1">
+                      Tránsito Corto (TC)
+                    </label>
+                    <p className="text-xs text-gray-500">Indica si la PO/Documentación es de tránsito corto</p>
+                  </div>
+                  {editMode ? (
+                    <button
+                      type="button"
+                      onClick={() => handleChange('transito_corto', !selectedExpediente.transito_corto)}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        selectedExpediente.transito_corto ? 'bg-amber-500' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          selectedExpediente.transito_corto ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.transito_corto ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {selectedExpediente.transito_corto ? 'TC Activado' : 'Sin TC'}
+                    </span>
+                  )}
+                </div>
+
                 {selectedExpediente.prioridad_urgente && selectedExpediente.motivo_urgencia && (
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Motivo de Urgencia</label>
