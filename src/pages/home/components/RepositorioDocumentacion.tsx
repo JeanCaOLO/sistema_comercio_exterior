@@ -11,6 +11,7 @@ interface ExpedienteRepo {
   tipo_modulo: string;
   estado_expediente: string;
   bl_cargado: boolean;
+  tc_cargado?: boolean;
   doc: string | string[] | null;
   exp_id: string;
   created_at: string;
@@ -342,6 +343,7 @@ export default function RepositorioDocumentacion() {
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Solicitante</th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Docs</th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">BL</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">TC</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Cargado por</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Acción</th>
@@ -351,7 +353,7 @@ export default function RepositorioDocumentacion() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredDocs.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-12 text-center">
+                      <td colSpan={13} className="px-4 py-12 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <i className="ri-file-search-line text-4xl text-gray-300"></i>
                           <p className="text-gray-500 font-medium">No se encontraron documentos con esos filtros</p>
@@ -422,6 +424,15 @@ export default function RepositorioDocumentacion() {
                                 <span className="text-xs text-gray-400">—</span>
                               )}
                             </td>
+                            <td className="px-3 py-3 text-center whitespace-nowrap">
+                              {doc.tc_cargado ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                                  TC
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </td>
                             <td className="px-3 py-3 whitespace-nowrap">
                               <div className="flex items-center gap-2">
                                 <div className="w-6 h-6 flex items-center justify-center bg-gray-100 rounded-full">
@@ -465,7 +476,7 @@ export default function RepositorioDocumentacion() {
                           {/* Fila expandible con la lista de archivos */}
                           {isExpanded && docCount > 0 && (
                             <tr key={`${doc.id}-expanded`}>
-                              <td colSpan={12} className="px-4 py-0 bg-gray-50/60">
+                              <td colSpan={13} className="px-4 py-0 bg-gray-50/60">
                                 <div className="py-3 space-y-2">
                                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                                     Archivos ({docCount})

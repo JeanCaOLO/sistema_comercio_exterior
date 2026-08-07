@@ -8,6 +8,7 @@ interface DocumentoCAA {
   solicitante: string;
   tipo_modulo: string;
   bl_cargado: boolean;
+  tc_cargado?: boolean;
   doc: string | string[] | null;
   created_at: string;
   responsable_creacion: string;
@@ -177,6 +178,7 @@ export default function Documentacion() {
       const todasLasPOs: string[] = [];
       const todosLosDocs: string[] = [];
       let algunBL = false;
+      let algunTC = false;
 
       for (const doc of docsCAA) {
         // Parsear POs — cada fila puede tener múltiples POs separadas por " / "
@@ -202,6 +204,7 @@ export default function Documentacion() {
         }
 
         if (doc.bl_cargado) algunBL = true;
+        if (doc.tc_cargado) algunTC = true;
       }
 
       // Dedeuplicar
@@ -220,6 +223,7 @@ export default function Documentacion() {
           po_tiquetera: poUnicas.join(' / '),
           doc: docsUnicos,
           bl_cargado: algunBL,
+          transito_corto: algunTC,
           estado_expediente: 'No Asignado',
           tipo_modulo: targetModulo,
           fecha_creacion_expediente: hoy,
@@ -531,6 +535,7 @@ export default function Documentacion() {
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Módulo</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Ruta Logística</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">BL</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">TC</th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Docs</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Cargado por</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
@@ -576,6 +581,15 @@ export default function Documentacion() {
                           {doc.bl_cargado ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
                               BL
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          {doc.tc_cargado ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                              TC
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400">—</span>

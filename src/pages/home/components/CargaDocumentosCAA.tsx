@@ -16,6 +16,7 @@ export default function CargaDocumentosCAA() {
   const [tipoModulo, setTipoModulo] = useState<'dropship' | 'zf' | null>(null);
   const [tipoRuta, setTipoRuta] = useState<string>('');
   const [blCargado, setBlCargado] = useState(false);
+  const [tcCargado, setTcCargado] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [pos, setPos] = useState<POItem[]>([{ id: crypto.randomUUID(), value: '' }]);
   const [isDragging, setIsDragging] = useState(false);
@@ -184,6 +185,7 @@ export default function CargaDocumentosCAA() {
           doc: urlsDocumentos,
           lineas_oc: 0,
           bl_cargado: blCargado,
+          tc_cargado: tcCargado,
           fecha_creacion_expediente: hoy,
           estado_expediente: 'Documentación',
           responsable_creacion: nombreUsuario,
@@ -203,6 +205,7 @@ export default function CargaDocumentosCAA() {
       setTipoModulo(null);
       setTipoRuta('');
       setBlCargado(false);
+      setTcCargado(false);
       setComentario('');
     } catch (err: any) {
       setError(err.message || 'Error al crear las solicitudes.');
@@ -413,6 +416,29 @@ export default function CargaDocumentosCAA() {
               </div>
             </div>
 
+            {/* Checkbox TC - Tránsito Corto */}
+            <div className="flex items-center gap-3 mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <button
+                type="button"
+                onClick={() => setTcCargado(!tcCargado)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                  tcCargado ? 'bg-amber-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    tcCargado ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+              <div className="flex-1">
+                <label className="text-sm font-semibold text-amber-800 cursor-pointer" onClick={() => setTcCargado(!tcCargado)}>
+                  ¿Esta documentación y POs son de Tránsito Corto (TC)?
+                </label>
+                <p className="text-xs text-amber-600 mt-0.5">Marca esta opción si el envío es de tránsito corto</p>
+              </div>
+            </div>
+
             {/* Zona de drag & drop */}
             <div
               onDragOver={handleDragOver}
@@ -590,6 +616,12 @@ export default function CargaDocumentosCAA() {
                   {blCargado ? 'Sí' : 'No'}
                 </div>
                 <p className="text-xs text-gray-500">BL</p>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <div className={`text-lg font-bold mb-1 ${tcCargado ? 'text-amber-600' : 'text-gray-400'}`}>
+                  {tcCargado ? 'Sí' : 'No'}
+                </div>
+                <p className="text-xs text-gray-500">TC</p>
               </div>
               <div className="text-center p-4 bg-amber-50 rounded-xl border border-amber-200">
                 <div className="text-lg font-bold mb-1 text-amber-600">

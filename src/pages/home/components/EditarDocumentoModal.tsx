@@ -9,6 +9,7 @@ interface RegistroDocumento {
   tipo_modulo: string;
   estado_expediente: string;
   bl_cargado: boolean;
+  tc_cargado?: boolean;
   doc: string | string[] | null;
   exp_id: string;
   created_at: string;
@@ -94,6 +95,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
   const [documentosEliminados, setDocumentosEliminados] = useState<string[]>([]);
   const [nuevosArchivos, setNuevosArchivos] = useState<File[]>([]);
   const [blCargado, setBlCargado] = useState(false);
+  const [tcCargado, setTcCargado] = useState(false);
   const [comentario, setComentario] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +111,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       setDocumentosEliminados([]);
       setNuevosArchivos([]);
       setBlCargado(registro.bl_cargado || false);
+      setTcCargado(registro.tc_cargado || false);
       setComentario(registro.instrucciones_adicionales || '');
       setError(null);
       setSuccessMsg(null);
@@ -227,6 +230,9 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       if (blCargado !== registro.bl_cargado) {
         acciones.push(`Cambió BL de ${registro.bl_cargado ? 'Sí' : 'No'} a ${blCargado ? 'Sí' : 'No'}`);
       }
+      if (tcCargado !== (registro.tc_cargado || false)) {
+        acciones.push(`Cambió TC de ${registro.tc_cargado ? 'Sí' : 'No'} a ${tcCargado ? 'Sí' : 'No'}`);
+      }
       if (comentario !== (registro.instrucciones_adicionales || '')) {
         acciones.push('Editó el comentario');
       }
@@ -245,6 +251,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           documentos_agregados: nuevosArchivos.length,
           documentos_eliminados: documentosEliminados.length,
           bl_modificado: blCargado !== registro.bl_cargado,
+          tc_modificado: tcCargado !== (registro.tc_cargado || false),
           comentario_modificado: comentario !== (registro.instrucciones_adicionales || ''),
         },
         documentos_anteriores: docsAnteriores,
@@ -257,6 +264,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       const updateData: Record<string, any> = {
         doc: docJson,
         bl_cargado: blCargado,
+        tc_cargado: tcCargado,
         instrucciones_adicionales: comentario.trim() || null,
       };
 
@@ -279,7 +287,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (docCaaMatch) {
           await supabase
             .from('documentos_caa')
-            .update({ doc: docJson, bl_cargado: blCargado, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: docJson, bl_cargado: blCargado, tc_cargado: tcCargado, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', docCaaMatch.id);
 
           // Registrar también en auditoría para documentos_caa
@@ -305,7 +313,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (expMatch) {
           await supabase
             .from('expedientes')
-            .update({ doc: docJson, bl_cargado: blCargado, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: docJson, bl_cargado: blCargado, transito_corto: tcCargado, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', expMatch.id);
 
           try {
@@ -433,6 +441,27 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
             <div>
               <p className="text-sm font-semibold text-blue-800">Documento BL (Bill of Lading)</p>
               <p className="text-xs text-blue-600">{blCargado ? 'Marcado como BL' : 'No es un BL'}</p>
+            </div>
+          </div>
+
+          {/* TC Toggle */}
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <button
+              type="button"
+              onClick={() => setTcCargado(!tcCargado)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                tcCargado ? 'bg-amber-500' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  tcCargado ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Tránsito Corto (TC)</p>
+              <p className="text-xs text-amber-600">{tcCargado ? 'Marcado como TC' : 'No es TC'}</p>
             </div>
           </div>
 
@@ -607,7 +636,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           </div>
 
           {/* Resumen de cambios */}
-          {(documentosEliminados.length > 0 || nuevosArchivos.length > 0 || blCargado !== registro.bl_cargado || comentario !== (registro.instrucciones_adicionales || '')) && (
+          {(documentosEliminados.length > 0 || nuevosArchivos.length > 0 || blCargado !== registro.bl_cargado || tcCargado !== (registro.tc_cargado || false) || comentario !== (registro.instrucciones_adicionales || '')) && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <h3 className="text-sm font-bold text-amber-800 mb-2">Resumen de cambios</h3>
               <ul className="space-y-1.5">
@@ -627,6 +656,12 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                   <li className="flex items-center gap-2 text-sm text-amber-700">
                     <i className="ri-swap-line text-blue-500"></i>
                     BL: {registro.bl_cargado ? 'Sí → No' : 'No → Sí'}
+                  </li>
+                )}
+                {tcCargado !== (registro.tc_cargado || false) && (
+                  <li className="flex items-center gap-2 text-sm text-amber-700">
+                    <i className="ri-swap-line text-amber-500"></i>
+                    TC: {(registro.tc_cargado || false) ? 'Sí → No' : 'No → Sí'}
                   </li>
                 )}
                 {comentario !== (registro.instrucciones_adicionales || '') && (
