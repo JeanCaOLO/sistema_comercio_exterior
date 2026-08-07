@@ -262,12 +262,18 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       // Actualizar en la tabla de origen
       const tablaOrigen = registro.origen === 'cca' ? 'documentos_caa' : 'expedientes';
 
+      // Construir update según la tabla de origen (tc_cargado en CAA, transito_corto en expedientes)
       const updateData: Record<string, any> = {
         doc: docJson,
         bl_cargado: blCargado,
-        tc_cargado: tcCargado,
         instrucciones_adicionales: comentario.trim() || null,
       };
+
+      if (tablaOrigen === 'expedientes') {
+        updateData.transito_corto = tcCargado;
+      } else {
+        updateData.tc_cargado = tcCargado;
+      }
 
       const { error: updateError } = await supabase
         .from(tablaOrigen)
