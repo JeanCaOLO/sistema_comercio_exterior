@@ -214,7 +214,7 @@ export default function Documentacion() {
 
       // Usar la metadata del primer documento como base
       const primerDoc = docsCAA[0];
-      const { id: _id, ...basePayload } = primerDoc;
+      const { id: _id, tc_cargado: _tc, ...basePayload } = primerDoc;
 
       // Crear UN solo expediente consolidado
       const { data: nuevoExp, error: insertExpError } = await supabase
