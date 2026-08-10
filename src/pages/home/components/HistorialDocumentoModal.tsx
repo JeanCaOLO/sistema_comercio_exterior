@@ -22,6 +22,9 @@ interface HistorialDocumentoModalProps {
   registroId: string;
   poTiquetera: string;
   expId: string;
+  createdAt: string;
+  responsableCreacion: string;
+  documentosIniciales: string[];
 }
 
 const extractFileName = (url: string): string => {
@@ -64,7 +67,7 @@ const getTimeAgo = (dateStr: string): string => {
   return formatDate(dateStr);
 };
 
-export default function HistorialDocumentoModal({ isOpen, onClose, registroId, poTiquetera, expId }: HistorialDocumentoModalProps) {
+export default function HistorialDocumentoModal({ isOpen, onClose, registroId, poTiquetera, expId, createdAt, responsableCreacion, documentosIniciales }: HistorialDocumentoModalProps) {
   const [modificaciones, setModificaciones] = useState<ModificacionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +90,6 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
         .order('created_at', { ascending: false });
 
       if (queryError) {
-        // Si la tabla no existe, mostramos mensaje amigable
         if (queryError.message?.includes('does not exist') || queryError.code === '42P01') {
           setError('La tabla de auditoría aún no fue creada en la base de datos. Ejecutá el SQL de creación en Supabase Dashboard.');
         } else {
@@ -118,6 +120,9 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
     const eliminados = anteriores.filter((u: string) => !nuevos.includes(u));
     return { agregados, eliminados, anteriores, nuevos };
   };
+
+  // Total de eventos: creación inicial + modificaciones
+  const totalEventos = 1 + modificaciones.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -156,30 +161,99 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
                 <p className="text-sm text-gray-500">Cargando historial...</p>
               </div>
             </div>
-          ) : error ? (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
-              <div className="w-12 h-12 flex items-center justify-center bg-amber-100 rounded-full mx-auto mb-3">
-                <i className="ri-information-line text-amber-600 text-2xl"></i>
-              </div>
-              <p className="text-amber-800 font-medium mb-1">Historial no disponible</p>
-              <p className="text-amber-700 text-sm max-w-md mx-auto">{error}</p>
-            </div>
-          ) : modificaciones.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="w-16 h-16 flex items-center justify-center bg-gray-50 rounded-full mx-auto mb-4">
-                <i className="ri-file-search-line text-3xl text-gray-300"></i>
-              </div>
-              <h3 className="text-base font-bold text-gray-700 mb-1">Sin modificaciones registradas</h3>
-              <p className="text-sm text-gray-400 max-w-sm mx-auto">
-                Este registro aún no ha sido modificado. Cuando alguien edite los documentos, el historial aparecerá aquí.
-              </p>
-            </div>
           ) : (
             <div className="relative">
               {/* Línea de timeline */}
               <div className="absolute left-[19px] top-2 bottom-2 w-0.5 bg-gray-200"></div>
 
               <div className="space-y-6">
+                {/* ─── CREACIÓN INICIAL (siempre visible, viene del registro) ─── */}
+                <div className="relative pl-12">
+                  <div className="absolute left-[11px] top-1.5 w-[18px] h-[18px] rounded-full border-2 border-white bg-teal-500 flex items-center justify-center">
+                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 flex items-center justify-center bg-teal-100 rounded-full flex-shrink-0">
+                            <i className="ri-user-add-line text-xs text-teal-600"></i>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{responsableCreacion || 'Sistema'}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0" title={formatDate(createdAt)}>
+                          {getTimeAgo(createdAt)}
+                        </span>
+                      </div>
+
+                      <p className="text-sm text-gray-700 leading-relaxed">
+                        Creó el registro con <strong>{documentosIniciales.length}</strong> documento(s)
+                      </p>
+
+                      {/* Botón para expandir archivos iniciales */}
+                      {documentosIniciales.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand('creacion-inicial')}
+                          className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors cursor-pointer"
+                        >
+                          <i className={`text-sm ${expandedItem === 'creacion-inicial' ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}`}></i>
+                          {expandedItem === 'creacion-inicial' ? 'Ocultar archivos iniciales' : `Ver ${documentosIniciales.length} archivo(s) inicial(es)`}
+                        </button>
+                      )}
+
+                      {/* Detalle expandido de archivos iniciales */}
+                      {expandedItem === 'creacion-inicial' && documentosIniciales.length > 0 && (
+                        <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-3 space-y-3">
+                          <div>
+                            <p className="text-xs font-semibold text-teal-700 mb-2 flex items-center gap-1.5">
+                              <i className="ri-file-list-3-line"></i>
+                              Documentos cargados inicialmente ({documentosIniciales.length})
+                            </p>
+                            <div className="space-y-1.5">
+                              {documentosIniciales.map((url: string, i: number) => (
+                                <div key={`init-${i}`} className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-lg">
+                                  <i className="ri-file-line text-teal-500 text-sm flex-shrink-0"></i>
+                                  <span className="text-xs text-teal-800 truncate">{extractFileName(url)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ─── MODIFICACIONES (de la tabla documento_modificaciones) ─── */}
+                {error && modificaciones.length === 0 && (
+                  <div className="relative pl-12">
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-7 h-7 flex items-center justify-center bg-amber-100 rounded-full flex-shrink-0">
+                          <i className="ri-information-line text-amber-600 text-sm"></i>
+                        </div>
+                        <div>
+                          <p className="text-amber-800 font-medium text-sm mb-1">Auditoría de cambios no disponible</p>
+                          <p className="text-amber-700 text-xs">{error}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {modificaciones.length === 0 && !error && (
+                  <div className="relative pl-12">
+                    <div className="absolute left-[11px] top-2 w-[18px] h-[18px] rounded-full border-2 border-white bg-gray-300 flex items-center justify-center"></div>
+                    <div className="text-center py-8">
+                      <p className="text-sm text-gray-400 italic">Sin modificaciones posteriores registradas</p>
+                    </div>
+                  </div>
+                )}
+
                 {modificaciones.map((mod, idx) => {
                   const isExpanded = expandedItem === mod.id;
                   const { agregados, eliminados } = cambiosDocs(mod);
@@ -198,7 +272,6 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
 
                       {/* Tarjeta del evento */}
                       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                        {/* Header de la tarjeta */}
                         <div className="p-4">
                           <div className="flex items-start justify-between gap-3 mb-2">
                             <div className="flex items-center gap-2.5 min-w-0">
@@ -217,10 +290,8 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
                             </span>
                           </div>
 
-                          {/* Acción realizada */}
                           <p className="text-sm text-gray-700 leading-relaxed">{mod.accion}</p>
 
-                          {/* Botón para expandir detalles */}
                           {(agregados.length > 0 || eliminados.length > 0) && (
                             <button
                               type="button"
@@ -233,7 +304,6 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
                           )}
                         </div>
 
-                        {/* Detalle expandido de archivos */}
                         {isExpanded && (agregados.length > 0 || eliminados.length > 0) && (
                           <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-3 space-y-3">
                             {agregados.length > 0 && (
@@ -284,7 +354,7 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
           <p className="text-xs text-gray-400">
             <i className="ri-information-line mr-1"></i>
-            {modificaciones.length} modificación(es) registrada(s)
+            {totalEventos} evento(s) en el historial ({modificaciones.length} modificación(es) + 1 creación)
           </p>
           <button
             type="button"

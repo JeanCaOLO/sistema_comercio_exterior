@@ -284,6 +284,32 @@ export default function CargaDocumentosCAA() {
 
       if (insertError) throw new Error(`Error al guardar en Documentación: ${insertError.message}`);
 
+      // ─── AUDITORÍA: Registrar creación inicial en documento_modificaciones ───
+      try {
+        await supabase.from('documento_modificaciones').insert([{
+          registro_id: docCAA.id,
+          tabla_origen: 'documentos_caa',
+          exp_id: 'Por Asignar',
+          po_tiquetera: posCombinadas,
+          usuario: nombreUsuario,
+          usuario_email: user?.email || '',
+          accion: `Creó el registro con ${urlsDocumentos.length} documento(s)`,
+          detalle: {
+            tipo: 'creacion_inicial',
+            modulo: tipoModulo,
+            ruta: tipoRuta,
+            bl_cargado: blCargado,
+            tc_cargado: tcCargado,
+            total_documentos: urlsDocumentos.length,
+          },
+          documentos_anteriores: [],
+          documentos_nuevos: urlsDocumentos,
+        }]);
+      } catch (auditErr: any) {
+        console.error('[Auditoría] Error al registrar creación en documento_modificaciones:', auditErr.message || auditErr);
+      }
+      // ─── FIN AUDITORÍA ───
+
       // === Notificación ===
       crearNotificacion({
         poTiquetera: posCombinadas,
