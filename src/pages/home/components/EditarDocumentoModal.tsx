@@ -21,6 +21,11 @@ interface RegistroDocumento {
   instrucciones_adicionales?: string | null;
 }
 
+interface POItem {
+  id: string;
+  value: string;
+}
+
 interface EditarDocumentoModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -98,6 +103,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
   const [blCargado, setBlCargado] = useState(false);
   const [tcCargado, setTcCargado] = useState(false);
   const [comentario, setComentario] = useState('');
+  const [pos, setPos] = useState<POItem[]>([{ id: crypto.randomUUID(), value: '' }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -114,6 +120,16 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       setBlCargado(registro.bl_cargado || false);
       setTcCargado(registro.tc_cargado || false);
       setComentario(registro.instrucciones_adicionales || '');
+      // Parsear POs existentes: separar por " / " primero, luego por ","
+      const poRaw = (registro.po_tiquetera || '').trim();
+      if (poRaw) {
+        const partes = poRaw.includes(' / ')
+          ? poRaw.split(' / ').map(p => p.trim()).filter(Boolean)
+          : poRaw.split(',').map(p => p.trim()).filter(Boolean);
+        setPos(partes.map(p => ({ id: crypto.randomUUID(), value: p })));
+      } else {
+        setPos([{ id: crypto.randomUUID(), value: '' }]);
+      }
       setError(null);
       setSuccessMsg(null);
     }
@@ -160,6 +176,23 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
 
   const quitarNuevoArchivo = (index: number) => {
     setNuevosArchivos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const addPO = () => {
+    setPos(prev => [...prev, { id: crypto.randomUUID(), value: '' }]);
+  };
+
+  const updatePO = (id: string, value: string) => {
+    setPos(prev => prev.map(po => po.id === id ? { ...po, value } : po));
+  };
+
+  const removePO = (id: string) => {
+    if (pos.length === 1) return;
+    setPos(prev => prev.filter(po => po.id !== id));
+  };
+
+  const getPosCombinadas = (): string => {
+    return pos.map(p => p.value.trim()).filter(v => v !== '').join(' / ');
   };
 
   const handleGuardar = async () => {
@@ -237,6 +270,11 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       if (comentario !== (registro.instrucciones_adicionales || '')) {
         acciones.push('Editó el comentario');
       }
+      const posCombinadas = getPosCombinadas();
+      const poOriginal = (registro.po_tiquetera || '').trim();
+      if (posCombinadas !== poOriginal) {
+        acciones.push(`Cambió PO de "${poOriginal || '(vacío)'}" a "${posCombinadas}"`);
+      }
 
       const accionDescripcion = acciones.length > 0 ? acciones.join('; ') : 'Sin cambios en documentos';
 
@@ -254,6 +292,9 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           bl_modificado: blCargado !== registro.bl_cargado,
           tc_modificado: tcCargado !== (registro.tc_cargado || false),
           comentario_modificado: comentario !== (registro.instrucciones_adicionales || ''),
+          po_modificado: posCombinadas !== poOriginal,
+          po_anterior: poOriginal,
+          po_nuevo: posCombinadas,
         },
         documentos_anteriores: docsAnteriores,
         documentos_nuevos: documentosFinales,
@@ -266,6 +307,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       const updateData: Record<string, any> = {
         doc: docJson,
         bl_cargado: blCargado,
+        po_tiquetera: posCombinadas,
         instrucciones_adicionales: comentario.trim() || null,
       };
 
@@ -294,7 +336,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (docCaaMatch) {
           await supabase
             .from('documentos_caa')
-            .update({ doc: docJson, bl_cargado: blCargado, tc_cargado: tcCargado, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: docJson, bl_cargado: blCargado, tc_cargado: tcCargado, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', docCaaMatch.id);
 
           // Registrar también en auditoría para documentos_caa
@@ -320,7 +362,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (expMatch) {
           await supabase
             .from('expedientes')
-            .update({ doc: docJson, bl_cargado: blCargado, transito_corto: tcCargado, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: docJson, bl_cargado: blCargado, transito_corto: tcCargado, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', expMatch.id);
 
           try {
@@ -445,6 +487,56 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
               <p className="text-xs text-gray-500">Solicitante</p>
               <p className="text-sm font-semibold text-gray-800">{registro.solicitante}</p>
             </div>
+          </div>
+
+          {/* PO Tiquetera editable - sistema de tags individuales */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-gray-700">
+                PO(s) Asociada(s)
+                <span className="ml-2 text-xs font-normal text-gray-400">— Editable</span>
+              </h3>
+              <button
+                type="button"
+                onClick={addPO}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-amber-700 bg-amber-50 rounded-lg text-sm font-medium hover:bg-amber-100 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <i className="ri-add-line text-base"></i>
+                Agregar PO
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {pos.map((po, index) => (
+                <div key={po.id} className="flex items-center gap-3">
+                  <div className="flex-shrink-0 w-7 h-7 flex items-center justify-center bg-gray-100 rounded-full text-xs font-bold text-gray-500">
+                    {index + 1}
+                  </div>
+                  <input
+                    type="text"
+                    value={po.value}
+                    onChange={(e) => updatePO(po.id, e.target.value)}
+                    placeholder={`Ej: PO-2024-00${String(index + 1).padStart(3, '0')}`}
+                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
+                  />
+                  {pos.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removePO(po.id)}
+                      className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer flex-shrink-0"
+                      title="Quitar esta PO"
+                    >
+                      <i className="ri-delete-bin-line text-lg"></i>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+              <i className="ri-information-line"></i>
+              Cada PO se ingresa por separado. Se guardan unidas con " / " en ambas tablas (documentos_caa y expedientes).
+            </p>
           </div>
 
           {/* BL Toggle */}
@@ -660,7 +752,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           </div>
 
           {/* Resumen de cambios */}
-          {(documentosEliminados.length > 0 || nuevosArchivos.length > 0 || blCargado !== registro.bl_cargado || tcCargado !== (registro.tc_cargado || false) || comentario !== (registro.instrucciones_adicionales || '')) && (
+          {(documentosEliminados.length > 0 || nuevosArchivos.length > 0 || blCargado !== registro.bl_cargado || tcCargado !== (registro.tc_cargado || false) || comentario !== (registro.instrucciones_adicionales || '') || getPosCombinadas() !== (registro.po_tiquetera || '').trim()) && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <h3 className="text-sm font-bold text-amber-800 mb-2">Resumen de cambios</h3>
               <ul className="space-y-1.5">
@@ -692,6 +784,12 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                   <li className="flex items-center gap-2 text-sm text-amber-700">
                     <i className="ri-edit-line text-purple-500"></i>
                     Comentario modificado
+                  </li>
+                )}
+                {getPosCombinadas() !== (registro.po_tiquetera || '').trim() && (
+                  <li className="flex items-center gap-2 text-sm text-amber-700">
+                    <i className="ri-swap-line text-amber-600"></i>
+                    PO: <strong>"{registro.po_tiquetera || '(vacío)'}"</strong> → <strong>"{getPosCombinadas() || '(vacío)'}"</strong>
                   </li>
                 )}
                 <li className="flex items-center gap-2 text-sm text-amber-700 pt-1 border-t border-amber-200">
