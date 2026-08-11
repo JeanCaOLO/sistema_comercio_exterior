@@ -33,6 +33,7 @@ interface Expediente {
   bl_cargado?: boolean;
   etd?: string;
   eta_real?: string;
+  aplica_tlc?: boolean;
   tipo_modulo?: 'dropship' | 'zf';
 }
 
@@ -745,6 +746,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         transito_corto: tipoModulo === 'dropship' ? (selectedExpediente.transito_corto ?? false) : false,
         ok_pais: tipoModulo === 'dropship' ? (selectedExpediente.ok_pais ?? false) : false,
         bl_cargado: selectedExpediente.bl_cargado ?? false,
+        aplica_tlc: selectedExpediente.aplica_tlc ?? false,
         etd: tipoModulo === 'dropship' ? (selectedExpediente.etd || null) : null,
         eta_real: tipoModulo === 'zf' ? (selectedExpediente.eta_real || null) : null
       };
@@ -820,6 +822,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         { key: 'transito_corto', label: 'Tránsito Corto' },
         { key: 'ok_pais', label: 'OK País' },
         { key: 'bl_cargado', label: 'BL Cargado' },
+        { key: 'aplica_tlc', label: 'Aplica TLC' },
         { key: 'etd', label: 'ETD' },
         { key: 'eta_real', label: 'ETA Real' }
       ];
@@ -1289,6 +1292,11 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                           {expediente.bl_cargado && (
                             <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
                               BL
+                            </span>
+                          )}
+                          {expediente.aplica_tlc && (
+                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
+                              TLC
                             </span>
                           )}
                         </div>
@@ -1879,6 +1887,35 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                   ) : (
                     <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.bl_cargado ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
                       {selectedExpediente.bl_cargado ? 'BL Cargado' : 'Sin BL'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Checkbox TLC — disponible para ambos módulos */}
+                <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.aplica_tlc ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex-1">
+                    <label className="block text-sm font-semibold text-gray-800 mb-1">
+                      Aplica TLC (Tratado de Libre Comercio)
+                    </label>
+                    <p className="text-xs text-gray-500">Marcar si esta documentación aplica para TLC</p>
+                  </div>
+                  {editMode ? (
+                    <button
+                      type="button"
+                      onClick={() => handleChange('aplica_tlc', !selectedExpediente.aplica_tlc)}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        selectedExpediente.aplica_tlc ? 'bg-green-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          selectedExpediente.aplica_tlc ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.aplica_tlc ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {selectedExpediente.aplica_tlc ? 'TLC Aplica' : 'Sin TLC'}
                     </span>
                   )}
                 </div>

@@ -11,6 +11,7 @@ interface RegistroDocumento {
   estado_expediente: string;
   bl_cargado: boolean;
   tc_cargado?: boolean;
+  aplica_tlc?: boolean;
   doc: string | string[] | null;
   exp_id: string;
   created_at: string;
@@ -102,6 +103,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
   const [nuevosArchivos, setNuevosArchivos] = useState<File[]>([]);
   const [blCargado, setBlCargado] = useState(false);
   const [tcCargado, setTcCargado] = useState(false);
+  const [aplicaTLC, setAplicaTLC] = useState(false);
   const [comentario, setComentario] = useState('');
   const [pos, setPos] = useState<POItem[]>([{ id: crypto.randomUUID(), value: '' }]);
   const [saving, setSaving] = useState(false);
@@ -119,6 +121,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       setNuevosArchivos([]);
       setBlCargado(registro.bl_cargado || false);
       setTcCargado(registro.tc_cargado || false);
+      setAplicaTLC(registro.aplica_tlc || false);
       setComentario(registro.instrucciones_adicionales || '');
       // Parsear POs existentes: separar por " / " primero, luego por ","
       const poRaw = (registro.po_tiquetera || '').trim();
@@ -267,6 +270,9 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       if (tcCargado !== (registro.tc_cargado || false)) {
         acciones.push(`Cambió TC de ${registro.tc_cargado ? 'Sí' : 'No'} a ${tcCargado ? 'Sí' : 'No'}`);
       }
+      if (aplicaTLC !== (registro.aplica_tlc || false)) {
+        acciones.push(`Cambió TLC de ${registro.aplica_tlc ? 'Sí' : 'No'} a ${aplicaTLC ? 'Sí' : 'No'}`);
+      }
       if (comentario !== (registro.instrucciones_adicionales || '')) {
         acciones.push('Editó el comentario');
       }
@@ -291,6 +297,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           documentos_eliminados: documentosEliminados.length,
           bl_modificado: blCargado !== registro.bl_cargado,
           tc_modificado: tcCargado !== (registro.tc_cargado || false),
+          tlc_modificado: aplicaTLC !== (registro.aplica_tlc || false),
           comentario_modificado: comentario !== (registro.instrucciones_adicionales || ''),
           po_modificado: posCombinadas !== poOriginal,
           po_anterior: poOriginal,
@@ -316,6 +323,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       } else {
         updateData.tc_cargado = tcCargado;
       }
+      updateData.aplica_tlc = aplicaTLC;
 
       const { error: updateError } = await supabase
         .from(tablaOrigen)
@@ -336,7 +344,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (docCaaMatch) {
           await supabase
             .from('documentos_caa')
-            .update({ doc: docJson, bl_cargado: blCargado, tc_cargado: tcCargado, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: docJson, bl_cargado: blCargado, tc_cargado: tcCargado, aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', docCaaMatch.id);
 
           // Registrar también en auditoría para documentos_caa
@@ -362,7 +370,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (expMatch) {
           await supabase
             .from('expedientes')
-            .update({ doc: docJson, bl_cargado: blCargado, transito_corto: tcCargado, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: docJson, bl_cargado: blCargado, transito_corto: tcCargado, aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', expMatch.id);
 
           try {
@@ -581,6 +589,27 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
             </div>
           </div>
 
+          {/* TLC Toggle */}
+          <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-4">
+            <button
+              type="button"
+              onClick={() => setAplicaTLC(!aplicaTLC)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                aplicaTLC ? 'bg-green-600' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  aplicaTLC ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <div>
+              <p className="text-sm font-semibold text-green-800">Aplica TLC (Tratado de Libre Comercio)</p>
+              <p className="text-xs text-green-600">{aplicaTLC ? 'Sí aplica TLC' : 'No aplica TLC'}</p>
+            </div>
+          </div>
+
           {/* Documentos actuales */}
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -752,7 +781,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           </div>
 
           {/* Resumen de cambios */}
-          {(documentosEliminados.length > 0 || nuevosArchivos.length > 0 || blCargado !== registro.bl_cargado || tcCargado !== (registro.tc_cargado || false) || comentario !== (registro.instrucciones_adicionales || '') || getPosCombinadas() !== (registro.po_tiquetera || '').trim()) && (
+          {(documentosEliminados.length > 0 || nuevosArchivos.length > 0 || blCargado !== registro.bl_cargado || tcCargado !== (registro.tc_cargado || false) || aplicaTLC !== (registro.aplica_tlc || false) || comentario !== (registro.instrucciones_adicionales || '') || getPosCombinadas() !== (registro.po_tiquetera || '').trim()) && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <h3 className="text-sm font-bold text-amber-800 mb-2">Resumen de cambios</h3>
               <ul className="space-y-1.5">
@@ -778,6 +807,12 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                   <li className="flex items-center gap-2 text-sm text-amber-700">
                     <i className="ri-swap-line text-amber-500"></i>
                     TC: {(registro.tc_cargado || false) ? 'Sí → No' : 'No → Sí'}
+                  </li>
+                )}
+                {aplicaTLC !== (registro.aplica_tlc || false) && (
+                  <li className="flex items-center gap-2 text-sm text-green-700">
+                    <i className="ri-swap-line text-green-500"></i>
+                    TLC: {(registro.aplica_tlc || false) ? 'Sí → No' : 'No → Sí'}
                   </li>
                 )}
                 {comentario !== (registro.instrucciones_adicionales || '') && (

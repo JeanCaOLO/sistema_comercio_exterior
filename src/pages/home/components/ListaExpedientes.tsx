@@ -31,6 +31,7 @@ interface Expediente {
   bl_cargado?: boolean;
   transito_corto?: boolean;
   ok_pais?: boolean;
+  aplica_tlc?: boolean;
   etd?: string;
   eta_real?: string;
 }
@@ -611,6 +612,7 @@ export default function ListaExpedientes() {
         bl_cargado: selectedExpediente.bl_cargado ?? false,
         transito_corto: selectedExpediente.transito_corto ?? false,
         ok_pais: selectedExpediente.ok_pais ?? false,
+        aplica_tlc: selectedExpediente.aplica_tlc ?? false,
         etd: selectedExpediente.etd || null,
         eta_real: selectedExpediente.eta_real || null
       };
@@ -672,6 +674,7 @@ export default function ListaExpedientes() {
         { key: 'transito_corto', label: 'Tránsito Corto' },
         { key: 'ok_pais', label: 'OK País' },
         { key: 'bl_cargado', label: 'BL Cargado' },
+        { key: 'aplica_tlc', label: 'Aplica TLC' },
         { key: 'etd', label: 'ETD' },
         { key: 'eta_real', label: 'ETA Real' }
       ];
@@ -1477,6 +1480,35 @@ export default function ListaExpedientes() {
                   ) : (
                     <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.bl_cargado ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
                       {selectedExpediente.bl_cargado ? 'BL Cargado' : 'Sin BL'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Aplica TLC — ambos módulos */}
+                <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.aplica_tlc ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex-1">
+                    <label className="block text-sm font-semibold text-gray-800 mb-1">
+                      Aplica TLC (Tratado de Libre Comercio)
+                    </label>
+                    <p className="text-xs text-gray-500">Indica si la documentación aplica para TLC</p>
+                  </div>
+                  {editMode ? (
+                    <button
+                      type="button"
+                      onClick={() => handleChange('aplica_tlc', !selectedExpediente.aplica_tlc)}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        selectedExpediente.aplica_tlc ? 'bg-green-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          selectedExpediente.aplica_tlc ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.aplica_tlc ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {selectedExpediente.aplica_tlc ? 'TLC Aplica' : 'Sin TLC'}
                     </span>
                   )}
                 </div>

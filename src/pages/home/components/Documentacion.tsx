@@ -10,6 +10,7 @@ interface DocumentoCAA {
   tipo_modulo: string;
   bl_cargado: boolean;
   tc_cargado?: boolean;
+  aplica_tlc?: boolean;
   doc: string | string[] | null;
   created_at: string;
   responsable_creacion: string;
@@ -206,11 +207,13 @@ export default function Documentacion() {
 
         if (doc.bl_cargado) algunBL = true;
         if (doc.tc_cargado) algunTC = true;
+        if (doc.aplica_tlc) algunTLC = true;
       }
 
       // Dedeuplicar
       const poUnicas = [...new Set(todasLasPOs)];
       const docsUnicos = [...new Set(todosLosDocs)];
+      let algunTLC = false;
 
       // Usar la metadata del primer documento como base
       const primerDoc = docsCAA[0];
@@ -225,6 +228,7 @@ export default function Documentacion() {
           doc: docsUnicos,
           bl_cargado: algunBL,
           transito_corto: algunTC,
+          aplica_tlc: algunTLC,
           estado_expediente: 'No Asignado',
           tipo_modulo: targetModulo,
           fecha_creacion_expediente: hoy,
@@ -549,6 +553,7 @@ export default function Documentacion() {
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Ruta Logística</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">BL</th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">TC</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">TLC</th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Docs</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Cargado por</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
@@ -603,6 +608,15 @@ export default function Documentacion() {
                           {doc.tc_cargado ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
                               TC
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          {doc.aplica_tlc ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                              TLC
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400">—</span>

@@ -111,7 +111,8 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
     etd: '', // Para Dropship
     etaReal: '', // Para ZF
     transitoCorto: false, // Para Dropship
-    blCargado: false
+    blCargado: false,
+    aplicaTLC: false
   });
 
   const [showSuccess, setShowSuccess] = useState(false);
@@ -345,7 +346,8 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
             eta_real: tipoModulo === 'zf' && formData.etaReal ? formData.etaReal : null,
             transito_corto: formData.transitoCorto,
             ok_pais: false,
-            bl_cargado: formData.blCargado
+            bl_cargado: formData.blCargado,
+            aplica_tlc: formData.aplicaTLC
           }
         ])
         .select()
@@ -366,7 +368,8 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
         `Responsable: ${formData.responsableCreacion}`,
         `EXP ID: ${formData.exp || 'No asignado'}`,
         `Transito Corto: ${formData.transitoCorto ? 'Sí' : 'No'}`,
-        `BL Cargado: ${formData.blCargado ? 'Sí' : 'No'}`
+        `BL Cargado: ${formData.blCargado ? 'Sí' : 'No'}`,
+        `Aplica TLC: ${formData.aplicaTLC ? 'Sí' : 'No'}`
       ].join(' | ');
 
       await supabase.from('expedientes_historial').insert([{
@@ -454,7 +457,8 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
           etd: '',
           etaReal: '',
           transitoCorto: false,
-          blCargado: false
+          blCargado: false,
+          aplicaTLC: false
         });
         setUploadedFiles([]);
         onClose();
@@ -855,6 +859,31 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                       Marcaste BL cargado pero no adjuntaste documentos. Recuerda subir el BL antes de guardar.
                     </p>
                   )}
+                </div>
+
+                {/* Checkbox Aplica TLC */}
+                <div className="md:col-span-2">
+                  <div className="flex items-center gap-4 bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-semibold text-green-800 mb-1">
+                        Aplica TLC (Tratado de Libre Comercio)
+                      </label>
+                      <p className="text-xs text-green-600">Marca esta opción si la documentación aplica para TLC</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, aplicaTLC: !prev.aplicaTLC }))}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        formData.aplicaTLC ? 'bg-green-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          formData.aplicaTLC ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
                 
                 <div>

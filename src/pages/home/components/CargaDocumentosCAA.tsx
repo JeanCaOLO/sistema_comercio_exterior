@@ -18,6 +18,7 @@ export default function CargaDocumentosCAA() {
   const [tipoRuta, setTipoRuta] = useState<string>('');
   const [blCargado, setBlCargado] = useState(false);
   const [tcCargado, setTcCargado] = useState(false);
+  const [aplicaTLC, setAplicaTLC] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [pos, setPos] = useState<POItem[]>([{ id: crypto.randomUUID(), value: '' }]);
   const [isDragging, setIsDragging] = useState(false);
@@ -272,6 +273,7 @@ export default function CargaDocumentosCAA() {
           lineas_oc: 0,
           bl_cargado: blCargado,
           tc_cargado: tcCargado,
+          aplica_tlc: aplicaTLC,
           fecha_creacion_expediente: hoy,
           estado_expediente: 'Documentación',
           responsable_creacion: nombreUsuario,
@@ -300,6 +302,7 @@ export default function CargaDocumentosCAA() {
             ruta: tipoRuta,
             bl_cargado: blCargado,
             tc_cargado: tcCargado,
+            aplica_tlc: aplicaTLC,
             total_documentos: urlsDocumentos.length,
           },
           documentos_anteriores: [],
@@ -329,6 +332,7 @@ export default function CargaDocumentosCAA() {
       setTipoRuta('');
       setBlCargado(false);
       setTcCargado(false);
+      setAplicaTLC(false);
       setComentario('');
     } catch (err: any) {
       setError(err.message || 'Error al crear las solicitudes.');
@@ -562,6 +566,29 @@ export default function CargaDocumentosCAA() {
               </div>
             </div>
 
+            {/* Checkbox TLC - Tratado de Libre Comercio */}
+            <div className="flex items-center gap-3 mb-4 bg-green-50 border border-green-200 rounded-lg p-3">
+              <button
+                type="button"
+                onClick={() => setAplicaTLC(!aplicaTLC)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                  aplicaTLC ? 'bg-green-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    aplicaTLC ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+              <div className="flex-1">
+                <label className="text-sm font-semibold text-green-800 cursor-pointer" onClick={() => setAplicaTLC(!aplicaTLC)}>
+                  ¿Aplica TLC (Tratado de Libre Comercio)?
+                </label>
+                <p className="text-xs text-green-600 mt-0.5">Marca esta opción si la documentación aplica para TLC</p>
+              </div>
+            </div>
+
             {/* Zona de drag & drop */}
             <div
               onDragOver={handleDragOver}
@@ -745,6 +772,12 @@ export default function CargaDocumentosCAA() {
                   {tcCargado ? 'Sí' : 'No'}
                 </div>
                 <p className="text-xs text-gray-500">TC</p>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <div className={`text-lg font-bold mb-1 ${aplicaTLC ? 'text-green-600' : 'text-gray-400'}`}>
+                  {aplicaTLC ? 'Sí' : 'No'}
+                </div>
+                <p className="text-xs text-gray-500">TLC</p>
               </div>
               <div className="text-center p-4 bg-amber-50 rounded-xl border border-amber-200">
                 <div className="text-lg font-bold mb-1 text-amber-600">
