@@ -196,10 +196,12 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       );
     }
 
-    // Filtrar por persona (Responsable de Creación)
+    // Filtrar por persona: en Dropship usa Solicitante, en ZF usa Responsable de Creación
     if (filterPersona !== 'Todos') {
       filtered = filtered.filter(exp => 
-        exp.responsable_creacion === filterPersona
+        tipoModulo === 'dropship'
+          ? exp.solicitante === filterPersona
+          : exp.responsable_creacion === filterPersona
       );
     }
 
@@ -1217,7 +1219,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Persona</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{tipoModulo === 'dropship' ? 'Solicitante' : 'Persona'}</label>
             <select
               value={filterPersona}
               onChange={(e) => setFilterPersona(e.target.value)}
