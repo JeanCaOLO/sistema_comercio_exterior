@@ -41,6 +41,8 @@ const ESTADOS_DROPSHIP = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Libe
 const ESTADOS_ZF = ['Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado'];
 const TODOS_ESTADOS = Array.from(new Set([...ESTADOS_DROPSHIP, ...ESTADOS_ZF])).sort();
 
+const ITEMS_PER_PAGE = 25;
+
 export default function ListaExpedientes() {
   const [expedientes, setExpedientes] = useState<Expediente[]>([]);
   const [filteredExpedientes, setFilteredExpedientes] = useState<Expediente[]>([]);
@@ -59,6 +61,7 @@ export default function ListaExpedientes() {
   const [showDocumentos, setShowDocumentos] = useState(false);
   const [documentosExpediente, setDocumentosExpediente] = useState<string[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentPage, setCurrentPage] = useState(1);
   
   // Nuevos estados para edición
   const [editMode, setEditMode] = useState(false);
@@ -94,6 +97,7 @@ export default function ListaExpedientes() {
   }, []);
 
   useEffect(() => {
+    setCurrentPage(1);
     filtrarExpedientes();
   }, [searchTerm, filterPersona, filterPrioridad, filterEstado, filterTipoModulo, expedientes]);
 
@@ -220,19 +224,8 @@ export default function ListaExpedientes() {
     console.log('📊 Total de expedientes en memoria:', expedientes.length);
     console.log('🔎 Filtros activos:', { searchTerm, filterPersona, filterPrioridad, filterEstado, filterTipoModulo });
 
-    // Verificar si hay filtros activos
-    const hayFiltrosActivos = searchTerm !== '' || filterPersona !== 'Todos' || filterPrioridad !== 'Todos' || filterEstado !== 'Todos' || filterTipoModulo !== 'Todos';
-
-    // Si NO hay filtros, mostrar solo los últimos 100
-    if (!hayFiltrosActivos) {
-      const ultimos100 = filtered.slice(0, 100);
-      console.log('📋 Sin filtros - Mostrando últimos 100 expedientes');
-      setFilteredExpedientes(ultimos100);
-      return;
-    }
-
-    // Si HAY filtros, aplicarlos sobre TODOS los expedientes
-    console.log('🔍 Filtros activos - Buscando en todos los expedientes');
+    // Aplicar todos los filtros sobre el dataset completo
+    console.log('🔍 Filtros activos o no - Procesando todos los expedientes');
 
     // Filtrar por búsqueda
     if (searchTerm) {
@@ -796,6 +789,11 @@ export default function ListaExpedientes() {
   // Verificar si hay filtros activos para mostrar el banner
   const hayFiltrosActivos = searchTerm !== '' || filterPersona !== 'Todos' || filterPrioridad !== 'Todos' || filterEstado !== 'Todos' || filterTipoModulo !== 'Todos';
 
+  // Paginación
+  const totalPages = Math.max(1, Math.ceil(filteredExpedientes.length / ITEMS_PER_PAGE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedExpedientes = filteredExpedientes.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
@@ -915,9 +913,9 @@ export default function ListaExpedientes() {
         {/* Información de resultados */}
         <div className="mt-4 pt-4 border-t border-gray-200">
           <p className="text-sm text-gray-600">
-            Mostrando <span className="font-semibold text-teal-600">{filteredExpedientes.length}</span> de <span className="font-semibold">{expedientes.length}</span> expedientes
-            {!hayFiltrosActivos && expedientes.length > 100 && (
-              <span className="ml-2 text-gray-500">(últimos 100 sin filtros)</span>
+            Mostrando <span className="font-semibold text-teal-600">{filteredExpedientes.length > ITEMS_PER_PAGE ? `${(safePage - 1) * ITEMS_PER_PAGE + 1}-${Math.min(safePage * ITEMS_PER_PAGE, filteredExpedientes.length)} de` : ''}</span> <span className="font-semibold">{filteredExpedientes.length}</span> expedientes de <span className="font-semibold">{expedientes.length}</span> totales
+            {!hayFiltrosActivos && expedientes.length > ITEMS_PER_PAGE && (
+              <span className="ml-2 text-gray-400">({ITEMS_PER_PAGE} por página)</span>
             )}
           </p>
         </div>
@@ -925,17 +923,6 @@ export default function ListaExpedientes() {
 
       {/* Tabla de Expedientes */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        {!hayFiltrosActivos && expedientes.length > 100 && (
-          <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
-            <div className="flex items-center gap-2 text-sm text-blue-800">
-              <i className="ri-information-line text-lg"></i>
-              <span>
-                Mostrando los últimos <span className="font-semibold">100 expedientes</span>. 
-                Usa los filtros para buscar en todo el historial de <span className="font-semibold">{expedientes.length}</span> expedientes.
-              </span>
-            </div>
-          </div>
-        )}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -954,7 +941,7 @@ export default function ListaExpedientes() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredExpedientes.length === 0 ? (
+              {paginatedExpedientes.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="px-6 py-12 text-center">
                     <div className="text-gray-400">
@@ -965,7 +952,7 @@ export default function ListaExpedientes() {
                   </td>
                 </tr>
               ) : (
-                filteredExpedientes.map((expediente) => {
+                paginatedExpedientes.map((expediente) => {
                   const tiempoTranscurrido = calcularTiempoTranscurrido(expediente);
                   // Para Dropship: tanto Notificado como Visto Listo son estados finales
                   const esFinalizado = expediente.tipo_modulo === 'dropship'
@@ -1063,6 +1050,58 @@ export default function ListaExpedientes() {
             </tbody>
           </table>
         </div>
+
+        {/* Paginación */}
+        {filteredExpedientes.length > ITEMS_PER_PAGE && (
+          <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Página <span className="font-semibold text-teal-600">{safePage}</span> de <span className="font-semibold">{totalPages}</span>
+              <span className="ml-1 text-gray-400">({(safePage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(safePage * ITEMS_PER_PAGE, filteredExpedientes.length)} de {filteredExpedientes.length})</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap transition-colors"
+              >
+                <i className="ri-arrow-left-s-line"></i> Anterior
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                // Mostrar solo un rango de páginas cercanas
+                if (totalPages <= 7 || page === 1 || page === totalPages || Math.abs(page - safePage) <= 1) {
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`w-8 h-8 text-sm rounded-lg cursor-pointer whitespace-nowrap transition-colors ${
+                        page === safePage
+                          ? 'bg-teal-600 text-white font-semibold'
+                          : 'border border-gray-300 hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  );
+                }
+                // Mostrar elipsis
+                if (page === 2 && safePage > 3) {
+                  return <span key="ellipsis-start" className="px-1 text-gray-400">...</span>;
+                }
+                if (page === totalPages - 1 && safePage < totalPages - 2) {
+                  return <span key="ellipsis-end" className="px-1 text-gray-400">...</span>;
+                }
+                return null;
+              })}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap transition-colors"
+              >
+                Siguiente <i className="ri-arrow-right-s-line"></i>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal de Historial */}

@@ -41,6 +41,24 @@ interface Expediente {
 const ESTADOS_DROPSHIP = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
 const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado'];
 
+// Tiempo para ocultar tickets terminados del kanban (2 días en ms)
+const DOS_DIAS_MS = 2 * 24 * 60 * 60 * 1000;
+
+const filtrarTerminadosAntiguos = (lista: Expediente[]): Expediente[] => {
+  const ahora = new Date();
+  return lista.filter(exp => {
+    const esTerminalDropship = exp.tipo_modulo === 'dropship' && exp.estado_expediente === 'Visto Listo';
+    const esTerminalZF = exp.tipo_modulo === 'zf' && exp.estado_expediente === 'Completado';
+    if (esTerminalDropship || esTerminalZF) {
+      const refDate = exp.fecha_liberacion
+        ? new Date(exp.fecha_liberacion)
+        : new Date((exp as any).updated_at || exp.created_at);
+      return (ahora.getTime() - refDate.getTime()) < DOS_DIAS_MS;
+    }
+    return true;
+  });
+};
+
 interface GestionExpedientesProps {
   onNuevoExpediente?: () => void;
   refreshTrigger?: number;
@@ -255,7 +273,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       }
       
       console.log('✅ Expedientes cargados:', data?.length || 0);
-      setExpedientes(data || []);
+      setExpedientes(filtrarTerminadosAntiguos(data || []));
     } catch (error) {
       console.error('❌ Error al cargar expedientes:', error);
       setExpedientes([]);
@@ -581,7 +599,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        setExpedientes(data);
+        setExpedientes(filtrarTerminadosAntiguos(data));
       }
     } catch (err) {
       console.error('Error en recarga silenciosa:', err);
@@ -874,6 +892,11 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         updates.dias_entrega_real = diasEntregaReal;
       }
 
+      // Dropship: actualizar fecha_liberacion al llegar a Visto Listo (para conteo de 2 días)
+      if (selectedExpediente.tipo_modulo === 'dropship' && estadoNuevo === 'Visto Listo' && estadoAnterior !== 'Visto Listo') {
+        updates.fecha_liberacion = new Date().toISOString();
+      }
+
       const { error } = await supabase
         .from('expedientes')
         .update(updates)
@@ -1023,6 +1046,11 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         updates.fecha_liberacion = fechaFinalizacion;
         updates.tiempo_real_minutos = tiempoRealMinutos;
         updates.dias_entrega_real = diasEntregaReal;
+      }
+
+      // Dropship: actualizar fecha_liberacion al llegar a Visto Listo (para conteo de 2 días)
+      if (draggedItem.tipo_modulo === 'dropship' && nuevoEstado === 'Visto Listo') {
+        updates.fecha_liberacion = new Date().toISOString();
       }
 
       const { error } = await supabase

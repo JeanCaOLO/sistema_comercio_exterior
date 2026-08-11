@@ -32,6 +32,8 @@ export default function Documentacion() {
   const [searchPO, setSearchPO] = useState('');
   const [filtroRuta, setFiltroRuta] = useState('');
   const [loadTimeout, setLoadTimeout] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 25;
 
   useEffect(() => {
     cargarDocumentos();
@@ -52,6 +54,11 @@ export default function Documentacion() {
     }, 15000);
     return () => clearTimeout(timer);
   }, [loading]);
+
+  // Resetear página al cambiar filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchPO, filtroRuta]);
 
   const obtenerUsuarioActual = async () => {
     try {
@@ -358,6 +365,13 @@ export default function Documentacion() {
     return true;
   });
 
+  // Paginación
+  const totalPages = Math.ceil(documentosFiltrados.length / ITEMS_PER_PAGE);
+  const safePage = Math.min(currentPage, Math.max(1, totalPages));
+  const docsPaginados = documentosFiltrados.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  const startIndex = documentosFiltrados.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0;
+  const endIndex = Math.min(safePage * ITEMS_PER_PAGE, documentosFiltrados.length);
+
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
@@ -496,6 +510,8 @@ export default function Documentacion() {
               {(searchPO || filtroRuta) && documentosFiltrados.length !== documentos.length && (
                 <span className="text-gray-400 ml-1">(filtrado de {documentos.length})</span>
               )}
+              <span className="text-gray-400 mx-1">|</span>
+              <span className="text-gray-500">Pág. {safePage} de {Math.max(1, totalPages)}</span>
             </span>
 
             {/* Botón eliminar */}
@@ -543,7 +559,7 @@ export default function Documentacion() {
                     <th className="px-4 py-3 w-12">
                       <input
                         type="checkbox"
-                        checked={documentosFiltrados.length > 0 && selectedIds.size === documentosFiltrados.length}
+                        checked={documentosFiltrados.length > 0 && selectedIds.size === documentosFiltrados.length && documentosFiltrados.length > 0}
                         onChange={toggleSelectAll}
                         className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
                       />
@@ -560,7 +576,7 @@ export default function Documentacion() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {documentosFiltrados.map((doc) => {
+                  {docsPaginados.map((doc) => {
                     const isSelected = selectedIds.has(doc.id);
                     return (
                       <tr
@@ -643,6 +659,58 @@ export default function Documentacion() {
               </table>
             </div>
           </div>
+
+          {/* Paginación */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-4">
+              <span className="text-sm text-gray-500">
+                Mostrando <strong>{startIndex}-{endIndex}</strong> de <strong>{documentosFiltrados.length}</strong> documento(s)
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  <i className="ri-arrow-left-s-line"></i>
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
+                  .reduce<(number | 'ellipsis')[]>((acc, p, idx, arr) => {
+                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('ellipsis');
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, i) =>
+                    p === 'ellipsis' ? (
+                      <span key={`e-${i}`} className="w-8 h-8 flex items-center justify-center text-sm text-gray-400">...</span>
+                    ) : (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setCurrentPage(p as number)}
+                        className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                          safePage === p
+                            ? 'bg-amber-600 text-white'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  <i className="ri-arrow-right-s-line"></i>
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 

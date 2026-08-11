@@ -62,6 +62,8 @@ export default function RepositorioDocumentacion() {
   const [registroEditando, setRegistroEditando] = useState<ExpedienteRepo | null>(null);
   const [historialOpen, setHistorialOpen] = useState(false);
   const [registroHistorial, setRegistroHistorial] = useState<ExpedienteRepo | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 25;
 
   useEffect(() => {
     cargarDocumentos();
@@ -178,6 +180,7 @@ export default function RepositorioDocumentacion() {
     }
 
     setFilteredDocs(filtered);
+    setCurrentPage(1);
   };
 
   const getDocCount = (doc: string | string[] | null): number => {
@@ -190,6 +193,13 @@ export default function RepositorioDocumentacion() {
       return doc.trim() ? 1 : 0;
     }
   };
+
+  // Paginación
+  const totalPages = Math.ceil(filteredDocs.length / ITEMS_PER_PAGE);
+  const safePage = Math.min(currentPage, Math.max(1, totalPages));
+  const docsPaginados = filteredDocs.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  const startIndex = filteredDocs.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0;
+  const endIndex = Math.min(safePage * ITEMS_PER_PAGE, filteredDocs.length);
 
   const parseDocUrls = (doc: string | string[] | null): string[] => {
     if (!doc) return [];
@@ -273,14 +283,48 @@ export default function RepositorioDocumentacion() {
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="relative inline-flex">
-            <div className="w-20 h-20 border-4 border-gray-200 border-t-gray-600 rounded-full animate-spin"></div>
+        <div className="text-center max-w-lg w-full">
+          {/* Spinner principal */}
+          <div className="relative inline-flex mb-8">
+            <div className="w-24 h-24 border-4 border-gray-200 border-t-gray-700 rounded-full animate-spin"></div>
             <div className="absolute inset-0 flex items-center justify-center">
-              <i className="ri-archive-line text-3xl text-gray-600"></i>
+              <i className="ri-archive-line text-4xl text-gray-700"></i>
             </div>
           </div>
-          <p className="mt-6 text-gray-700 font-semibold text-lg">Cargando repositorio...</p>
+
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Cargando repositorio</h3>
+          <p className="text-gray-500 mb-6">Consultando documentos en la base de datos...</p>
+
+          {/* Barras de progreso simuladas */}
+          <div className="space-y-3">
+            <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
+              <div className="h-full bg-gray-400 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+            </div>
+            <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
+              <div className="h-full bg-gray-400 rounded-full animate-pulse" style={{ width: '35%', animationDelay: '0.2s' }}></div>
+            </div>
+            <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
+              <div className="h-full bg-gray-400 rounded-full animate-pulse" style={{ width: '80%', animationDelay: '0.4s' }}></div>
+            </div>
+          </div>
+
+          {/* Skeleton de la tabla */}
+          <div className="mt-8 bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="p-4 bg-gray-50 border-b border-gray-200 flex gap-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-3 bg-gray-200 rounded flex-1 animate-pulse" style={{ animationDelay: `${i * 0.1}s` }}></div>
+              ))}
+            </div>
+            <div className="divide-y divide-gray-100">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="p-4 flex gap-4 animate-pulse" style={{ animationDelay: `${i * 0.15}s` }}>
+                  {[...Array(5)].map((_, j) => (
+                    <div key={j} className="h-4 bg-gray-100 rounded flex-1"></div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -365,6 +409,8 @@ export default function RepositorioDocumentacion() {
               {/* Contador */}
               <span className="text-sm text-gray-500 whitespace-nowrap ml-auto">
                 <span className="font-bold text-gray-700">{filteredDocs.length}</span> de {documentos.length} documento(s)
+                <span className="text-gray-400 mx-1">|</span>
+                Pág. {safePage} de {Math.max(1, totalPages)}
               </span>
             </div>
           </div>
@@ -403,7 +449,7 @@ export default function RepositorioDocumentacion() {
                       </td>
                     </tr>
                   ) : (
-                    filteredDocs.map((doc) => {
+                    docsPaginados.map((doc) => {
                       const isExpanded = expandedRows.has(doc.id);
                       const docUrls = parseDocUrls(doc.doc);
                       const docCount = docUrls.length;
@@ -594,6 +640,58 @@ export default function RepositorioDocumentacion() {
               </table>
             </div>
           </div>
+
+          {/* Paginación */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-4">
+              <span className="text-sm text-gray-500">
+                Mostrando <strong>{startIndex}-{endIndex}</strong> de <strong>{filteredDocs.length}</strong> documento(s)
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  <i className="ri-arrow-left-s-line"></i>
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
+                  .reduce<(number | 'ellipsis')[]>((acc, p, idx, arr) => {
+                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('ellipsis');
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, i) =>
+                    p === 'ellipsis' ? (
+                      <span key={`e-${i}`} className="w-8 h-8 flex items-center justify-center text-sm text-gray-400">...</span>
+                    ) : (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setCurrentPage(p as number)}
+                        className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                          safePage === p
+                            ? 'bg-gray-700 text-white'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  <i className="ri-arrow-right-s-line"></i>
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
