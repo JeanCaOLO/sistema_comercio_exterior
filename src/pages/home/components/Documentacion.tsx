@@ -189,6 +189,7 @@ export default function Documentacion() {
       const todosLosDocs: string[] = [];
       let algunBL = false;
       let algunTC = false;
+      let algunTLC = false;
 
       for (const doc of docsCAA) {
         // Parsear POs — cada fila puede tener múltiples POs separadas por " / "
@@ -221,7 +222,6 @@ export default function Documentacion() {
       // Dedeuplicar
       const poUnicas = [...new Set(todasLasPOs)];
       const docsUnicos = [...new Set(todosLosDocs)];
-      let algunTLC = false;
 
       // Usar la metadata del primer documento como base
       const primerDoc = docsCAA[0];
