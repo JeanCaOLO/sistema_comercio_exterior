@@ -66,6 +66,7 @@ const getFileIconFromUrl = (url: string) => {
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
   if (name.endsWith('.csv')) return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
   if (name.endsWith('.doc') || name.endsWith('.docx')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
+  if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.gif') || name.endsWith('.bmp')) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };
   return { icon: 'ri-file-line', color: 'text-gray-500', bg: 'bg-gray-50' };
 };
 
@@ -75,6 +76,7 @@ const getFileIconFromFile = (fileName: string) => {
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
   if (name.endsWith('.csv')) return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
   if (name.endsWith('.doc') || name.endsWith('.docx')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
+  if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.gif') || name.endsWith('.bmp')) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };
   return { icon: 'ri-file-line', color: 'text-gray-500', bg: 'bg-gray-50' };
 };
 
@@ -152,7 +154,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
     setIsDragging(false);
     const droppedFiles = Array.from(e.dataTransfer.files).filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx'].includes(ext || '');
+      return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
     });
     setNuevosArchivos(prev => [...prev, ...droppedFiles]);
   }, []);
@@ -161,7 +163,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
     if (e.target.files) {
       const selected = Array.from(e.target.files).filter(f => {
         const ext = f.name.split('.').pop()?.toLowerCase();
-        return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx'].includes(ext || '');
+        return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
       });
       setNuevosArchivos(prev => [...prev, ...selected]);
     }
@@ -630,11 +632,16 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                 {documentosActuales.map((url, idx) => {
                   const fileName = extractFileName(url);
                   const { icon, color, bg } = getFileIconFromUrl(url);
+                  const esImagen = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(fileName.split('.').pop()?.toLowerCase() || '');
                   return (
                     <div key={`exist-${idx}`} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
-                      <div className={`w-9 h-9 flex items-center justify-center rounded-lg ${bg} flex-shrink-0`}>
-                        <i className={`${icon} ${color} text-lg`}></i>
-                      </div>
+                      {esImagen ? (
+                        <img src={url} alt={fileName} className="w-9 h-9 rounded-lg object-cover bg-gray-100 flex-shrink-0" />
+                      ) : (
+                        <div className={`w-9 h-9 flex items-center justify-center rounded-lg ${bg} flex-shrink-0`}>
+                          <i className={`${icon} ${color} text-lg`}></i>
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate" title={fileName}>
                           {fileName}
@@ -696,7 +703,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           <div>
             <h3 className="text-sm font-bold text-gray-700 mb-3">
               Agregar documentos
-              <span className="ml-2 text-xs font-normal text-gray-400">(PDF, Excel, CSV, Word)</span>
+              <span className="ml-2 text-xs font-normal text-gray-400">(PDF, Excel, CSV, Word e imágenes)</span>
             </h3>
 
             <div
@@ -720,7 +727,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.xlsx,.xls,.csv,.doc,.docx"
+                accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.png,.jpg,.jpeg,.webp,.gif,.bmp"
                 onChange={handleFileSelect}
                 className="hidden"
               />

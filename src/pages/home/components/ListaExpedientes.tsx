@@ -502,11 +502,11 @@ export default function ListaExpedientes() {
       const files = Array.from(e.target.files);
       const validFiles = files.filter(file => {
         const extension = file.name.split('.').pop()?.toLowerCase();
-        return ['pdf', 'xlsx', 'xls', 'csv'].includes(extension || '');
+        return ['pdf', 'xlsx', 'xls', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '');
       });
       
       if (validFiles.length !== files.length) {
-        setErrorMessage('Solo se permiten archivos PDF, Excel (.xlsx, .xls) y CSV');
+        setErrorMessage('Solo se permiten archivos PDF, Excel (.xlsx, .xls), CSV e imágenes (PNG, JPG, JPEG, WebP, GIF, BMP)');
         setShowError(true);
         setTimeout(() => setShowError(false), 3000);
       }
@@ -1219,6 +1219,9 @@ export default function ListaExpedientes() {
                     } else if (extension === 'csv') {
                       icon = 'ri-file-text-line';
                       iconColor = 'text-blue-600';
+                    } else if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '')) {
+                      icon = 'ri-image-line';
+                      iconColor = 'text-orange-600';
                     }
                     
                     return (
@@ -1227,9 +1230,15 @@ export default function ListaExpedientes() {
                         className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group"
                       >
                         <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-gray-100 flex-shrink-0">
-                            <i className={`${icon} text-2xl ${iconColor}`}></i>
-                          </div>
+                          {['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '') ? (
+                            <a href={url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
+                              <img src={url} alt={fileName} className="w-10 h-10 rounded-lg object-cover bg-gray-100" />
+                            </a>
+                          ) : (
+                            <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-gray-100 flex-shrink-0">
+                              <i className={`${icon} text-2xl ${iconColor}`}></i>
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900 truncate">{fileName}</p>
                             <p className="text-xs text-gray-500">Documento {index + 1}</p>

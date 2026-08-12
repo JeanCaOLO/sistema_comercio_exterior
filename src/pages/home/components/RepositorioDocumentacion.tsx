@@ -233,6 +233,7 @@ export default function RepositorioDocumentacion() {
     if (name.endsWith('.xlsx') || name.endsWith('.xls')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
     if (name.endsWith('.csv')) return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
     if (name.endsWith('.doc') || name.endsWith('.docx')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
+    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.gif') || name.endsWith('.bmp')) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };
     return { icon: 'ri-file-line', color: 'text-gray-500', bg: 'bg-gray-50' };
   };
 
@@ -580,6 +581,7 @@ export default function RepositorioDocumentacion() {
                                   {docUrls.map((url, idx) => {
                                     const fileName = extractFileName(url);
                                     const { icon, color, bg } = getFileIconFromUrl(url);
+                                    const esImagen = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(fileName.split('.').pop()?.toLowerCase() || '');
                                     const isDownloading = downloadingId === url;
                                     const fileIndex = idx + 1;
                                     return (
@@ -587,9 +589,13 @@ export default function RepositorioDocumentacion() {
                                         key={`${doc.id}-file-${idx}`}
                                         className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200"
                                       >
-                                        <div className={`w-9 h-9 flex items-center justify-center rounded-lg ${bg} flex-shrink-0`}>
-                                          <i className={`${icon} ${color} text-lg`}></i>
-                                        </div>
+                                        {esImagen ? (
+                                          <img src={url} alt={fileName} className="w-9 h-9 rounded-lg object-cover bg-gray-100 flex-shrink-0" />
+                                        ) : (
+                                          <div className={`w-9 h-9 flex items-center justify-center rounded-lg ${bg} flex-shrink-0`}>
+                                            <i className={`${icon} ${color} text-lg`}></i>
+                                          </div>
+                                        )}
                                         <div className="flex-1 min-w-0">
                                           <p className="text-sm font-medium text-gray-800 truncate" title={fileName}>
                                             <span className="text-gray-400 text-xs mr-1.5">#{fileIndex}</span>

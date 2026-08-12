@@ -42,7 +42,7 @@ export default function CargaDocumentosCAA() {
     setIsDragging(false);
     const droppedFiles = Array.from(e.dataTransfer.files).filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx'].includes(ext || '');
+      return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
     });
     setFiles(prev => [...prev, ...droppedFiles]);
   }, []);
@@ -51,7 +51,7 @@ export default function CargaDocumentosCAA() {
     if (e.target.files) {
       const selected = Array.from(e.target.files).filter(f => {
         const ext = f.name.split('.').pop()?.toLowerCase();
-        return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx'].includes(ext || '');
+        return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
       });
       setFiles(prev => [...prev, ...selected]);
     }
@@ -80,6 +80,7 @@ export default function CargaDocumentosCAA() {
     if (['xlsx', 'xls'].includes(ext || '')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
     if (ext === 'csv') return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
     if (['doc', 'docx'].includes(ext || '')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
+    if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '')) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };
     return { icon: 'ri-file-line', color: 'text-gray-500', bg: 'bg-gray-50' };
   };
 
@@ -517,7 +518,7 @@ export default function CargaDocumentosCAA() {
             <div className="flex items-center gap-2 mb-4">
               <span className="w-6 h-6 flex items-center justify-center bg-teal-600 text-white rounded-full text-xs font-bold flex-shrink-0">2</span>
               <h2 className="text-base font-bold text-gray-900">Adjunta los documentos CAA</h2>
-              <span className="text-xs text-gray-400">(PDF, Excel, CSV, Word)</span>
+              <span className="text-xs text-gray-400">(PDF, Excel, CSV, Word e imágenes)</span>
             </div>
 
             {/* Checkbox BL */}
@@ -607,12 +608,12 @@ export default function CargaDocumentosCAA() {
               <p className={`font-medium text-sm ${isDragging ? 'text-teal-700' : 'text-gray-600'}`}>
                 {isDragging ? 'Suelta los archivos aquí' : 'Arrastra archivos o haz click para seleccionar'}
               </p>
-              <p className="text-xs text-gray-400 mt-1">PDF · Excel · CSV · Word</p>
+              <p className="text-xs text-gray-400 mt-1">PDF · Excel · CSV · Word · Imágenes</p>
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.xlsx,.xls,.csv,.doc,.docx"
+                accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.png,.jpg,.jpeg,.webp,.gif,.bmp"
                 onChange={handleFileSelect}
                 className="hidden"
               />

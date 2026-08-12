@@ -235,11 +235,11 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
       const files = Array.from(e.target.files);
       const validFiles = files.filter(file => {
         const extension = file.name.split('.').pop()?.toLowerCase();
-        return ['pdf', 'xlsx', 'xls', 'csv'].includes(extension || '');
+        return ['pdf', 'xlsx', 'xls', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '');
       });
       
       if (validFiles.length !== files.length) {
-        setErrorMessage('Solo se permiten archivos PDF, Excel (.xlsx, .xls) y CSV');
+        setErrorMessage('Solo se permiten archivos PDF, Excel (.xlsx, .xls), CSV e imágenes (PNG, JPG, JPEG, WebP, GIF, BMP)');
         setShowError(true);
         setTimeout(() => setShowError(false), 3000);
       }
@@ -789,7 +789,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Documentos (PDF, Excel, CSV)
+                    Documentos (PDF, Excel, CSV e imágenes)
                   </label>
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
@@ -801,7 +801,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                         <input
                           type="file"
                           multiple
-                          accept=".pdf,.xlsx,.xls,.csv"
+                          accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp,.gif,.bmp"
                           onChange={handleFileChange}
                           className="hidden"
                         />
