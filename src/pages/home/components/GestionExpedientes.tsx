@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion } from '../../../lib/notificaciones';
+import { formatearFecha } from '../../../lib/fechas';
 
 interface Expediente {
   id: string;
@@ -1788,17 +1789,17 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Solicitud</label>
-                  <p className="text-gray-900">{new Date(selectedExpediente.fecha_solicitud).toLocaleDateString('es-ES')}</p>
+                  <p className="text-gray-900">{formatearFecha(selectedExpediente.fecha_solicitud)}</p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Requerimiento</label>
-                  <p className="text-gray-900">{new Date(selectedExpediente.fecha_requerimiento).toLocaleDateString('es-ES')}</p>
+                  <p className="text-gray-900">{formatearFecha(selectedExpediente.fecha_requerimiento)}</p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Creación</label>
-                  <p className="text-gray-900">{new Date(selectedExpediente.fecha_creacion_expediente).toLocaleDateString('es-ES')}</p>
+                  <p className="text-gray-900">{formatearFecha(selectedExpediente.fecha_creacion_expediente)}</p>
                 </div>
 
                 <div className={isAsignarMode ? 'ring-2 ring-amber-300 rounded-xl p-3 -m-3' : ''}>
@@ -1834,7 +1835,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                       />
                     ) : (
                       <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-                        {selectedExpediente.etd ? new Date(selectedExpediente.etd).toLocaleDateString('es-ES') : 'No especificado'}
+                        {selectedExpediente.etd ? formatearFecha(selectedExpediente.etd) : 'No especificado'}
                       </p>
                     )}
                   </div>
@@ -1972,7 +1973,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                       />
                     ) : (
                       <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-                        {selectedExpediente.eta_real ? new Date(selectedExpediente.eta_real).toLocaleDateString('es-ES') : 'No especificado'}
+                        {selectedExpediente.eta_real ? formatearFecha(selectedExpediente.eta_real) : 'No especificado'}
                       </p>
                     )}
                   </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { parseFechaSegura } from '@/lib/fechas';
 
 export default function Reportes() {
   const [selectedReport, setSelectedReport] = useState('');
@@ -47,10 +48,13 @@ export default function Reportes() {
           filteredData = filteredData.filter(exp => exp.prioridad === 'Alta' || exp.prioridad_urgente);
           break;
         case 'solicitudes-mes':
-          const mesActual = new Date().getMonth();
+          const ahora = new Date();
+          const mesActual = ahora.getMonth();
+          const añoActual = ahora.getFullYear();
           filteredData = filteredData.filter(exp => {
-            const fecha = new Date(exp.fecha_solicitud);
-            return fecha.getMonth() === mesActual;
+            const fecha = parseFechaSegura(exp.fecha_solicitud);
+            if (Number.isNaN(fecha.getTime())) return false;
+            return fecha.getMonth() === mesActual && fecha.getFullYear() === añoActual;
           });
           break;
       }

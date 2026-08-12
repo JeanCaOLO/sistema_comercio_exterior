@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion } from '../../../lib/notificaciones';
+import { hoyLocal } from '../../../lib/fechas';
 
 interface POItem {
   id: string;
@@ -252,7 +253,7 @@ export default function CargaDocumentosCAA() {
 
       // Guardar en Documentación — NO se crea ticket aún
       const ahora = new Date().toISOString();
-      const hoy = new Date().toISOString().split('T')[0];
+      const hoy = hoyLocal();
       const posCombinadas = posValidas.join(' / ');
 
       const { data: docCAA, error: insertError } = await supabase

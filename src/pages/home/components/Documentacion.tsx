@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion } from '../../../lib/notificaciones';
+import { hoyLocal } from '../../../lib/fechas';
 
 interface DocumentoCAA {
   id: string;
@@ -158,7 +159,7 @@ export default function Documentacion() {
 
     try {
       const ahora = new Date().toISOString();
-      const hoy = ahora.split('T')[0];
+      const hoy = hoyLocal();
 
       const { data: { user } } = await supabase.auth.getUser();
       let nombreUsuario = 'Sistema';

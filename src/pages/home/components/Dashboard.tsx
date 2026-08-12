@@ -4,6 +4,7 @@ import DonutChart from './DonutChart';
 import BarChart from './BarChart';
 import ProgressBar from './ProgressBar';
 import { supabase } from '../../../lib/supabase';
+import { formatearFechaCorta } from '../../../lib/fechas';
 
 interface HistorialCambio {
   id: string;
@@ -1280,7 +1281,7 @@ export default function Dashboard() {
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.responsable_creacion}</td>
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                          {new Date(exp.fechaCreacion).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {formatearFechaCorta(exp.fechaCreacion)}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`text-sm font-bold ${
