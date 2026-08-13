@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import {
   getIconoColor,
   getTipoLabel,
@@ -6,44 +5,73 @@ import {
 } from '@/lib/notificaciones';
 import type { ToastItem } from '@/hooks/useNotificaciones';
 
+function estilosPorCantidad(cantidad: number) {
+  if (cantidad >= 4) {
+    return {
+      contenedor: 'w-[340px]',
+      padding: 'p-3',
+      gap: 'gap-2.5',
+      icono: 'w-9 h-9 rounded-lg',
+      iconoTam: 'text-base',
+      etiqueta: 'text-[11px]',
+      mensaje: 'text-[13px]',
+    };
+  }
+
+  if (cantidad === 2 || cantidad === 3) {
+    return {
+      contenedor: 'w-[380px]',
+      padding: 'p-4',
+      gap: 'gap-3',
+      icono: 'w-10 h-10 rounded-lg',
+      iconoTam: 'text-lg',
+      etiqueta: 'text-xs',
+      mensaje: 'text-sm',
+    };
+  }
+
+  return {
+    contenedor: 'w-[420px]',
+    padding: 'p-5',
+    gap: 'gap-4',
+    icono: 'w-12 h-12 rounded-xl',
+    iconoTam: 'text-xl',
+    etiqueta: 'text-xs',
+    mensaje: 'text-[15px]',
+  };
+}
+
 interface TarjetaToastProps {
   item: ToastItem;
+  cantidad: number;
   onCerrar: (clave: string) => void;
 }
 
-function TarjetaToast({ item, onCerrar }: TarjetaToastProps) {
-  const [pausado, setPausado] = useState(false);
+function TarjetaToast({ item, cantidad, onCerrar }: TarjetaToastProps) {
   const { clave, notificacion } = item;
-
-  useEffect(() => {
-    if (pausado) return;
-    const timer = setTimeout(() => onCerrar(clave), 6000);
-    return () => clearTimeout(timer);
-  }, [clave, onCerrar, pausado]);
+  const estilos = estilosPorCantidad(cantidad);
 
   return (
     <div
-      onMouseEnter={() => setPausado(true)}
-      onMouseLeave={() => setPausado(false)}
-      className="pointer-events-auto w-[360px] max-w-[calc(100vw-2rem)] bg-white rounded-xl border border-gray-200 overflow-hidden animate-toast-in"
+      className={`pointer-events-auto max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-700/70 rounded-xl overflow-hidden animate-toast-in ${estilos.contenedor}`}
     >
-      <div className="flex items-start gap-3 p-4">
+      <div className={`flex items-start ${estilos.gap} ${estilos.padding}`}>
         <div
-          className={`w-10 h-10 flex items-center justify-center rounded-lg flex-shrink-0 ${getIconoColor(notificacion.tipo)}`}
+          className={`flex items-center justify-center flex-shrink-0 ${estilos.icono} ${getIconoColor(notificacion.tipo)}`}
         >
-          <i className={`${notificacion.icono} text-lg`}></i>
+          <i className={`${notificacion.icono} ${estilos.iconoTam}`}></i>
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+          <div className="flex items-center justify-between gap-3">
+            <span className={`font-semibold uppercase tracking-wider text-zinc-400 ${estilos.etiqueta}`}>
               {getTipoLabel(notificacion.tipo)}
             </span>
-            <span className="text-[11px] text-gray-400 whitespace-nowrap">
+            <span className={`text-zinc-400 whitespace-nowrap ${estilos.etiqueta}`}>
               {timeAgo(notificacion.created_at)}
             </span>
           </div>
-          <p className="mt-1 text-sm text-gray-800 leading-snug break-words">
+          <p className={`mt-1 text-zinc-100 leading-snug break-words ${estilos.mensaje}`}>
             {notificacion.mensaje}
           </p>
         </div>
@@ -51,10 +79,10 @@ function TarjetaToast({ item, onCerrar }: TarjetaToastProps) {
         <button
           type="button"
           onClick={() => onCerrar(clave)}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer flex-shrink-0"
+          className="w-8 h-8 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer flex-shrink-0"
           aria-label="Cerrar notificación"
         >
-          <i className="ri-close-line text-base"></i>
+          <i className="ri-close-line text-lg"></i>
         </button>
       </div>
     </div>
@@ -72,7 +100,12 @@ export default function ToastNotificaciones({ toasts, onCerrar }: ToastNotificac
   return (
     <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[999] flex flex-col gap-3 pointer-events-none">
       {toasts.map((item) => (
-        <TarjetaToast key={item.clave} item={item} onCerrar={onCerrar} />
+        <TarjetaToast
+          key={item.clave}
+          item={item}
+          cantidad={toasts.length}
+          onCerrar={onCerrar}
+        />
       ))}
     </div>
   );
