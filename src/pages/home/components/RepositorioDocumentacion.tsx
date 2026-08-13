@@ -141,6 +141,9 @@ export default function RepositorioDocumentacion() {
           responsable_creacion: responsableOriginal,
           created_at: creadoOriginal,
           origen: 'expediente',
+          // En expedientes el campo se llama transito_corto; lo normalizamos
+          // a tc_cargado para que la tabla y el modal de edición lo lean bien.
+          tc_cargado: d.transito_corto,
         };
       });
 

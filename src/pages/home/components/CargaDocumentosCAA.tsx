@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { crearNotificacion } from '../../../lib/notificaciones';
+import { crearNotificacion, notificarCargaCAA } from '../../../lib/notificaciones';
 import { hoyLocal } from '../../../lib/fechas';
 
 interface POItem {
@@ -324,6 +324,15 @@ export default function CargaDocumentosCAA() {
         tipo: 'documento_agregado',
         mensaje: `${nombreUsuario} subió ${urlsDocumentos.length} documento(s) a Repositorio Docs para las POs: ${posValidas.slice(0, 3).join(', ')}${posValidas.length > 3 ? ' y más' : ''} (${tipoModulo === 'dropship' ? 'Dropship' : 'ZF'})`,
         icono: 'ri-file-upload-line',
+      });
+
+      // === Notificación por ruta logística ===
+      notificarCargaCAA({
+        ruta: tipoRuta,
+        poTiquetera: posCombinadas,
+        usuarioGenero: nombreUsuario,
+        tipoModulo: tipoModulo,
+        totalDocumentos: urlsDocumentos.length,
       });
 
       setSolicitudesCreadas([{ pos: posValidas, id: docCAA.id, modulo: tipoModulo }]);
