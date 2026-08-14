@@ -5,6 +5,7 @@ import {
   contarNoLeidas,
   marcarComoLeida,
   marcarTodasComoLeidas,
+  EMAILS_SIN_TOAST,
   type Notificacion,
 } from '@/lib/notificaciones';
 
@@ -13,7 +14,7 @@ export interface ToastItem {
   notificacion: Notificacion;
 }
 
-export function useNotificaciones(usuarioId: string) {
+export function useNotificaciones(usuarioId: string, email?: string) {
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [noLeidas, setNoLeidas] = useState(0);
   const [cargando, setCargando] = useState(true);
@@ -22,6 +23,17 @@ export function useNotificaciones(usuarioId: string) {
   const conocidosRef = useRef<Set<string>>(new Set());
   const inicializadoRef = useRef(false);
   const contadorClaveRef = useRef(0);
+
+  const emailRef = useRef(email);
+  useEffect(() => {
+    emailRef.current = email;
+  }, [email]);
+
+  const suprimirToast = useCallback(() => {
+    return emailRef.current
+      ? EMAILS_SIN_TOAST.includes(emailRef.current.toLowerCase())
+      : false;
+  }, []);
 
   const generarClave = (id: string) =>
     `${id}-${Date.now()}-${contadorClaveRef.current++}`;
@@ -37,10 +49,12 @@ export function useNotificaciones(usuarioId: string) {
       const nuevas = data.filter((n) => !conocidosRef.current.has(n.id));
       if (nuevas.length > 0) {
         nuevas.forEach((n) => conocidosRef.current.add(n.id));
-        setToasts((prev) => [
-          ...prev,
-          ...nuevas.map((n) => ({ clave: generarClave(n.id), notificacion: n })),
-        ]);
+        if (!suprimirToast()) {
+          setToasts((prev) => [
+            ...prev,
+            ...nuevas.map((n) => ({ clave: generarClave(n.id), notificacion: n })),
+          ]);
+        }
       }
     }
 
@@ -90,10 +104,12 @@ export function useNotificaciones(usuarioId: string) {
           if (!nueva.leida) {
             setNoLeidas((prev) => prev + 1);
           }
-          setToasts((prev) => [
-            ...prev,
-            { clave: generarClave(nueva.id), notificacion: nueva },
-          ]);
+          if (!suprimirToast()) {
+            setToasts((prev) => [
+              ...prev,
+              { clave: generarClave(nueva.id), notificacion: nueva },
+            ]);
+          }
         }
       )
       .subscribe();

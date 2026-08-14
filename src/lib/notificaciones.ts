@@ -30,6 +30,12 @@ export const EMAILS_NOTIFICACION_GLOBAL = [
   'jalvarez@ologistics.com',
 ];
 
+// Usuarios que NO reciben notificaciones tipo toast (sí reciben las normales en la campana)
+export const EMAILS_SIN_TOAST = [
+  'smcdonald@ologistics.com',
+  'lchavala@ologistics.com',
+];
+
 // Mapa de rutas logísticas → usuario(s) a notificar al cargar un documento + PO en Carga CAA
 export function getEmailsRutaCAA(ruta: string): string[] {
   switch (ruta) {

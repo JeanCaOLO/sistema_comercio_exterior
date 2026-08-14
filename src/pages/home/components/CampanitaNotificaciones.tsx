@@ -6,9 +6,10 @@ import ToastNotificaciones from './ToastNotificacion';
 interface CampanitaNotificacionesProps {
   usuarioId: string;
   usuarioNombre: string;
+  usuarioEmail: string;
 }
 
-export default function CampanitaNotificaciones({ usuarioId, usuarioNombre }: CampanitaNotificacionesProps) {
+export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usuarioEmail }: CampanitaNotificacionesProps) {
   const [abierto, setAbierto] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -21,7 +22,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre }: Ca
     cerrarToast,
     marcarLeida,
     marcarTodasLeidas,
-  } = useNotificaciones(usuarioId);
+  } = useNotificaciones(usuarioId, usuarioEmail);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

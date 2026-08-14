@@ -121,7 +121,7 @@ export default function Home() {
         {/* Barra superior con campanita */}
         <div className="flex items-center justify-end px-6 py-3 bg-white border-b border-gray-100 flex-shrink-0">
           {usuarioId && (
-            <CampanitaNotificaciones usuarioId={usuarioId} usuarioNombre={userName} />
+            <CampanitaNotificaciones usuarioId={usuarioId} usuarioNombre={userName} usuarioEmail={user.email || ''} />
           )}
         </div>
 
