@@ -227,30 +227,29 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (usuarioData) nombreUsuario = usuarioData.nombre;
       }
 
-      // Subir nuevos archivos
-      const nuevasUrls: string[] = [];
-      for (const file of nuevosArchivos) {
-        const tempId = crypto.randomUUID();
-        const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(file.name)}`;
-        const { error: uploadError } = await supabase.storage
-          .from('expedientes-documentos')
-          .upload(fileName, file, { cacheControl: '3600', upsert: false });
+      // Subir nuevos archivos (en paralelo para no subirlos de a uno)
+      const nuevasUrls = (await Promise.all(
+        nuevosArchivos.map(async (file) => {
+          const tempId = crypto.randomUUID();
+          const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(file.name)}`;
+          const { error: uploadError } = await supabase.storage
+            .from('expedientes-documentos')
+            .upload(fileName, file, { cacheControl: '3600', upsert: false });
 
-        if (uploadError) {
-          if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
-            throw new Error('El bucket de almacenamiento no está configurado. Crea el bucket "expedientes-documentos" en Supabase Storage.');
+          if (uploadError) {
+            if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
+              throw new Error('El bucket de almacenamiento no está configurado. Crea el bucket "expedientes-documentos" en Supabase Storage.');
+            }
+            throw new Error(`Error subiendo ${file.name}: ${uploadError.message}`);
           }
-          throw new Error(`Error subiendo ${file.name}: ${uploadError.message}`);
-        }
 
-        const { data: urlData } = supabase.storage
-          .from('expedientes-documentos')
-          .getPublicUrl(fileName);
+          const { data: urlData } = supabase.storage
+            .from('expedientes-documentos')
+            .getPublicUrl(fileName);
 
-        if (urlData?.publicUrl) {
-          nuevasUrls.push(urlData.publicUrl);
-        }
-      }
+          return urlData?.publicUrl || '';
+        })
+      )).filter((url) => url !== '');
 
       // Construir array final de documentos
       const documentosFinales = [...documentosActuales, ...nuevasUrls];

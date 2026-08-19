@@ -80,7 +80,7 @@ export default function RepositorioDocumentacion() {
       // Cargar de documentos_caa (staging - los que vienen de CCA y aún no son expedientes)
       const { data: dataCAA, error: errorCAA } = await supabase
         .from('documentos_caa')
-        .select('*')
+        .select('id, po_tiquetera, tipo_po, solicitante, tipo_modulo, estado_expediente, bl_cargado, tc_cargado, aplica_tlc, doc, exp_id, created_at, responsable_creacion, prioridad, prioridad_urgente, instrucciones_adicionales')
         .order('created_at', { ascending: false });
 
       if (errorCAA) console.error('Error al cargar documentos_caa:', errorCAA);
@@ -88,7 +88,7 @@ export default function RepositorioDocumentacion() {
       // Cargar de expedientes (los que ya fueron promovidos a expedientes reales)
       const { data: dataExp, error: errorExp } = await supabase
         .from('expedientes')
-        .select('*')
+        .select('id, po_tiquetera, tipo_po, solicitante, tipo_modulo, estado_expediente, bl_cargado, transito_corto, aplica_tlc, doc, exp_id, created_at, responsable_creacion, prioridad, prioridad_urgente, instrucciones_adicionales')
         .order('created_at', { ascending: false });
 
       if (errorExp) console.error('Error al cargar expedientes:', errorExp);

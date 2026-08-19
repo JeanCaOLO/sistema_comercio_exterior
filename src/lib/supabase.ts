@@ -31,7 +31,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       'x-client-info': 'supabase-js-web',
     },
     fetch: (url, options = {}) => {
-      console.log('🌐 Realizando petición a:', url);
       return window.fetch(url, {
         ...options,
         mode: 'cors',

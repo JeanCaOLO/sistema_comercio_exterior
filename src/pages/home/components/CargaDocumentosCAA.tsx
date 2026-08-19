@@ -132,73 +132,31 @@ export default function CargaDocumentosCAA() {
       const posDuplicadas: string[] = [];
 
       try {
-        // Buscar en documentos_caa (staging)
-        const { data: docsCAA, error: errCAA } = await supabase
-          .from('documentos_caa')
-          .select('po_tiquetera');
+        // Validación en el servidor: filtramos por ILIKE en vez de traer TODA la tabla
+        // al navegador. Esto evita cargar miles de filas y el doble bucle O(n²).
+        const orFilter = posValidas
+          .map(po => `po_tiquetera.ilike.%${po}%`)
+          .join(',');
 
-        if (errCAA) {
-          console.error('❌ Validación PO - Error documentos_caa:', errCAA);
-        }
+        const [resCAA, resExp] = await Promise.all([
+          supabase.from('documentos_caa').select('po_tiquetera').or(orFilter),
+          supabase.from('expedientes').select('po_tiquetera').or(orFilter),
+        ]);
 
-        // Buscar en expedientes (ya convertidos a tickets)
-        const { data: docsExp, error: errExp } = await supabase
-          .from('expedientes')
-          .select('po_tiquetera');
+        if (resCAA.error) console.error('Validación PO - Error documentos_caa:', resCAA.error);
+        if (resExp.error) console.error('Validación PO - Error expedientes:', resExp.error);
 
-        if (errExp) {
-          console.error('❌ Validación PO - Error expedientes:', errExp);
-        }
+        const encontrados = [...(resCAA.data || []), ...(resExp.data || [])];
 
-        // Unir ambos resultados
-        const todasLasFilas = [
-          ...(docsCAA || []),
-          ...(docsExp || []),
-        ];
-
-        console.log('✅ Validación PO - Total filas revisadas:', todasLasFilas.length,
-          `(documentos_caa: ${docsCAA?.length || 0}, expedientes: ${docsExp?.length || 0})`);
-
-        if (todasLasFilas.length > 0) {
-          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-          console.log('📋 VOLCADO COMPLETO de po_tiquetera en DB:');
-          todasLasFilas.forEach((registro: any, idx: number) => {
-            const valor = registro.po_tiquetera;
-            const tipo = valor === null ? 'NULL' : valor === '' ? 'VACÍO' : typeof valor;
-            console.log(`  [${idx}] tipo=${tipo} | valor="${valor}"`);
-          });
-          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-          for (const poVal of posValidas) {
-            const poLower = poVal.trim().toLowerCase();
-            let encontrada = false;
-            let donde = '';
-
-            for (const registro of todasLasFilas) {
-              const tiqueteras = String(registro.po_tiquetera || '').toLowerCase();
-              if (tiqueteras.includes(poLower)) {
-                encontrada = true;
-                // Determinar si viene de documentos_caa o expedientes
-                const idx = todasLasFilas.indexOf(registro);
-                const enCAA = idx < (docsCAA?.length || 0);
-                donde = enCAA ? 'documentos_caa' : 'expedientes';
-                console.log(`  ⛔ PO "${poVal}" ENCONTRADA en ${donde}: "${registro.po_tiquetera}"`);
-                break;
-              }
-            }
-
-            if (encontrada) {
-              posDuplicadas.push(poVal);
-            } else {
-              console.log(`  ✅ PO "${poVal}" NO encontrada en ninguna fila`);
-            }
-          }
-          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        } else {
-          console.warn('⚠️ Validación PO - SELECT devolvió 0 filas en ambas tablas.');
+        for (const poVal of posValidas) {
+          const poLower = poVal.trim().toLowerCase();
+          const existe = encontrados.some(r =>
+            String(r.po_tiquetera || '').toLowerCase().includes(poLower)
+          );
+          if (existe) posDuplicadas.push(poVal);
         }
       } catch (fetchErr: any) {
-        console.error('❌ Validación PO - Error:', fetchErr);
+        console.error('Validación PO - Error:', fetchErr);
         setError('Error de conexión al validar las POs. Revisa tu conexión e intenta de nuevo.');
         setSubmitting(false);
         return;
@@ -226,30 +184,29 @@ export default function CargaDocumentosCAA() {
         if (usuarioData) nombreUsuario = usuarioData.nombre;
       }
 
-      // Subir archivos a Storage
-      const urlsDocumentos: string[] = [];
-      for (const file of files) {
-        const tempId = crypto.randomUUID();
-        const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(file.name)}`;
-        const { error: uploadError } = await supabase.storage
-          .from('expedientes-documentos')
-          .upload(fileName, file, { cacheControl: '3600', upsert: false });
+      // Subir archivos a Storage (en paralelo para no subirlos de a uno)
+      const urlsDocumentos = (await Promise.all(
+        files.map(async (file) => {
+          const tempId = crypto.randomUUID();
+          const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(file.name)}`;
+          const { error: uploadError } = await supabase.storage
+            .from('expedientes-documentos')
+            .upload(fileName, file, { cacheControl: '3600', upsert: false });
 
-        if (uploadError) {
-          if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
-            throw new Error('El bucket de almacenamiento no está configurado. Crea el bucket "expedientes-documentos" en Supabase Storage.');
+          if (uploadError) {
+            if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
+              throw new Error('El bucket de almacenamiento no está configurado. Crea el bucket "expedientes-documentos" en Supabase Storage.');
+            }
+            throw new Error(`Error subiendo ${file.name}: ${uploadError.message}`);
           }
-          throw new Error(`Error subiendo ${file.name}: ${uploadError.message}`);
-        }
 
-        const { data: urlData } = supabase.storage
-          .from('expedientes-documentos')
-          .getPublicUrl(fileName);
+          const { data: urlData } = supabase.storage
+            .from('expedientes-documentos')
+            .getPublicUrl(fileName);
 
-        if (urlData?.publicUrl) {
-          urlsDocumentos.push(urlData.publicUrl);
-        }
-      }
+          return urlData?.publicUrl || '';
+        })
+      )).filter((url) => url !== '');
 
       // Guardar en Documentación — NO se crea ticket aún
       const ahora = new Date().toISOString();
