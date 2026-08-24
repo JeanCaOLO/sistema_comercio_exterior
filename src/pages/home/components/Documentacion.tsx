@@ -225,7 +225,17 @@ export default function Documentacion() {
 
       // Usar la metadata del primer documento como base
       const primerDoc = docsCAA[0];
-      const { id: _id, tc_cargado: _tc, ...basePayload } = primerDoc;
+      const { id: _id, tc_cargado: _tc, created_at: _createdAt, responsable_creacion: _respCreacion, ...basePayload } = primerDoc;
+
+      // ─── PRESERVAR AUDITORÍA ORIGINAL ───
+      // El responsable de creación debe ser quien cargó los documentos originalmente,
+      // NO quien está consolidando ahora. Recolectamos todos los responsables únicos.
+      const responsablesUnicos = [...new Set(docsCAA.map((d: any) => d.responsable_creacion).filter(Boolean))];
+      const responsableOriginal = responsablesUnicos.join(', ') || 'Sistema';
+
+      // Preservar la fecha de creación más antigua (cuando se cargaron los docs)
+      const fechasCreacion = docsCAA.map((d: any) => new Date(d.created_at || ahora).getTime()).filter(t => !isNaN(t));
+      const fechaMasAntigua = fechasCreacion.length > 0 ? new Date(Math.min(...fechasCreacion)).toISOString() : ahora;
 
       // Crear UN solo expediente consolidado
       const { data: nuevoExp, error: insertExpError } = await supabase
@@ -240,7 +250,10 @@ export default function Documentacion() {
           estado_expediente: 'No Asignado',
           tipo_modulo: targetModulo,
           fecha_creacion_expediente: hoy,
-          created_at: ahora
+          // AUDITORÍA: preservar quién cargó originalmente y cuándo
+          responsable_creacion: responsableOriginal,
+          solicitante: responsableOriginal,
+          created_at: fechaMasAntigua,
         }])
         .select('id')
         .single();
@@ -250,14 +263,22 @@ export default function Documentacion() {
       const nuevoExpId = nuevoExp?.id;
       if (!nuevoExpId) throw new Error('No se pudo obtener el ID del ticket creado.');
 
-      // Registrar historial
+      // Registrar historial: quién consolidó vs quién creó originalmente
       await supabase.from('expedientes_historial').insert([{
         expediente_id: nuevoExpId,
         campo_modificado: 'Estado',
         valor_anterior: 'Documentación',
         valor_nuevo: 'No Asignado',
         usuario: nombreUsuario,
-        fecha_cambio: ahora
+        fecha_cambio: ahora,
+        detalle: {
+          tipo: 'consolidacion',
+          consolidado_por: nombreUsuario,
+          responsable_original: responsableOriginal,
+          total_pos: poUnicas.length,
+          total_docs: docsUnicos.length,
+          pos: poUnicas,
+        }
       }]);
 
       // Abrir registro de tiempo

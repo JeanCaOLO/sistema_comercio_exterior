@@ -93,24 +93,6 @@ export default function RepositorioDocumentacion() {
 
       if (errorExp) console.error('Error al cargar expedientes:', errorExp);
 
-      // Construir mapa de responsable_creacion original y created_at desde documentos_caa
-      // Clave: exp_id (cuando ya fue promovido) o po_tiquetera (para vincular)
-      const mapaCAA: Record<string, { responsable: string; creado: string }> = {};
-      (dataCAA || []).forEach((d: any) => {
-        if (d.responsable_creacion) {
-          const entry = { responsable: d.responsable_creacion, creado: d.created_at };
-          // Vincular por exp_id si ya tiene uno asignado (no "Por Asignar")
-          if (d.exp_id && d.exp_id !== 'Por Asignar') {
-            mapaCAA[d.exp_id] = entry;
-          }
-          // Vincular también por po_tiquetera (normalizado: minúsculas, sin espacios extra)
-          const poNormalizada = (d.po_tiquetera || '').toLowerCase().replace(/\s+/g, '');
-          if (poNormalizada) {
-            mapaCAA[`po:${poNormalizada}`] = entry;
-          }
-        }
-      });
-
       // Combinar ambos: los del staging como "Documentación", los de expedientes con su estado real
       const docsCAA = (dataCAA || []).map((d: any) => ({
         ...d,
@@ -118,34 +100,16 @@ export default function RepositorioDocumentacion() {
         origen: 'cca',
       }));
 
-      const docsExp = (dataExp || []).map((d: any) => {
-        // Intentar recuperar el responsable_creacion original y created_at desde documentos_caa
-        let responsableOriginal = d.responsable_creacion;
-        let creadoOriginal = d.created_at;
-
-        // Buscar por exp_id primero
-        if (d.exp_id && mapaCAA[d.exp_id]) {
-          responsableOriginal = mapaCAA[d.exp_id].responsable;
-          creadoOriginal = mapaCAA[d.exp_id].creado;
-        } else {
-          // Buscar por po_tiquetera normalizada
-          const poNorm = (d.po_tiquetera || '').toLowerCase().replace(/\s+/g, '');
-          if (poNorm && mapaCAA[`po:${poNorm}`]) {
-            responsableOriginal = mapaCAA[`po:${poNorm}`].responsable;
-            creadoOriginal = mapaCAA[`po:${poNorm}`].creado;
-          }
-        }
-
-        return {
-          ...d,
-          responsable_creacion: responsableOriginal,
-          created_at: creadoOriginal,
-          origen: 'expediente',
-          // En expedientes el campo se llama transito_corto; lo normalizamos
-          // a tc_cargado para que la tabla y el modal de edición lo lean bien.
-          tc_cargado: d.transito_corto,
-        };
-      });
+      // Para expedientes, confiamos en sus propios datos de auditoría.
+      // El consolidador (Documentacion.tsx) ahora preserva explícitamente
+      // responsable_creacion y created_at de los documentos originales.
+      const docsExp = (dataExp || []).map((d: any) => ({
+        ...d,
+        origen: 'expediente',
+        // En expedientes el campo se llama transito_corto; lo normalizamos
+        // a tc_cargado para que la tabla y el modal de edición lo lean bien.
+        tc_cargado: d.transito_corto,
+      }));
 
       const combinados = [...docsCAA, ...docsExp].sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
