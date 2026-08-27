@@ -236,6 +236,20 @@ export default function ReporteAtrasos() {
     return true;
   });
 
+  const entregadosFiltrados = entregadosConRetraso.filter((f) => {
+    if (filtroModulo !== 'todos' && f.modulo !== filtroModulo) return false;
+    if (busqueda) {
+      const term = busqueda.toLowerCase();
+      const coincide =
+        f.po.toLowerCase().includes(term) ||
+        f.expId.toLowerCase().includes(term) ||
+        f.responsable.toLowerCase().includes(term) ||
+        f.solicitante.toLowerCase().includes(term);
+      if (!coincide) return false;
+    }
+    return true;
+  });
+
   // ── KPIs ──
   const totalEnProceso = estancados.length;
   const criticos = estancados.filter((f) => f.nivelAging === 'rojo').length;
@@ -247,20 +261,29 @@ export default function ReporteAtrasos() {
   const promedioRetraso = totalConRetraso > 0 ? Math.round((sumaRetraso / totalConRetraso) * 10) / 10 : 0;
 
   const exportarCSV = () => {
-    const headers = ['PO', 'EXP ID', 'Módulo', 'Estado', 'Responsable', 'Solicitante', 'Prioridad', 'Días en estado', 'Vencimiento', 'Días de retraso'];
-    const rows = estancadosFiltrados.map((f) => [
-      f.po,
-      f.expId,
-      f.modulo === 'dropship' ? 'Dropship' : 'ZF',
-      f.estado,
-      f.responsable,
-      f.solicitante,
-      f.urgente ? 'URGENTE' : f.prioridad,
-      f.aging,
+    const headersEst = ['PO', 'EXP ID', 'Módulo', 'Estado', 'Responsable', 'Solicitante', 'Prioridad', 'Días en estado', 'Vencimiento', 'Días de retraso'];
+    const rowsEst = estancadosFiltrados.map((f) => [
+      f.po, f.expId, f.modulo === 'dropship' ? 'Dropship' : 'ZF', f.estado,
+      f.responsable, f.solicitante, f.urgente ? 'URGENTE' : f.prioridad,
+      f.aging, formatearFechaCorta(f.fechaRequerimiento), f.retraso
+    ]);
+    const headersEnt = ['PO', 'EXP ID', 'Módulo', 'Responsable', 'Solicitante', 'Vencimiento', 'Entregado', 'Días de retraso'];
+    const rowsEnt = entregadosFiltrados.map((f) => [
+      f.po, f.expId, f.modulo === 'dropship' ? 'Dropship' : 'ZF',
+      f.responsable, f.solicitante,
       formatearFechaCorta(f.fechaRequerimiento),
+      f.fechaLiberacion ? formatearFechaCorta(f.fechaLiberacion) : '—',
       f.retraso
     ]);
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csv = [
+      '--- Expedientes en proceso ---',
+      headersEst.join(','),
+      ...rowsEst.map((r) => r.join(',')),
+      '',
+      '--- Entregados con retraso ---',
+      headersEnt.join(','),
+      ...rowsEnt.map((r) => r.join(','))
+    ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -528,7 +551,7 @@ export default function ReporteAtrasos() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Entregados con retraso</h2>
-          <span className="text-sm text-gray-500">{entregadosConRetraso.length} expedientes</span>
+          <span className="text-sm text-gray-500">{entregadosFiltrados.length} de {entregadosConRetraso.length} expedientes</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -543,7 +566,7 @@ export default function ReporteAtrasos() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {entregadosConRetraso.length === 0 ? (
+              {entregadosFiltrados.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
                     <i className="ri-checkbox-circle-line text-4xl mb-2"></i>
@@ -551,7 +574,7 @@ export default function ReporteAtrasos() {
                   </td>
                 </tr>
               ) : (
-                entregadosConRetraso.map((f) => {
+                entregadosFiltrados.map((f) => {
                   const cr = COLORES[nivelRetraso(f.retraso)];
                   return (
                     <tr key={f.id} className="hover:bg-gray-50 transition-colors">

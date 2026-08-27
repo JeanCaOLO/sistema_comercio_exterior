@@ -37,6 +37,15 @@ interface MetricaRuta {
   transitoCorto: number;
   altaPrioridad: number;
   expedientes: Expediente[];
+  // KPIs de ciclo por ruta (Dropship)
+  asigLiberadoProm: number | null;
+  asigLiberadoCount: number;
+  etdNotifMCGProm: number | null;
+  etdNotifMCGCount: number;
+  etdNotifNormalProm: number | null;
+  etdNotifNormalCount: number;
+  asigNotifProm: number | null;
+  asigNotifCount: number;
 }
 
 const diffDias = (a: Date, b: Date): number =>
@@ -198,6 +207,45 @@ export default function ReporteRuta() {
       const dropshipCount = grupo.filter((exp) => (exp.tipo_modulo || '').toLowerCase() === 'dropship').length;
       const modulo = dropshipCount >= grupo.length / 2 ? 'dropship' : 'zf';
 
+      // ── KPIs de ciclo por ruta (solo Dropship) ──
+      const asigLiberado: number[] = [];
+      const etdNotifMCG: number[] = [];
+      const etdNotifNormal: number[] = [];
+      const asigNotif: number[] = [];
+
+      grupo.forEach((exp) => {
+        if ((exp.tipo_modulo || '').toLowerCase() !== 'dropship') return;
+
+        // Asignado → Liberado
+        if (exp.fecha_liberacion) {
+          const fAsig = fechasAsignado[exp.id] || exp.created_at;
+          if (fAsig) {
+            const dias = diffDias(new Date(exp.fecha_liberacion), new Date(fAsig));
+            if (dias >= 0) asigLiberado.push(dias);
+          }
+        }
+
+        const fNotif = fechasNotificado[exp.id];
+
+        // ETD → Notificado (diferenciado MCG vs Normal)
+        if (exp.etd && fNotif) {
+          const dias = diffDias(new Date(fNotif), new Date(exp.etd));
+          if (dias >= 0) {
+            if (exp.mcg) etdNotifMCG.push(dias);
+            else etdNotifNormal.push(dias);
+          }
+        }
+
+        // Asignado → Notificado
+        if (fNotif) {
+          const fAsig = fechasAsignado[exp.id] || exp.created_at;
+          if (fAsig) {
+            const dias = diffDias(new Date(fNotif), new Date(fAsig));
+            if (dias >= 0) asigNotif.push(dias);
+          }
+        }
+      });
+
       resultado.push({
         ruta,
         modulo,
@@ -210,12 +258,20 @@ export default function ReporteRuta() {
         retrasoPromedio,
         transitoCorto,
         altaPrioridad,
-        expedientes: grupo
+        expedientes: grupo,
+        asigLiberadoProm: promedio(asigLiberado),
+        asigLiberadoCount: asigLiberado.length,
+        etdNotifMCGProm: promedio(etdNotifMCG),
+        etdNotifMCGCount: etdNotifMCG.length,
+        etdNotifNormalProm: promedio(etdNotifNormal),
+        etdNotifNormalCount: etdNotifNormal.length,
+        asigNotifProm: promedio(asigNotif),
+        asigNotifCount: asigNotif.length
       });
     });
 
     return resultado.sort((a, b) => b.total - a.total);
-  }, [expedientesFiltrados, ahora]);
+  }, [expedientesFiltrados, ahora, fechasAsignado, fechasNotificado]);
 
   // ── KPIs de ciclo para expedientes Dropship ──
   const kpisDropship = useMemo(() => {
@@ -293,7 +349,7 @@ export default function ReporteRuta() {
     : null;
 
   const exportarCSV = () => {
-    const headers = ['Ruta', 'Módulo', 'Total', 'En proceso', 'Finalizados', 'Ciclo prom (días)', 'Tasa retraso (%)', 'Retraso prom (días)', 'Tránsito corto', 'Alta prioridad'];
+    const headers = ['Ruta', 'Módulo', 'Total', 'En proceso', 'Finalizados', 'Ciclo prom (días)', 'Tasa retraso (%)', 'Retraso prom (días)', 'Tránsito corto', 'Alta prioridad', 'Asig → Liberado (prom)', 'Asig → Liberado (cant)', 'ETD → Notif MCG (prom)', 'ETD → Notif MCG (cant)', 'ETD → Notif Normal (prom)', 'ETD → Notif Normal (cant)', 'Asig → Notificado (prom)', 'Asig → Notificado (cant)'];
     const rows = metricasFiltradas.map((m) => [
       m.ruta,
       moduloLabel(m.modulo),
@@ -304,7 +360,15 @@ export default function ReporteRuta() {
       m.tasaRetraso,
       m.retrasoPromedio,
       m.transitoCorto,
-      m.altaPrioridad
+      m.altaPrioridad,
+      m.asigLiberadoProm ?? '',
+      m.asigLiberadoCount,
+      m.etdNotifMCGProm ?? '',
+      m.etdNotifMCGCount,
+      m.etdNotifNormalProm ?? '',
+      m.etdNotifNormalCount,
+      m.asigNotifProm ?? '',
+      m.asigNotifCount
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -549,12 +613,16 @@ export default function ReporteRuta() {
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Ciclo prom.</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Retraso</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Tránsito corto</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Asig. → Liberado</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">ETD → Notif. (MCG)</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">ETD → Notif. (Normal)</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Asig. → Notificado</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {metricasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-14 text-center text-gray-400">
+                  <td colSpan={12} className="px-6 py-14 text-center text-gray-400">
                     <i className="ri-route-line text-4xl mb-2"></i>
                     <p className="text-sm">No hay rutas en esta categoría</p>
                   </td>
@@ -615,6 +683,46 @@ export default function ReporteRuta() {
                       <td className="px-4 py-3 text-center">
                         <span className="text-sm text-gray-600">{m.transitoCorto}</span>
                         <span className="text-xs text-gray-400 ml-1">({pctTransito}%)</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {m.modulo === 'dropship' && m.asigLiberadoCount > 0 ? (
+                          <span className="text-sm font-medium text-gray-900">
+                            {m.asigLiberadoProm}d
+                            <span className="text-xs text-gray-400 ml-1">({m.asigLiberadoCount})</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {m.modulo === 'dropship' && m.etdNotifMCGCount > 0 ? (
+                          <span className="text-sm font-medium text-indigo-600">
+                            {m.etdNotifMCGProm}d
+                            <span className="text-xs text-gray-400 ml-1">({m.etdNotifMCGCount})</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {m.modulo === 'dropship' && m.etdNotifNormalCount > 0 ? (
+                          <span className="text-sm font-medium text-sky-600">
+                            {m.etdNotifNormalProm}d
+                            <span className="text-xs text-gray-400 ml-1">({m.etdNotifNormalCount})</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {m.modulo === 'dropship' && m.asigNotifCount > 0 ? (
+                          <span className="text-sm font-medium text-emerald-600">
+                            {m.asigNotifProm}d
+                            <span className="text-xs text-gray-400 ml-1">({m.asigNotifCount})</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
                       </td>
                     </tr>
                   );

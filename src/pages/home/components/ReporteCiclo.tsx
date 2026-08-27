@@ -10,6 +10,7 @@ interface FilaCiclo {
   solicitante: string;
   responsable: string;
   estado: string;
+  modulo: string;
   fechaAsignado: string;
   fechaNotificado: string;
   fechaRef: string;
@@ -20,6 +21,7 @@ export default function ReporteCiclo() {
   const [filas, setFilas] = useState<FilaCiclo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [filtroModulo, setFiltroModulo] = useState<'todos' | 'dropship' | 'zf'>('todos');
   const [busqueda, setBusqueda] = useState('');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
@@ -36,23 +38,30 @@ export default function ReporteCiclo() {
 
       if (errExp) throw errExp;
 
-      const dropship = (expedientes || []).filter(exp =>
-        (exp.tipo_modulo || '').toLowerCase() === 'dropship' &&
-        (exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo')
-      );
+      const activos = (expedientes || []).filter(exp => {
+        const modulo = (exp.tipo_modulo || '').toLowerCase();
+        const estado = (exp.estado_expediente || '').trim();
+        if (modulo === 'dropship') {
+          return estado === 'Notificado' || estado === 'Visto Listo';
+        }
+        if (modulo === 'zf') {
+          return estado === 'Completado' || estado === 'Liberación';
+        }
+        return false;
+      });
 
-      if (dropship.length === 0) {
+      if (activos.length === 0) {
         setFilas([]);
         setLoading(false);
         return;
       }
 
-      const ids = dropship.map(e => e.id);
+      const ids = activos.map(e => e.id);
 
-      const [resAsig, resNotif, resHist] = await Promise.all([
+      const [resAsig, resTerm, resHist] = await Promise.all([
         supabase.from('expedientes_tiempos_estados').select('expediente_id, fecha_inicio').in('expediente_id', ids).eq('estado_nuevo', 'Asignado'),
-        supabase.from('expedientes_tiempos_estados').select('expediente_id, fecha_inicio').in('expediente_id', ids).eq('estado_nuevo', 'Notificado'),
-        supabase.from('expedientes_historial').select('expediente_id, fecha_cambio').in('expediente_id', ids).eq('campo_modificado', 'Estado').eq('valor_nuevo', 'Notificado')
+        supabase.from('expedientes_tiempos_estados').select('expediente_id, estado_nuevo, fecha_inicio').in('expediente_id', ids).in('estado_nuevo', ['Notificado', 'Completado', 'Liberación']),
+        supabase.from('expedientes_historial').select('expediente_id, fecha_cambio, valor_nuevo').in('expediente_id', ids).eq('campo_modificado', 'Estado').in('valor_nuevo', ['Notificado', 'Completado', 'Liberación'])
       ]);
 
       const fechaAsignado: Record<string, string> = {};
@@ -62,24 +71,24 @@ export default function ReporteCiclo() {
         }
       });
 
-      const fechaNotif: Record<string, string> = {};
-      (resNotif.data || []).forEach((t: any) => {
-        if (!fechaNotif[t.expediente_id] || t.fecha_inicio < fechaNotif[t.expediente_id]) {
-          fechaNotif[t.expediente_id] = t.fecha_inicio;
+      const fechaTerm: Record<string, string> = {};
+      (resTerm.data || []).forEach((t: any) => {
+        if (!fechaTerm[t.expediente_id] || t.fecha_inicio < fechaTerm[t.expediente_id]) {
+          fechaTerm[t.expediente_id] = t.fecha_inicio;
         }
       });
       (resHist.data || []).forEach((h: any) => {
-        if (!fechaNotif[h.expediente_id] || h.fecha_cambio < fechaNotif[h.expediente_id]) {
-          fechaNotif[h.expediente_id] = h.fecha_cambio;
+        if (!fechaTerm[h.expediente_id] || h.fecha_cambio < fechaTerm[h.expediente_id]) {
+          fechaTerm[h.expediente_id] = h.fecha_cambio;
         }
       });
 
       const resultado: FilaCiclo[] = [];
-      dropship.forEach(exp => {
+      activos.forEach(exp => {
         const fAsig = fechaAsignado[exp.id] || exp.created_at;
-        const fNotif = fechaNotif[exp.id];
-        if (!fNotif) return;
-        const dias = Math.round(((new Date(fNotif).getTime() - new Date(fAsig).getTime()) / (1000 * 60 * 60 * 24)) * 10) / 10;
+        const fTerm = fechaTerm[exp.id];
+        if (!fTerm) return;
+        const dias = Math.round(((new Date(fTerm).getTime() - new Date(fAsig).getTime()) / (1000 * 60 * 60 * 24)) * 10) / 10;
         resultado.push({
           id: exp.id,
           po: exp.po_tiquetera,
@@ -87,8 +96,9 @@ export default function ReporteCiclo() {
           solicitante: exp.solicitante,
           responsable: exp.responsable_creacion,
           estado: exp.estado_expediente,
+          modulo: (exp.tipo_modulo || '').toLowerCase(),
           fechaAsignado: fAsig,
-          fechaNotificado: fNotif,
+          fechaNotificado: fTerm,
           fechaRef: exp.fecha_solicitud || exp.created_at,
           dias
         });
@@ -119,6 +129,7 @@ export default function ReporteCiclo() {
 
   const filasFiltradas = filas.filter(f => {
     if (!dentroRango(f.fechaRef)) return false;
+    if (filtroModulo !== 'todos' && f.modulo !== filtroModulo) return false;
     if (!busqueda) return true;
     const term = busqueda.toLowerCase();
     return (
@@ -129,16 +140,17 @@ export default function ReporteCiclo() {
     );
   });
 
-  const total = filas.length;
-  const suma = filas.reduce((s, f) => s + f.dias, 0);
+  const total = filasFiltradas.length;
+  const suma = filasFiltradas.reduce((s, f) => s + f.dias, 0);
   const promedio = total > 0 ? Math.round((suma / total) * 10) / 10 : 0;
-  const maxDias = total > 0 ? Math.max(...filas.map(f => f.dias)) : 0;
-  const minDias = total > 0 ? Math.min(...filas.map(f => f.dias)) : 0;
+  const maxDias = total > 0 ? Math.max(...filasFiltradas.map(f => f.dias)) : 0;
+  const minDias = total > 0 ? Math.min(...filasFiltradas.map(f => f.dias)) : 0;
 
   const exportarCSV = () => {
-    const headers = ['PO', 'EXP ID', 'Solicitante', 'Responsable', 'Estado', 'Fecha Asignado', 'Fecha Notificado', 'Días (Asignado → Notificado)'];
+    const headers = ['PO', 'EXP ID', 'Módulo', 'Solicitante', 'Responsable', 'Estado', 'Fecha Asignado', 'Fecha Terminal', 'Días (Asignado → Terminal)'];
     const rows = filasFiltradas.map(f => [
-      f.po, f.expId, f.solicitante, f.responsable, f.estado,
+      f.po, f.expId, f.modulo === 'dropship' ? 'Dropship' : 'ZF',
+      f.solicitante, f.responsable, f.estado,
       formatearFechaCorta(f.fechaAsignado), formatearFechaCorta(f.fechaNotificado), f.dias
     ]);
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -168,9 +180,9 @@ export default function ReporteCiclo() {
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Ciclo Asignado → Notificado</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Ciclo Asignado → Terminal</h1>
           <p className="text-gray-500 mt-1 text-sm">
-            Promedio de días entre la asignación y la notificación de los expedientes Dropship
+            Promedio de días entre la asignación y el estado terminal de los expedientes (Notificado / Completado / Liberación)
           </p>
         </div>
         <button
@@ -246,25 +258,33 @@ export default function ReporteCiclo() {
         </div>
       </div>
 
-      {/* Buscador */}
+      {/* Buscador y filtros */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-        <div className="relative">
-          <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-          <input
-            type="text"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por PO, EXP, solicitante o responsable..."
-            className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-          />
-          {busqueda && (
-            <button
-              onClick={() => setBusqueda('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-            >
-              <i className="ri-close-circle-line text-sm"></i>
-            </button>
-          )}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            {(['todos', 'dropship', 'zf'] as const).map((mod) => (
+              <button
+                key={mod}
+                onClick={() => setFiltroModulo(mod)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                  filtroModulo === mod ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {mod === 'todos' ? 'Todos' : mod === 'dropship' ? 'Dropship' : 'ZF'}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative flex-1 min-w-[200px]">
+            <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+            <input
+              type="text"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar por PO, EXP, solicitante o responsable..."
+              className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+            />
+          </div>
         </div>
 
         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -275,26 +295,27 @@ export default function ReporteCiclo() {
       {/* Tabla */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Expedientes Dropship notificados</h2>
-          <span className="text-sm text-gray-500">{filasFiltradas.length} de {total}</span>
+          <h2 className="text-lg font-semibold text-gray-900">Expedientes evaluados</h2>
+          <span className="text-sm text-gray-500">{filasFiltradas.length} de {filas.length}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">PO / EXP</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Módulo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Solicitante</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Responsable</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Estado</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Asignado</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Notificado</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Terminal</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Días</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-14 text-center text-gray-400">
+                  <td colSpan={8} className="px-6 py-14 text-center text-gray-400">
                     <i className="ri-inbox-line text-4xl mb-2"></i>
                     <p className="text-sm">No hay expedientes en esta categoría</p>
                   </td>
@@ -305,6 +326,13 @@ export default function ReporteCiclo() {
                     <td className="px-4 py-3">
                       <div className="text-sm font-medium text-gray-900 whitespace-nowrap">{f.po}</div>
                       <div className="text-xs text-gray-500 whitespace-nowrap">{f.expId}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                        f.modulo === 'dropship' ? 'bg-sky-100 text-sky-800' : 'bg-violet-100 text-violet-800'
+                      }`}>
+                        {f.modulo === 'dropship' ? 'Dropship' : 'ZF'}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{f.solicitante}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{f.responsable}</td>
