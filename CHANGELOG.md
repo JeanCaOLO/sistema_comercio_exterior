@@ -299,4 +299,20 @@
 
 ---
 
-*Documento generado automáticamente — versión 213 del proyecto*
+## ☑️ Nuevos Checkboxes en el Kanban de Dropship (214–216)
+
+214. **Checkbox "Finiquito"** — Interruptor (naranja) para marcar si el expediente tiene finiquito. Al activarse, la tarjeta del kanban muestra el badge "Finiquito". Exclusivo de Dropship.
+215. **Checkbox "MCG"** — Interruptor (índigo) para marcar si el expediente aplica MCG. Al activarse, la tarjeta muestra el badge "MCG". Exclusivo de Dropship.
+216. **Checkbox "Incidente"** — Interruptor (rojo) para marcar si el expediente presenta un incidente. Al activarse, aparece un campo de comentario obligatorio (máx. 500 caracteres) y la tarjeta muestra el badge "⚠ Incidente". Exclusivo de Dropship.
+
+Los tres checkboxes se guardan en la base de datos, se registran en el historial de cambios y sus badges se reflejan automáticamente en las tarjetas del tablero. No aparecen en Zona Franca.
+
+---
+
+## 🔄 Devolver un Ticket a Documentación (217)
+
+217. **Devolver a Documentación (solo Administradores)** — Permite regresar un ticket del Kanban a la bandeja de Documentación. El botón solo aparece para usuarios con rol **Administrador** y únicamente cuando el ticket está en estado "No Asignado". Al devolverlo, reinserta el ticket en Documentación, lo quita del Kanban, lo separa en filas individuales (si se consolidó desde varias POs, cada una con sus documentos), registra el historial y genera una notificación. Incluye un modal de confirmación previo que indica en cuántas POs se va a separar.
+
+---
+
+*Documento generado automáticamente — versión 214 del proyecto*
