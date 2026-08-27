@@ -2,7 +2,7 @@
 
 **Sistema de Gestión de Expedientes de Comercio Exterior**  
 *Dropship & Zona Franca (ZF)*  
-*Última actualización: 11 de agosto de 2026*
+*Última actualización: 27 de agosto de 2026*
 
 ---
 
@@ -271,4 +271,32 @@
 
 ---
 
-*Documento generado automáticamente — versión 179 del proyecto*
+## 🚢 Campos de Usuario en Dropship (201–204)
+
+201. **Nuevo campo "Cargador de Documentos"** — Cada expediente guarda quién subió originalmente los documentos y las POs en Carga CAA. Este dato queda **inmutable** (candado) y nunca se pisa.
+202. **Solicitante inmutable** — Antes editable, ahora queda bloqueado: registra quién consolidó y creó el ticket, y se mantiene en el tiempo.
+203. **Responsable de Creación editable** — Es el único de los tres roles que puede cambiar, porque es quien se asigna para trabajar el ticket.
+204. **Separación de los 3 roles** — Cada ticket guarda 3 datos de usuario claros e independientes: **cargador** (fijo), **solicitante/consolidador** (fijo) y **responsable** (editable), visibles con candado en el detalle y reflejados correctamente en el historial.
+
+---
+
+## 📊 KPIs MCG y Nuevos Indicadores del Dashboard (205–210)
+
+205. **Sección "KPIs MCG"** — Los expedientes marcados con MCG se evalúan por separado con sus propias reglas y metas, sin mezclarse con las estadísticas generales. Mide la Creación del expediente (meta: máximo 2 días) y el tramo ETD → Notificado (meta: menos de 2 días).
+206. **Indicador de Duración Mínima ajustado** — La meta pasó de 2 a 3 días y ahora solo aplica a Dropship; los expedientes de Zona Franca ya no entran en esta medición.
+207. **KPI "Duración Promedio Asignado → Notificado"** — Promedio de días desde asignación hasta notificación para Dropship, con botón para ver el desglose completo (promedio, máximo, mínimo).
+208. **KPI "ETD → Notificado" con detalle** — Además del contador, ahora se puede abrir el detalle de POs para ver cuáles cumplen y cuáles no la meta de ≤5 días.
+209. **Descarga en Excel** — Todos los reportes nuevos del dashboard incluyen botón de descarga a Excel.
+210. **Filtros de fecha más claros** — Los errores de rango de fechas (ej. inicio mayor a fin) se muestran directamente en pantalla en lugar de una ventana emergente. El promedio "→ Notificado (Dropship)" ahora también incluye los expedientes en "Visto Listo".
+
+---
+
+## 📈 Renovación del Módulo de Reportes (211–213)
+
+211. **Nuevo enfoque analítico** — El antiguo generador de reportes (Solicitudes del Mes, Alta Prioridad, etc.) se reemplazó por **3 pestañas analíticas** enfocadas en productividad y eficiencia.
+212. **Atrasos & Aging** — Expedientes atrasados y su antigüedad. **Por Ruta** — Rendimiento agrupado por ruta logística. **Ciclo Asig→Notif** — Tiempo del ciclo completo desde asignación hasta notificación.
+213. **Skeleton de carga unificado** — Documentación y Lista de Expedientes ahora muestran el mismo esqueleto de carga "fantasma" que Dropship (silueta de tabla pulsando + mensaje descriptivo), cada módulo conservando su color. Además, cualquier usuario con rol Administrador puede cargar documentos y POs en Carga CAA.
+
+---
+
+*Documento generado automáticamente — versión 213 del proyecto*

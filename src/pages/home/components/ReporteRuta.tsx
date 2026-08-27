@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { parseFechaSegura, formatearFechaCorta } from '@/lib/fechas';
+import FiltroFechas from './FiltroFechas';
 
 interface Expediente {
   id: string;
@@ -11,8 +12,11 @@ interface Expediente {
   estado_expediente: string;
   responsable_creacion: string;
   solicitante: string;
+  fecha_solicitud: string;
   fecha_requerimiento: string;
   fecha_liberacion: string | null;
+  etd: string | null;
+  mcg: boolean;
   dias_entrega_real: number | null;
   transito_corto: boolean;
   prioridad: string;
@@ -69,12 +73,19 @@ const calcularCiclo = (exp: Expediente): number | null => {
 const moduloLabel = (modulo: string): string =>
   (modulo || '').toLowerCase() === 'dropship' ? 'Dropship' : 'ZF';
 
+const promedio = (arr: number[]): number | null =>
+  arr.length > 0 ? Math.round((arr.reduce((s, x) => s + x, 0) / arr.length) * 10) / 10 : null;
+
 export default function ReporteRuta() {
   const [expedientes, setExpedientes] = useState<Expediente[]>([]);
+  const [fechasAsignado, setFechasAsignado] = useState<Record<string, string>>({});
+  const [fechasNotificado, setFechasNotificado] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filtroModulo, setFiltroModulo] = useState<'todos' | 'dropship' | 'zf'>('todos');
   const [busqueda, setBusqueda] = useState('');
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin] = useState('');
   const [rutaExpandida, setRutaExpandida] = useState<string | null>(null);
 
   const cargarDatos = async () => {
@@ -82,14 +93,48 @@ export default function ReporteRuta() {
       setLoading(true);
       setError('');
 
-      const { data, error: err } = await supabase
-        .from('expedientes')
-        .select('*')
-        .neq('estado_expediente', 'Documentación')
-        .order('created_at', { ascending: false });
+      const [resExp, resTiempos, resHist] = await Promise.all([
+        supabase
+          .from('expedientes')
+          .select('*')
+          .neq('estado_expediente', 'Documentación')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('expedientes_tiempos_estados')
+          .select('expediente_id, estado_nuevo, fecha_inicio')
+          .in('estado_nuevo', ['Asignado', 'Notificado']),
+        supabase
+          .from('expedientes_historial')
+          .select('expediente_id, fecha_cambio')
+          .eq('campo_modificado', 'Estado')
+          .eq('valor_nuevo', 'Notificado')
+      ]);
 
-      if (err) throw err;
-      setExpedientes(data || []);
+      if (resExp.error) throw resExp.error;
+
+      const mapAsig: Record<string, string> = {};
+      const mapNotif: Record<string, string> = {};
+      (resTiempos.data || []).forEach((t: any) => {
+        if (t.estado_nuevo === 'Asignado') {
+          if (!mapAsig[t.expediente_id] || t.fecha_inicio < mapAsig[t.expediente_id]) {
+            mapAsig[t.expediente_id] = t.fecha_inicio;
+          }
+        } else if (t.estado_nuevo === 'Notificado') {
+          if (!mapNotif[t.expediente_id] || t.fecha_inicio < mapNotif[t.expediente_id]) {
+            mapNotif[t.expediente_id] = t.fecha_inicio;
+          }
+        }
+      });
+      // Fallback: historial para expedientes sin registro de tiempo de Notificado
+      (resHist.data || []).forEach((h: any) => {
+        if (!mapNotif[h.expediente_id] || h.fecha_cambio < mapNotif[h.expediente_id]) {
+          mapNotif[h.expediente_id] = h.fecha_cambio;
+        }
+      });
+      setFechasAsignado(mapAsig);
+      setFechasNotificado(mapNotif);
+
+      setExpedientes(resExp.data || []);
     } catch (err: any) {
       console.error('Error al cargar reporte por ruta:', err);
       setError(err?.message || 'Error al cargar los datos');
@@ -104,10 +149,23 @@ export default function ReporteRuta() {
 
   const ahora = useMemo(() => new Date(), []);
 
+  const dentroRango = (fechaStr: string): boolean => {
+    if (!fechaInicio && !fechaFin) return true;
+    const f = parseFechaSegura(fechaStr);
+    if (Number.isNaN(f.getTime())) return false;
+    if (fechaInicio && f < new Date(fechaInicio + 'T00:00:00')) return false;
+    if (fechaFin && f > new Date(fechaFin + 'T23:59:59')) return false;
+    return true;
+  };
+
+  const expedientesFiltrados = expedientes.filter((exp) =>
+    dentroRango(exp.fecha_solicitud || exp.created_at)
+  );
+
   const metricas: MetricaRuta[] = useMemo(() => {
     const agrupadas = new Map<string, Expediente[]>();
 
-    expedientes.forEach((exp) => {
+    expedientesFiltrados.forEach((exp) => {
       const ruta = (exp.tipo_po || '').trim() || 'Sin ruta';
       if (!agrupadas.has(ruta)) agrupadas.set(ruta, []);
       agrupadas.get(ruta)!.push(exp);
@@ -157,7 +215,57 @@ export default function ReporteRuta() {
     });
 
     return resultado.sort((a, b) => b.total - a.total);
-  }, [expedientes, ahora]);
+  }, [expedientesFiltrados, ahora]);
+
+  // ── KPIs de ciclo para expedientes Dropship ──
+  const kpisDropship = useMemo(() => {
+    const dropship = expedientesFiltrados.filter(
+      (exp) => (exp.tipo_modulo || '').toLowerCase() === 'dropship'
+    );
+
+    const asigLiberado: number[] = [];
+    const etdNotifMCG: number[] = [];
+    const etdNotifNormal: number[] = [];
+    const asigNotif: number[] = [];
+
+    dropship.forEach((exp) => {
+      // Asignado → Liberado
+      if (exp.fecha_liberacion) {
+        const fAsig = fechasAsignado[exp.id] || exp.created_at;
+        if (fAsig) {
+          const dias = diffDias(new Date(exp.fecha_liberacion), new Date(fAsig));
+          if (dias >= 0) asigLiberado.push(dias);
+        }
+      }
+
+      const fNotif = fechasNotificado[exp.id];
+
+      // ETD → Notificado (diferenciado MCG vs Normal)
+      if (exp.etd && fNotif) {
+        const dias = diffDias(new Date(fNotif), new Date(exp.etd));
+        if (dias >= 0) {
+          if (exp.mcg) etdNotifMCG.push(dias);
+          else etdNotifNormal.push(dias);
+        }
+      }
+
+      // Asignado → Notificado
+      if (fNotif) {
+        const fAsig = fechasAsignado[exp.id] || exp.created_at;
+        if (fAsig) {
+          const dias = diffDias(new Date(fNotif), new Date(fAsig));
+          if (dias >= 0) asigNotif.push(dias);
+        }
+      }
+    });
+
+    return {
+      asigLiberado: { promedio: promedio(asigLiberado), count: asigLiberado.length },
+      etdNotifMCG: { promedio: promedio(etdNotifMCG), count: etdNotifMCG.length },
+      etdNotifNormal: { promedio: promedio(etdNotifNormal), count: etdNotifNormal.length },
+      asigNotif: { promedio: promedio(asigNotif), count: asigNotif.length }
+    };
+  }, [expedientesFiltrados, fechasAsignado, fechasNotificado]);
 
   const metricasFiltradas = metricas.filter((m) => {
     if (filtroModulo !== 'todos' && m.modulo !== filtroModulo) return false;
@@ -170,7 +278,7 @@ export default function ReporteRuta() {
 
   // KPIs generales
   const totalRutas = metricas.length;
-  const totalExpedientes = expedientes.length;
+  const totalExpedientes = expedientesFiltrados.length;
   const rutaMayorVolumen = metricas.length > 0 ? metricas[0] : null;
   const rutaMayorRetraso = metricas.length > 0
     ? [...metricas].sort((a, b) => b.tasaRetraso - a.tasaRetraso)[0]
@@ -312,6 +420,75 @@ export default function ReporteRuta() {
         </div>
       </div>
 
+      {/* KPIs de ciclo Dropship */}
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <i className="ri-ship-2-line"></i>
+          Ciclos de expedientes Dropship
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500">Asignado → Liberado</p>
+              <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center">
+                <i className="ri-flight-takeoff-line text-teal-600 text-xl"></i>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-gray-900 mt-2">
+              {kpisDropship.asigLiberado.promedio != null ? kpisDropship.asigLiberado.promedio : '—'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {kpisDropship.asigLiberado.count > 0 ? `${kpisDropship.asigLiberado.count} expedientes · días promedio` : 'sin datos'}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500">ETD → Notificado (MCG)</p>
+              <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center">
+                <i className="ri-flight-land-line text-indigo-600 text-xl"></i>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-indigo-600 mt-2">
+              {kpisDropship.etdNotifMCG.promedio != null ? kpisDropship.etdNotifMCG.promedio : '—'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {kpisDropship.etdNotifMCG.count > 0 ? `${kpisDropship.etdNotifMCG.count} expedientes · días promedio` : 'sin datos'}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500">ETD → Notificado (Normal)</p>
+              <div className="w-10 h-10 bg-sky-50 rounded-lg flex items-center justify-center">
+                <i className="ri-flight-land-line text-sky-600 text-xl"></i>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-sky-600 mt-2">
+              {kpisDropship.etdNotifNormal.promedio != null ? kpisDropship.etdNotifNormal.promedio : '—'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {kpisDropship.etdNotifNormal.count > 0 ? `${kpisDropship.etdNotifNormal.count} expedientes · días promedio` : 'sin datos'}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500">Asignado → Notificado</p>
+              <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center">
+                <i className="ri-notification-3-line text-emerald-600 text-xl"></i>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-emerald-600 mt-2">
+              {kpisDropship.asigNotif.promedio != null ? kpisDropship.asigNotif.promedio : '—'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {kpisDropship.asigNotif.count > 0 ? `${kpisDropship.asigNotif.count} expedientes · días promedio` : 'sin datos'}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Filtros */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
@@ -347,6 +524,10 @@ export default function ReporteRuta() {
               </button>
             )}
           </div>
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <FiltroFechas inicio={fechaInicio} fin={fechaFin} onChange={(i, f) => { setFechaInicio(i); setFechaFin(f); }} />
         </div>
       </div>
 

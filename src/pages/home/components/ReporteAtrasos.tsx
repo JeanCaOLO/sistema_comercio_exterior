@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { parseFechaSegura, formatearFechaCorta } from '@/lib/fechas';
+import FiltroFechas from './FiltroFechas';
 
 interface Expediente {
   id: string;
@@ -19,6 +20,7 @@ interface Expediente {
   tipo_modulo: string;
   created_at: string;
   fecha_creacion_expediente: string;
+  fecha_solicitud: string;
 }
 
 type Nivel = 'verde' | 'ambar' | 'rojo';
@@ -96,6 +98,8 @@ export default function ReporteAtrasos() {
   const [filtroModulo, setFiltroModulo] = useState<'todos' | 'dropship' | 'zf'>('todos');
   const [filtroNivel, setFiltroNivel] = useState<'todos' | Nivel>('todos');
   const [busqueda, setBusqueda] = useState('');
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin] = useState('');
 
   useEffect(() => {
     cargarDatos();
@@ -140,9 +144,22 @@ export default function ReporteAtrasos() {
 
   const ahora = useMemo(() => new Date(), []);
 
+  const dentroRango = (fechaStr: string): boolean => {
+    if (!fechaInicio && !fechaFin) return true;
+    const f = parseFechaSegura(fechaStr);
+    if (Number.isNaN(f.getTime())) return false;
+    if (fechaInicio && f < new Date(fechaInicio + 'T00:00:00')) return false;
+    if (fechaFin && f > new Date(fechaFin + 'T23:59:59')) return false;
+    return true;
+  };
+
+  const expedientesFiltrados = expedientes.filter((exp) =>
+    dentroRango(exp.fecha_solicitud || exp.created_at)
+  );
+
   // ── Expedientes estancados (no terminales) ──
   const estancados: FilaEstancado[] = useMemo(() => {
-    return expedientes
+    return expedientesFiltrados
       .filter((exp) => !esTerminal(exp))
       .map((exp) => {
         const fechaEstado = tiemposAbiertos[exp.id] || exp.created_at || exp.fecha_creacion_expediente;
@@ -170,11 +187,11 @@ export default function ReporteAtrasos() {
         };
       })
       .sort((a, b) => b.aging - a.aging);
-  }, [expedientes, tiemposAbiertos, ahora]);
+  }, [expedientesFiltrados, tiemposAbiertos, ahora]);
 
   // ── Entregados con retraso (terminales que se pasaron del vencimiento) ──
   const entregadosConRetraso: FilaAtraso[] = useMemo(() => {
-    return expedientes
+    return expedientesFiltrados
       .filter((exp) => esTerminal(exp))
       .map((exp) => {
         const req = parseFechaSegura(exp.fecha_requerimiento);
@@ -200,7 +217,7 @@ export default function ReporteAtrasos() {
       })
       .filter((f) => f.retraso > 0)
       .sort((a, b) => b.retraso - a.retraso);
-  }, [expedientes]);
+  }, [expedientesFiltrados]);
 
   // ── Filtros ──
   const estancadosFiltrados = estancados.filter((f) => {
@@ -396,6 +413,8 @@ export default function ReporteAtrasos() {
               className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
             />
           </div>
+
+          <FiltroFechas inicio={fechaInicio} fin={fechaFin} onChange={(i, f) => { setFechaInicio(i); setFechaFin(f); }} />
         </div>
 
         {/* Leyenda semáforo */}

@@ -34,6 +34,7 @@ export default function Documentacion() {
   const [filtroRuta, setFiltroRuta] = useState('');
   const [loadTimeout, setLoadTimeout] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showMCGPrompt, setShowMCGPrompt] = useState(false);
   const ITEMS_PER_PAGE = 25;
 
   useEffect(() => {
@@ -145,7 +146,7 @@ export default function Documentacion() {
     }
   };
 
-  const generarTickets = async () => {
+  const generarTickets = async (marcarMCG = false) => {
     if (selectedIds.size === 0) {
       setErrorMessage('Selecciona al menos un documento para generar ticket.');
       setShowError(true);
@@ -187,6 +188,7 @@ export default function Documentacion() {
 
       const todasLasPOs: string[] = [];
       const todosLosDocs: string[] = [];
+      const grupos: any[] = [];
       let algunBL = false;
       let algunTC = false;
       let algunTLC = false;
@@ -198,9 +200,9 @@ export default function Documentacion() {
           todasLasPOs.push(...pos);
         }
 
-        // Parsear documentos
+        // Parsear documentos de esta fila
+        let docUrls: string[] = [];
         if (doc.doc) {
-          let docUrls: string[] = [];
           if (Array.isArray(doc.doc)) {
             docUrls = doc.doc;
           } else if (typeof doc.doc === 'string') {
@@ -217,6 +219,33 @@ export default function Documentacion() {
         if (doc.bl_cargado) algunBL = true;
         if (doc.tc_cargado) algunTC = true;
         if (doc.aplica_tlc) algunTLC = true;
+
+        // Preservar la fila original (PO + sus documentos) para poder
+        // separarla tal cual vino al devolverla a Documentación
+        grupos.push({
+          po_tiquetera: doc.po_tiquetera,
+          tipo_po: doc.tipo_po,
+          solicitante: doc.solicitante,
+          tipo_modulo: doc.tipo_modulo,
+          bl_cargado: doc.bl_cargado,
+          tc_cargado: doc.tc_cargado,
+          aplica_tlc: doc.aplica_tlc,
+          doc: docUrls,
+          responsable_creacion: doc.responsable_creacion,
+          instrucciones_adicionales: doc.instrucciones_adicionales,
+          fecha_solicitud: doc.fecha_solicitud,
+          prioridad: doc.prioridad,
+          prioridad_urgente: doc.prioridad_urgente,
+          motivo_urgencia: doc.motivo_urgencia,
+          dificultad: doc.dificultad,
+          tiempo_minutos: doc.tiempo_minutos,
+          dias_entrega: doc.dias_entrega,
+          fecha_requerimiento: doc.fecha_requerimiento,
+          exp_id: doc.exp_id,
+          lineas_oc: doc.lineas_oc,
+          fecha_creacion_expediente: doc.fecha_creacion_expediente,
+          created_at: doc.created_at,
+        });
       }
 
       // Dedeuplicar
@@ -228,10 +257,11 @@ export default function Documentacion() {
       const { id: _id, tc_cargado: _tc, created_at: _createdAt, responsable_creacion: _respCreacion, ...basePayload } = primerDoc;
 
       // ─── PRESERVAR AUDITORÍA ORIGINAL ───
-      // El responsable de creación debe ser quien cargó los documentos originalmente,
-      // NO quien está consolidando ahora. Recolectamos todos los responsables únicos.
-      const responsablesUnicos = [...new Set(docsCAA.map((d: any) => d.responsable_creacion).filter(Boolean))];
-      const responsableOriginal = responsablesUnicos.join(', ') || 'Sistema';
+      // El cargador de documentos es quien subió los docs/POs en CAA (INMUTABLE).
+      // El solicitante es quien consolida ahora (INMUTABLE).
+      // El responsable de creación queda vacío esperando asignación (mutable).
+      const cargadoresUnicos = [...new Set(docsCAA.map((d: any) => d.responsable_creacion).filter(Boolean))];
+      const cargadorOriginal = cargadoresUnicos.join(', ') || 'Sistema';
 
       // Preservar la fecha de creación más antigua (cuando se cargaron los docs)
       const fechasCreacion = docsCAA.map((d: any) => new Date(d.created_at || ahora).getTime()).filter(t => !isNaN(t));
@@ -247,12 +277,14 @@ export default function Documentacion() {
           bl_cargado: algunBL,
           transito_corto: algunTC,
           aplica_tlc: algunTLC,
+          mcg: marcarMCG,
           estado_expediente: 'No Asignado',
           tipo_modulo: targetModulo,
           fecha_creacion_expediente: hoy,
-          // AUDITORÍA: preservar quién cargó originalmente y cuándo
-          responsable_creacion: responsableOriginal,
-          solicitante: responsableOriginal,
+          // AUDITORÍA: cargador (inmutable), solicitante (inmutable), responsable vacío
+          cargador_documentos: cargadorOriginal,
+          solicitante: nombreUsuario,
+          responsable_creacion: '',
           created_at: fechaMasAntigua,
         }])
         .select('id')
@@ -274,10 +306,11 @@ export default function Documentacion() {
         detalle: {
           tipo: 'consolidacion',
           consolidado_por: nombreUsuario,
-          responsable_original: responsableOriginal,
+          cargador_original: cargadorOriginal,
           total_pos: poUnicas.length,
           total_docs: docsUnicos.length,
           pos: poUnicas,
+          grupos,
         }
       }]);
 
@@ -396,15 +429,95 @@ export default function Documentacion() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="relative inline-flex">
-            <div className="w-20 h-20 border-4 border-amber-200 border-t-amber-600 rounded-full animate-spin"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <i className="ri-folder-open-line text-3xl text-amber-600"></i>
+      <div className="p-8">
+        {/* Encabezado con indicador de carga */}
+        <div className="mb-6 flex items-center gap-3">
+          <div className="w-10 h-10 flex items-center justify-center bg-amber-100 rounded-lg">
+            <i className="ri-folder-open-line text-amber-700 text-xl"></i>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Documentación</h1>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+              <p className="text-sm text-amber-600 font-medium">Cargando documentos...</p>
             </div>
           </div>
-          <p className="mt-6 text-gray-700 font-semibold text-lg">Cargando documentación...</p>
+        </div>
+
+        {/* Banner de carga */}
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 flex items-center justify-center bg-amber-100 rounded-full flex-shrink-0">
+            <i className="ri-folder-open-line text-amber-600 text-xl"></i>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">
+              Preparando la bandeja de Documentación
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Estamos trayendo los documentos cargados desde CAA...
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+          </div>
+        </div>
+
+        {/* Esqueleto de la tabla */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <th key={i} className="px-3 py-3">
+                      <div className="h-3 w-16 bg-gray-200 rounded animate-pulse mx-auto"></div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
+                  <tr key={i}>
+                    <td className="px-4 py-3">
+                      <div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-5 w-16 bg-gray-100 rounded-full animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-3 w-24 bg-gray-100 rounded animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-4 w-6 bg-gray-100 rounded animate-pulse mx-auto"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-gray-100 rounded-full animate-pulse"></div>
+                        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
@@ -550,7 +663,7 @@ export default function Documentacion() {
             {/* Botón generar ticket */}
             <button
               type="button"
-              onClick={generarTickets}
+              onClick={() => setShowMCGPrompt(true)}
               disabled={selectedIds.size === 0 || generando}
               className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 ${
                 targetModulo === 'dropship'
@@ -767,6 +880,52 @@ export default function Documentacion() {
                   className="px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   {deleting ? 'Eliminando...' : 'Sí, eliminar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal pregunta MCG al consolidar */}
+      {showMCGPrompt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 flex items-center justify-center bg-indigo-100 rounded-full flex-shrink-0">
+                  <i className="ri-question-line text-indigo-600 text-xl"></i>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">¿Marcar MCG?</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    ¿Deseas marcar la opción <strong>MCG</strong> en el ticket que vas a consolidar ({selectedIds.size} fila(s))?
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShowMCGPrompt(false)}
+                  className="px-5 py-2 text-gray-700 bg-gray-100 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowMCGPrompt(false); generarTickets(false); }}
+                  disabled={generando}
+                  className="px-5 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  No marcar MCG
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowMCGPrompt(false); generarTickets(true); }}
+                  disabled={generando}
+                  className="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  Sí, marcar MCG
                 </button>
               </div>
             </div>

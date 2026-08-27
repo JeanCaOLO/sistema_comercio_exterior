@@ -1,7 +1,10 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion, notificarCargaCAA } from '../../../lib/notificaciones';
 import { hoyLocal } from '../../../lib/fechas';
+import { useAuth } from '../../../contexts/AuthContext';
+
+const USUARIOS_CARGA_CAA = ['lchavala', 'smcdonald', 'mpaniagua'];
 
 interface POItem {
   id: string;
@@ -15,6 +18,7 @@ interface SolicitudCreada {
 }
 
 export default function CargaDocumentosCAA() {
+  const { perfil } = useAuth();
   const [tipoModulo, setTipoModulo] = useState<'dropship' | 'zf' | null>(null);
   const [tipoRuta, setTipoRuta] = useState<string>('');
   const [blCargado, setBlCargado] = useState(false);
@@ -27,6 +31,31 @@ export default function CargaDocumentosCAA() {
   const [solicitudesCreadas, setSolicitudesCreadas] = useState<SolicitudCreada[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [comentario, setComentario] = useState('');
+  const [autorizado, setAutorizado] = useState<boolean>(true);
+
+  useEffect(() => {
+    const verificarAutorizacion = async () => {
+      // Los administradores siempre tienen acceso a Carga CAA
+      const esAdministrador = perfil?.roles?.includes('Administrador') ?? false;
+      if (esAdministrador) {
+        setAutorizado(true);
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.email) {
+        const email = user.email.toLowerCase();
+        const esAutorizado = USUARIOS_CARGA_CAA.some(u => 
+          email.startsWith(u.toLowerCase() + '@') || email === u.toLowerCase()
+        );
+        setAutorizado(esAutorizado);
+      } else {
+        setAutorizado(false);
+      }
+    };
+    verificarAutorizacion();
+  }, [perfil]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -313,6 +342,41 @@ export default function CargaDocumentosCAA() {
     setSolicitudesCreadas([]);
     setError(null);
   };
+
+  if (!autorizado) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 flex items-center justify-center bg-teal-100 rounded-lg">
+              <i className="ri-file-upload-line text-teal-700 text-xl"></i>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Carga de Documentos CAA</h1>
+              <p className="text-gray-500 text-sm">Sube documentos y asócialos a POs — se crearán solicitudes automáticamente en el Kanban</p>
+            </div>
+          </div>
+        </div>
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-6">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-red-100 rounded-full flex-shrink-0">
+              <i className="ri-lock-2-line text-red-600 text-2xl"></i>
+            </div>
+            <div>
+              <h3 className="text-red-800 font-bold text-lg mb-1">Acceso restringido</h3>
+              <p className="text-red-700 text-sm">
+                Solo los usuarios autorizados pueden cargar documentos desde Carga CAA: <strong>lchavala, smcdonald, mpaniagua</strong> y los <strong>administradores</strong>.
+              </p>
+              <p className="text-red-600 text-xs mt-1">
+                Si necesitas acceso, contacta al administrador del sistema.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 max-w-4xl mx-auto">

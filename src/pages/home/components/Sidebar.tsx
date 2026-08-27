@@ -53,16 +53,10 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
       visible: esAdministrador
     },
     { 
-      id: 'carga-masiva', 
-      label: 'Carga Masiva', 
-      icon: 'ri-upload-cloud-line',
-      visible: esAdministrador
-    },
-    { 
       id: 'carga-caa', 
       label: 'Carga CAA', 
       icon: 'ri-file-upload-line',
-      visible: esSolicitante || esDocumentos
+      visible: esAdministrador || esSolicitante || esDocumentos
     },
     { 
       id: 'documentacion', 

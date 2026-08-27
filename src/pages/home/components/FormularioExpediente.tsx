@@ -112,7 +112,11 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
     etaReal: '', // Para ZF
     transitoCorto: false, // Para Dropship
     blCargado: false,
-    aplicaTLC: false
+    aplicaTLC: false,
+    incidente: false,
+    comentarioIncidente: '',
+    finiquito: false,
+    mcg: false
   });
 
   const [showSuccess, setShowSuccess] = useState(false);
@@ -347,7 +351,11 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
             transito_corto: formData.transitoCorto,
             ok_pais: false,
             bl_cargado: formData.blCargado,
-            aplica_tlc: formData.aplicaTLC
+            aplica_tlc: formData.aplicaTLC,
+            incidente: formData.incidente,
+            comentario_incidente: formData.incidente ? formData.comentarioIncidente : null,
+            finiquito: formData.finiquito,
+            mcg: formData.mcg
           }
         ])
         .select()
@@ -369,7 +377,10 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
         `EXP ID: ${formData.exp || 'No asignado'}`,
         `Transito Corto: ${formData.transitoCorto ? 'Sí' : 'No'}`,
         `BL Cargado: ${formData.blCargado ? 'Sí' : 'No'}`,
-        `Aplica TLC: ${formData.aplicaTLC ? 'Sí' : 'No'}`
+        `Aplica TLC: ${formData.aplicaTLC ? 'Sí' : 'No'}`,
+        `Incidente: ${formData.incidente ? 'Sí' : 'No'}`,
+        `Finiquito: ${formData.finiquito ? 'Sí' : 'No'}`,
+        `MCG: ${formData.mcg ? 'Sí' : 'No'}`
       ].join(' | ');
 
       await supabase.from('expedientes_historial').insert([{
@@ -458,7 +469,11 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
           etaReal: '',
           transitoCorto: false,
           blCargado: false,
-          aplicaTLC: false
+          aplicaTLC: false,
+          incidente: false,
+          comentarioIncidente: '',
+          finiquito: false,
+          mcg: false
         });
         setUploadedFiles([]);
         onClose();
@@ -885,7 +900,87 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                     </button>
                   </div>
                 </div>
-                
+
+                {/* Checkbox Incidente + comentario — solo Dropship */}
+                {tipoModulo === 'dropship' && (
+                  <>
+                    <div className="md:col-span-2">
+                      <div className={`flex items-center gap-4 rounded-lg p-4 border ${formData.incidente ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                        <div className="flex-1">
+                          <label className="block text-sm font-semibold text-gray-800 mb-1">
+                            Incidente
+                          </label>
+                          <p className="text-xs text-gray-500">Marcar si el expediente presenta un incidente</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, incidente: !prev.incidente }))}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${formData.incidente ? 'bg-red-500' : 'bg-gray-300'}`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${formData.incidente ? 'translate-x-8' : 'translate-x-1'}`}
+                          />
+                        </button>
+                      </div>
+                      {formData.incidente && (
+                        <div className="mt-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Comentario del Incidente
+                          </label>
+                          <textarea
+                            name="comentarioIncidente"
+                            value={formData.comentarioIncidente}
+                            onChange={handleChange}
+                            rows={3}
+                            maxLength={500}
+                            className="w-full px-4 py-2.5 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm resize-none"
+                            placeholder="Describe el incidente..."
+                          />
+                          <div className="flex justify-end mt-1">
+                            <span className={`text-xs font-medium ${formData.comentarioIncidente.length > 450 ? 'text-amber-600' : 'text-gray-400'}`}>
+                              {formData.comentarioIncidente.length}/500
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Checkbox Finiquito */}
+                    <div className="flex items-center gap-4 rounded-lg p-4 border bg-gray-50 border-gray-200">
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">Finiquito</label>
+                        <p className="text-xs text-gray-500">Marcar si aplica finiquito</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, finiquito: !prev.finiquito }))}
+                        className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${formData.finiquito ? 'bg-orange-500' : 'bg-gray-300'}`}
+                      >
+                        <span
+                          className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${formData.finiquito ? 'translate-x-8' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Checkbox MCG */}
+                    <div className="flex items-center gap-4 rounded-lg p-4 border bg-gray-50 border-gray-200">
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">MCG</label>
+                        <p className="text-xs text-gray-500">Marcar si aplica MCG</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, mcg: !prev.mcg }))}
+                        className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${formData.mcg ? 'bg-indigo-500' : 'bg-gray-300'}`}
+                      >
+                        <span
+                          className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${formData.mcg ? 'translate-x-8' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </div>
+                  </>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Estado del Expediente

@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion } from '../../../lib/notificaciones';
 import { formatearFecha } from '../../../lib/fechas';
+import { useAuth } from '../../../contexts/AuthContext';
 
 interface Expediente {
   id: string;
   po_tiquetera: string;
   tipo_po: string;
   solicitante: string;
+  cargador_documentos: string;
   fecha_solicitud: string;
   prioridad: string;
   prioridad_urgente: boolean;
@@ -36,14 +38,26 @@ interface Expediente {
   eta_real?: string;
   aplica_tlc?: boolean;
   tipo_modulo?: 'dropship' | 'zf';
+  incidente?: boolean;
+  comentario_incidente?: string | null;
+  finiquito?: boolean;
+  mcg?: boolean;
+  fecha_notificado?: string;
+  fecha_ok_pais?: string;
+  fecha_visto_listo?: string;
 }
 
 // Estados según el tipo de módulo
 const ESTADOS_DROPSHIP = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
 const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado'];
 
-// Tiempo para ocultar tickets terminados del kanban (2 días en ms)
-const DOS_DIAS_MS = 2 * 24 * 60 * 60 * 1000;
+// Tiempo para ocultar tickets terminados del kanban (10 días en ms)
+const DIEZ_DIAS_MS = 10 * 24 * 60 * 60 * 1000;
+
+// Columnas que se traen en la carga inicial del kanban. Se excluye `doc` porque
+// puede ser un campo grande (array de URLs) y se carga bajo demanda al abrir el
+// detalle, los documentos o al validar la asignación.
+const COLUMNAS_EXPEDIENTE = 'id, po_tiquetera, tipo_po, solicitante, cargador_documentos, fecha_solicitud, prioridad, prioridad_urgente, motivo_urgencia, dificultad, tiempo_minutos, dias_entrega, fecha_requerimiento, exp_id, lineas_oc, fecha_creacion_expediente, estado_expediente, motivo_revision, responsable_creacion, instrucciones_adicionales, created_at, fecha_liberacion, tiempo_real_minutos, dias_entrega_real, transito_corto, ok_pais, bl_cargado, etd, eta_real, aplica_tlc, tipo_modulo, incidente, comentario_incidente, finiquito, mcg, fecha_notificado, fecha_ok_pais, fecha_visto_listo, updated_at';
 
 const filtrarTerminadosAntiguos = (lista: Expediente[]): Expediente[] => {
   const ahora = new Date();
@@ -54,10 +68,66 @@ const filtrarTerminadosAntiguos = (lista: Expediente[]): Expediente[] => {
       const refDate = exp.fecha_liberacion
         ? new Date(exp.fecha_liberacion)
         : new Date((exp as any).updated_at || exp.created_at);
-      return (ahora.getTime() - refDate.getTime()) < DOS_DIAS_MS;
+      return (ahora.getTime() - refDate.getTime()) < DIEZ_DIAS_MS;
     }
     return true;
   });
+};
+
+// Regla automática: marcar OK País a los 10 días naturales desde "Notificado"
+// si aún no se ha marcado manualmente. Solo aplica a Dropship en estados
+// "Notificado" o "Visto Listo".
+const aplicarOKPaisAutomatico = async (lista: Expediente[]): Promise<Expediente[]> => {
+  const ahora = new Date();
+  const pendientes = lista.filter(exp =>
+    exp.tipo_modulo === 'dropship' &&
+    (exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo') &&
+    exp.ok_pais !== true
+  );
+
+  for (const exp of pendientes) {
+    const refStr = exp.fecha_notificado || exp.fecha_liberacion || (exp as any).updated_at || exp.created_at;
+    if (!refStr) continue;
+    const refDate = new Date(refStr);
+    if (Number.isNaN(refDate.getTime())) continue;
+    if (ahora.getTime() - refDate.getTime() < DIEZ_DIAS_MS) continue;
+
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase
+      .from('expedientes')
+      .update({ ok_pais: true, fecha_ok_pais: nowIso })
+      .eq('id', exp.id);
+
+    if (error) {
+      console.error('Error al marcar OK País automático:', error);
+      continue;
+    }
+
+    exp.ok_pais = true;
+    exp.fecha_ok_pais = nowIso;
+
+    await supabase.from('expedientes_historial').insert([{
+      expediente_id: exp.id,
+      campo_modificado: 'OK País',
+      valor_anterior: 'Pendiente',
+      valor_nuevo: 'OK (automático - 10 días naturales)',
+      usuario: 'Sistema',
+      fecha_cambio: nowIso
+    }]);
+
+    crearNotificacion({
+      poTiquetera: exp.po_tiquetera,
+      solicitante: exp.solicitante || '',
+      responsable: exp.responsable_creacion || '',
+      usuarioGenero: 'Sistema',
+      tipo: 'documento_modificado',
+      mensaje: `OK País marcado automáticamente para ${exp.po_tiquetera} (10 días naturales transcurridos)`,
+      icono: 'ri-check-double-line',
+      expedienteId: exp.id,
+    });
+  }
+
+  return lista;
 };
 
 interface GestionExpedientesProps {
@@ -67,6 +137,9 @@ interface GestionExpedientesProps {
 }
 
 export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, tipoModulo = 'dropship' }: GestionExpedientesProps) {
+  const { perfil } = useAuth();
+  const esAdmin = perfil?.roles?.includes('Administrador') ?? false;
+
   const [expedientes, setExpedientes] = useState<Expediente[]>([]);
   const [filteredExpedientes, setFilteredExpedientes] = useState<Expediente[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +150,9 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
   const [showModal, setShowModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [isAsignarMode, setIsAsignarMode] = useState(false);
+  const [showDevolverConfirm, setShowDevolverConfirm] = useState(false);
+  const [devolverGrupos, setDevolverGrupos] = useState<any[]>([]);
+  const [devolverCargandoInfo, setDevolverCargandoInfo] = useState(false);
   const [solicitantes, setSolicitantes] = useState<string[]>([]);
   const [responsables, setResponsables] = useState<string[]>([]);
   const [todasPersonas, setTodasPersonas] = useState<string[]>([]);
@@ -89,6 +165,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
   const [showHistorial, setShowHistorial] = useState(false);
   const [historialData, setHistorialData] = useState<any[]>([]);
   const [expedienteSeleccionado, setExpedienteSeleccionado] = useState<any>(null);
+  const [cargadorNoAutorizado, setCargadorNoAutorizado] = useState(false);
   const [showDocumentos, setShowDocumentos] = useState(false);
   const [documentosExpediente, setDocumentosExpediente] = useState<string[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -122,6 +199,16 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     } finally {
       setDownloadingId(null);
     }
+  };
+
+  const cargarDocExpediente = async (expedienteId: string): Promise<string | string[] | null> => {
+    const { data, error } = await supabase
+      .from('expedientes')
+      .select('doc')
+      .eq('id', expedienteId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data.doc ?? null;
   };
 
   useEffect(() => {
@@ -266,7 +353,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       
       const { data, error } = await supabase
         .from('expedientes')
-        .select('*')
+        .select(COLUMNAS_EXPEDIENTE)
         .eq('tipo_modulo', tipoModulo)
         .order('created_at', { ascending: false });
 
@@ -276,7 +363,8 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       }
       
       console.log('✅ Expedientes cargados:', data?.length || 0);
-      setExpedientes(filtrarTerminadosAntiguos(data || []));
+      const conOKAutomatico = await aplicarOKPaisAutomatico(data || []);
+      setExpedientes(filtrarTerminadosAntiguos(conOKAutomatico));
     } catch (error) {
       console.error('❌ Error al cargar expedientes:', error);
       setExpedientes([]);
@@ -514,53 +602,80 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       setHistorialData(data || []);
       setExpedienteSeleccionado(expediente);
       setShowHistorial(true);
+
+      // Verificar si el cargador original está autorizado (por email o rol administrador)
+      const cargador = expediente.cargador_documentos || expediente.solicitante || '';
+      if (!cargador) {
+        setCargadorNoAutorizado(true);
+      } else {
+        const { data: usuarioData } = await supabase
+          .from('usuarios')
+          .select('id, email')
+          .eq('nombre', cargador)
+          .maybeSingle();
+
+        if (usuarioData?.email) {
+          const email = usuarioData.email.toLowerCase();
+          const esListaBlanca = ['lchavala', 'smcdonald', 'mpaniagua'].some(u => 
+            email.startsWith(u.toLowerCase() + '@') || email === u.toLowerCase()
+          );
+
+          // Verificar si el cargador es administrador
+          let esAdministrador = false;
+          if (usuarioData?.id) {
+            const { data: rolesData } = await supabase
+              .from('usuario_roles')
+              .select('roles!inner(nombre)')
+              .eq('usuario_id', usuarioData.id);
+            esAdministrador = (rolesData || []).some((r: any) => r.roles?.nombre === 'Administrador');
+          }
+
+          setCargadorNoAutorizado(!(esListaBlanca || esAdministrador));
+        } else {
+          setCargadorNoAutorizado(true);
+        }
+      }
     } catch (error) {
       console.error('Error al cargar historial:', error);
     }
   };
 
-  const verDocumentos = (expediente: any) => {
+  const verDocumentos = async (expediente: any) => {
     try {
-      console.log('=== INICIO VISUALIZACIÓN DOCUMENTOS ===');
-      console.log('Expediente:', expediente.po_tiquetera);
-      console.log('Campo doc:', expediente.doc);
-      console.log('Tipo:', typeof expediente.doc);
-      
+      // El campo `doc` se carga bajo demanda si no vino en la carga inicial
+      let doc = expediente.doc;
+      if (doc === undefined) {
+        doc = await cargarDocExpediente(expediente.id);
+      }
+
       let docs: string[] = [];
-      
-      if (expediente.doc) {
+
+      if (doc) {
         // Si es un array (formato correcto de PostgreSQL JSONB)
-        if (Array.isArray(expediente.doc)) {
-          docs = expediente.doc.filter((url: any) => typeof url === 'string' && url.trim() !== '');
-          console.log('✅ Array detectado, documentos:', docs.length);
+        if (Array.isArray(doc)) {
+          docs = doc.filter((url: any) => typeof url === 'string' && url.trim() !== '');
         }
         // Si es string, intentar parsear
-        else if (typeof expediente.doc === 'string') {
-          const docTrimmed = expediente.doc.trim();
+        else if (typeof doc === 'string') {
+          const docTrimmed = doc.trim();
           if (docTrimmed.startsWith('[') || docTrimmed.startsWith('{')) {
             try {
               const parsed = JSON.parse(docTrimmed);
               docs = Array.isArray(parsed) ? parsed : [parsed];
-              console.log('✅ JSON parseado, documentos:', docs.length);
             } catch {
               docs = [docTrimmed];
-              console.log('⚠️ Parse falló, usando como URL única');
             }
           } else if (docTrimmed !== '') {
             docs = [docTrimmed];
-            console.log('✅ URL simple detectada');
           }
         }
       }
-      
-      console.log('📄 Total documentos procesados:', docs.length);
-      console.log('=== FIN VISUALIZACIÓN DOCUMENTOS ===');
-      
+
       setDocumentosExpediente(docs);
       setExpedienteSeleccionado(expediente);
       setShowDocumentos(true);
     } catch (error) {
-      console.error('❌ Error al procesar documentos:', error);
+      console.error('Error al procesar documentos:', error);
       setDocumentosExpediente([]);
       setExpedienteSeleccionado(expediente);
       setShowDocumentos(true);
@@ -597,12 +712,13 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     try {
       const { data, error } = await supabase
         .from('expedientes')
-        .select('*')
+        .select(COLUMNAS_EXPEDIENTE)
         .eq('tipo_modulo', tipoModulo)
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        setExpedientes(filtrarTerminadosAntiguos(data));
+        const conOKAutomatico = await aplicarOKPaisAutomatico(data);
+        setExpedientes(filtrarTerminadosAntiguos(conOKAutomatico));
       }
     } catch (err) {
       console.error('Error en recarga silenciosa:', err);
@@ -636,6 +752,224 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       console.error('Error al eliminar expediente:', error);
       setShowError(true);
       setTimeout(() => setShowError(false), 3000);
+    }
+  };
+
+  // Lee la estructura original de consolidación guardada en el historial.
+  // Devuelve el arreglo de grupos (cada uno con su PO y documentos) o [] si no hay.
+  const obtenerGruposOriginales = async (expediente: Expediente): Promise<any[]> => {
+    try {
+      const { data: historialConsolidacion } = await supabase
+        .from('expedientes_historial')
+        .select('detalle')
+        .eq('expediente_id', expediente.id)
+        .eq('campo_modificado', 'Estado')
+        .eq('valor_nuevo', 'No Asignado')
+        .order('fecha_cambio', { ascending: true })
+        .limit(1);
+
+      const detalle = historialConsolidacion?.[0]?.detalle;
+      if (detalle && Array.isArray(detalle.grupos) && detalle.grupos.length > 0) {
+        return detalle.grupos;
+      }
+      return [];
+    } catch (e) {
+      console.warn('No se pudo leer la información de consolidación:', e);
+      return [];
+    }
+  };
+
+  // Cuenta cuántos documentos tiene un grupo (doc puede ser string o array)
+  const contarDocs = (doc: any): number => {
+    if (!doc) return 0;
+    if (Array.isArray(doc)) return doc.length;
+    if (typeof doc === 'string') {
+      const trimmed = doc.trim();
+      if (trimmed === '') return 0;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.length;
+        return 1;
+      } catch {
+        return 1;
+      }
+    }
+    return 0;
+  };
+
+  // Al abrir el modal de confirmación, carga la estructura de grupos para
+  // mostrar el aviso visual de cuántas POs se van a separar.
+  const abrirConfirmacionDevolver = async (expediente: Expediente) => {
+    setShowDevolverConfirm(true);
+    setDevolverGrupos([]);
+    setDevolverCargandoInfo(true);
+    const grupos = await obtenerGruposOriginales(expediente);
+    setDevolverGrupos(grupos);
+    setDevolverCargandoInfo(false);
+  };
+
+  const devolverADocumentacion = async (expediente: Expediente) => {
+    try {
+      setSaving(true);
+
+      // Cargar `doc` bajo demanda si no vino en la carga inicial
+      let docActual = expediente.doc;
+      if (docActual === undefined) {
+        docActual = await cargarDocExpediente(expediente.id);
+      }
+
+      const ahora = new Date().toISOString();
+
+      // Obtener usuario actual
+      const { data: { user } } = await supabase.auth.getUser();
+      let nombreUsuario = 'Sistema';
+      let emailUsuario = '';
+      if (user) {
+        emailUsuario = user.email || '';
+        const { data: usuario } = await supabase
+          .from('usuarios')
+          .select('nombre')
+          .eq('email', user.email)
+          .maybeSingle();
+        if (usuario) nombreUsuario = usuario.nombre;
+      }
+
+      // 1) Reinsertar el ticket en la bandeja de Documentación (documentos_caa)
+      // Si el ticket se consolidó desde varias POs separadas, lo separamos tal cual vino:
+      // una fila por cada agrupación original, con sus documentos correspondientes.
+      let gruposOriginales: any[] = [];
+      try {
+        const { data: historialConsolidacion } = await supabase
+          .from('expedientes_historial')
+          .select('detalle')
+          .eq('expediente_id', expediente.id)
+          .eq('campo_modificado', 'Estado')
+          .eq('valor_nuevo', 'No Asignado')
+          .order('fecha_cambio', { ascending: true })
+          .limit(1);
+
+        const detalle = historialConsolidacion?.[0]?.detalle;
+        if (detalle && Array.isArray(detalle.grupos) && detalle.grupos.length > 0) {
+          gruposOriginales = detalle.grupos;
+        }
+      } catch (e) {
+        console.warn('No se pudo leer la información de consolidación:', e);
+      }
+
+      if (gruposOriginales.length > 0) {
+        // Separar en filas individuales, una por cada PO/agrupación original
+        const filas = gruposOriginales.map((g: any) => ({
+          po_tiquetera: g.po_tiquetera ?? expediente.po_tiquetera,
+          tipo_po: g.tipo_po ?? expediente.tipo_po,
+          solicitante: g.solicitante ?? expediente.solicitante,
+          fecha_solicitud: g.fecha_solicitud ?? expediente.fecha_solicitud,
+          prioridad: g.prioridad ?? expediente.prioridad,
+          prioridad_urgente: g.prioridad_urgente ?? expediente.prioridad_urgente,
+          motivo_urgencia: g.motivo_urgencia ?? expediente.motivo_urgencia,
+          dificultad: g.dificultad ?? expediente.dificultad,
+          tiempo_minutos: g.tiempo_minutos ?? expediente.tiempo_minutos,
+          dias_entrega: g.dias_entrega ?? expediente.dias_entrega,
+          fecha_requerimiento: g.fecha_requerimiento ?? expediente.fecha_requerimiento,
+          exp_id: g.exp_id ?? 'Por Asignar',
+          doc: g.doc ?? docActual,
+          lineas_oc: g.lineas_oc ?? expediente.lineas_oc,
+          bl_cargado: g.bl_cargado ?? false,
+          tc_cargado: g.tc_cargado ?? expediente.transito_corto,
+          aplica_tlc: g.aplica_tlc ?? expediente.aplica_tlc,
+          fecha_creacion_expediente: g.fecha_creacion_expediente ?? expediente.fecha_creacion_expediente,
+          estado_expediente: 'Documentación',
+          responsable_creacion: g.responsable_creacion ?? expediente.responsable_creacion,
+          instrucciones_adicionales: g.instrucciones_adicionales ?? expediente.instrucciones_adicionales,
+          tipo_modulo: expediente.tipo_modulo,
+          created_at: g.created_at ?? expediente.created_at ?? ahora
+        }));
+
+        const { error: insertError } = await supabase
+          .from('documentos_caa')
+          .insert(filas);
+
+        if (insertError) throw new Error(`Error al devolver a Documentación: ${insertError.message}`);
+      } else {
+        // Comportamiento original: una sola fila (datos antiguos sin estructura de grupos)
+        const { error: insertError } = await supabase
+          .from('documentos_caa')
+          .insert([{
+            po_tiquetera: expediente.po_tiquetera,
+            tipo_po: expediente.tipo_po,
+            solicitante: expediente.solicitante,
+            fecha_solicitud: expediente.fecha_solicitud,
+            prioridad: expediente.prioridad,
+            prioridad_urgente: expediente.prioridad_urgente,
+            motivo_urgencia: expediente.motivo_urgencia,
+            dificultad: expediente.dificultad,
+            tiempo_minutos: expediente.tiempo_minutos,
+            dias_entrega: expediente.dias_entrega,
+            fecha_requerimiento: expediente.fecha_requerimiento,
+            exp_id: expediente.exp_id,
+            doc: docActual,
+            lineas_oc: expediente.lineas_oc,
+            bl_cargado: expediente.bl_cargado,
+            tc_cargado: expediente.transito_corto,
+            aplica_tlc: expediente.aplica_tlc,
+            fecha_creacion_expediente: expediente.fecha_creacion_expediente,
+            estado_expediente: 'Documentación',
+            responsable_creacion: expediente.responsable_creacion,
+            instrucciones_adicionales: expediente.instrucciones_adicionales,
+            tipo_modulo: expediente.tipo_modulo,
+            created_at: expediente.created_at || ahora
+          }]);
+
+        if (insertError) throw new Error(`Error al devolver a Documentación: ${insertError.message}`);
+      }
+
+      // 2) Quitar el ticket del kanban (expedientes)
+      const { error: deleteError } = await supabase
+        .from('expedientes')
+        .delete()
+        .eq('id', expediente.id);
+
+      if (deleteError) throw new Error(`Error al quitar el ticket del kanban: ${deleteError.message}`);
+
+      // 3) Registrar historial
+      await supabase.from('expedientes_historial').insert([{
+        expediente_id: expediente.id,
+        campo_modificado: 'Estado',
+        valor_anterior: 'No Asignado',
+        valor_nuevo: 'Documentación',
+        usuario: nombreUsuario,
+        usuario_email: emailUsuario,
+        fecha_cambio: ahora
+      }]);
+
+      // 4) Notificación
+      const totalFilasDevueltas = gruposOriginales.length > 0 ? gruposOriginales.length : 1;
+      crearNotificacion({
+        poTiquetera: expediente.po_tiquetera,
+        solicitante: expediente.solicitante || '',
+        responsable: expediente.responsable_creacion || '',
+        usuarioGenero: nombreUsuario,
+        tipo: 'documento_modificado',
+        mensaje: gruposOriginales.length > 1
+          ? `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación, separado en ${totalFilasDevueltas} POs con sus documentos`
+          : `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación`,
+        icono: 'ri-arrow-go-back-line',
+        expedienteId: expediente.id
+      });
+
+      // 5) Actualizar estado local al instante
+      setExpedientes(prev => prev.filter(e => e.id !== expediente.id));
+
+      setShowDevolverConfirm(false);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      cerrarModal();
+    } catch (error: any) {
+      console.error('Error al devolver a Documentación:', error);
+      setErrorMessage(error.message || 'Error al devolver el ticket a Documentación.');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 5000);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -750,7 +1084,6 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       const updates: any = {
         po_tiquetera: selectedExpediente.po_tiquetera,
         tipo_po: selectedExpediente.tipo_po,
-        solicitante: selectedExpediente.solicitante,
         prioridad: selectedExpediente.prioridad,
         prioridad_urgente: selectedExpediente.prioridad_urgente,
         motivo_urgencia: selectedExpediente.prioridad_urgente ? selectedExpediente.motivo_urgencia : null,
@@ -768,6 +1101,10 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         ok_pais: tipoModulo === 'dropship' ? (selectedExpediente.ok_pais ?? false) : false,
         bl_cargado: selectedExpediente.bl_cargado ?? false,
         aplica_tlc: selectedExpediente.aplica_tlc ?? false,
+        incidente: tipoModulo === 'dropship' ? (selectedExpediente.incidente ?? false) : false,
+        comentario_incidente: tipoModulo === 'dropship' && selectedExpediente.incidente ? (selectedExpediente.comentario_incidente || null) : null,
+        finiquito: tipoModulo === 'dropship' ? (selectedExpediente.finiquito ?? false) : false,
+        mcg: tipoModulo === 'dropship' ? (selectedExpediente.mcg ?? false) : false,
         etd: tipoModulo === 'dropship' ? (selectedExpediente.etd || null) : null,
         eta_real: tipoModulo === 'zf' ? (selectedExpediente.eta_real || null) : null
       };
@@ -784,17 +1121,21 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
           const nuevasUrls = await uploadFilesToSupabase(selectedExpediente.id);
           console.log('✅ Archivos subidos exitosamente:', nuevasUrls);
           
-          // Obtener documentos existentes
+          // Obtener documentos existentes (cargando `doc` bajo demanda si hace falta)
+          let docActual = selectedExpediente.doc;
+          if (docActual === undefined) {
+            docActual = await cargarDocExpediente(selectedExpediente.id);
+          }
           let docsExistentes: string[] = [];
-          if (selectedExpediente.doc) {
-            if (Array.isArray(selectedExpediente.doc)) {
-              docsExistentes = selectedExpediente.doc;
-            } else if (typeof selectedExpediente.doc === 'string') {
+          if (docActual) {
+            if (Array.isArray(docActual)) {
+              docsExistentes = docActual;
+            } else if (typeof docActual === 'string') {
               try {
-                const parsed = JSON.parse(selectedExpediente.doc);
+                const parsed = JSON.parse(docActual);
                 docsExistentes = Array.isArray(parsed) ? parsed : [parsed];
               } catch {
-                docsExistentes = selectedExpediente.doc.trim() !== '' ? [selectedExpediente.doc] : [];
+                docsExistentes = docActual.trim() !== '' ? [docActual] : [];
               }
             }
           }
@@ -827,7 +1168,6 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       const camposAComparar = [
         { key: 'po_tiquetera', label: 'PO/Tiquetera' },
         { key: 'tipo_po', label: 'Ruta Logística' },
-        { key: 'solicitante', label: 'Solicitante' },
         { key: 'prioridad', label: 'Prioridad' },
         { key: 'prioridad_urgente', label: 'Prioridad Urgente' },
         { key: 'motivo_urgencia', label: 'Motivo de Urgencia' },
@@ -844,6 +1184,10 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         { key: 'ok_pais', label: 'OK País' },
         { key: 'bl_cargado', label: 'BL Cargado' },
         { key: 'aplica_tlc', label: 'Aplica TLC' },
+        { key: 'incidente', label: 'Incidente' },
+        { key: 'comentario_incidente', label: 'Comentario Incidente' },
+        { key: 'finiquito', label: 'Finiquito' },
+        { key: 'mcg', label: 'MCG' },
         { key: 'etd', label: 'ETD' },
         { key: 'eta_real', label: 'ETA Real' }
       ];
@@ -895,9 +1239,15 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         updates.dias_entrega_real = diasEntregaReal;
       }
 
-      // Dropship: actualizar fecha_liberacion al llegar a Visto Listo (para conteo de 2 días)
+      // Dropship: actualizar fecha_liberacion y fecha_visto_listo al llegar a Visto Listo (conteo de 10 días)
       if (selectedExpediente.tipo_modulo === 'dropship' && estadoNuevo === 'Visto Listo' && estadoAnterior !== 'Visto Listo') {
         updates.fecha_liberacion = new Date().toISOString();
+        updates.fecha_visto_listo = new Date().toISOString();
+      }
+
+      // Dropship: registrar fecha al llegar a Notificado (regla OK País automático)
+      if (selectedExpediente.tipo_modulo === 'dropship' && estadoNuevo === 'Notificado' && estadoAnterior !== 'Notificado') {
+        updates.fecha_notificado = new Date().toISOString();
       }
 
       const { error } = await supabase
@@ -982,13 +1332,19 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         return;
       }
       
+      // Cargar `doc` bajo demanda para validar que tenga documentos
+      let docActual = draggedItem.doc;
+      if (docActual === undefined) {
+        docActual = await cargarDocExpediente(draggedItem.id);
+      }
+
       // Verificar que tenga documentos
       let tieneDocs = false;
-      if (draggedItem.doc) {
-        if (Array.isArray(draggedItem.doc)) {
-          tieneDocs = draggedItem.doc.length > 0;
-        } else if (typeof draggedItem.doc === 'string') {
-          const trimmed = draggedItem.doc.trim();
+      if (docActual) {
+        if (Array.isArray(docActual)) {
+          tieneDocs = docActual.length > 0;
+        } else if (typeof docActual === 'string') {
+          const trimmed = docActual.trim();
           tieneDocs = trimmed !== '' && trimmed !== '[]' && trimmed !== '{}';
         }
       }
@@ -1001,7 +1357,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         return;
       }
       
-      setSelectedExpediente({ ...draggedItem, estado_expediente: 'Asignado' });
+      setSelectedExpediente({ ...draggedItem, doc: docActual, estado_expediente: 'Asignado' });
       setEditMode(true);
       setIsAsignarMode(true);
       setShowModal(true);
@@ -1051,9 +1407,15 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         updates.dias_entrega_real = diasEntregaReal;
       }
 
-      // Dropship: actualizar fecha_liberacion al llegar a Visto Listo (para conteo de 2 días)
+      // Dropship: actualizar fecha_liberacion y fecha_visto_listo al llegar a Visto Listo (conteo de 10 días)
       if (draggedItem.tipo_modulo === 'dropship' && nuevoEstado === 'Visto Listo') {
         updates.fecha_liberacion = new Date().toISOString();
+        updates.fecha_visto_listo = new Date().toISOString();
+      }
+
+      // Dropship: registrar fecha al llegar a Notificado (regla OK País automático)
+      if (draggedItem.tipo_modulo === 'dropship' && nuevoEstado === 'Notificado') {
+        updates.fecha_notificado = new Date().toISOString();
       }
 
       const { error } = await supabase
@@ -1153,10 +1515,74 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
-          <p className="mt-4 text-gray-600">Cargando expedientes...</p>
+      <div className="p-8">
+        {/* Encabezado con indicador de carga */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">{tituloModulo}</h1>
+            <div className="flex items-center gap-2 mt-2">
+              <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+              <p className="text-sm text-teal-600 font-medium">Cargando tickets...</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Banner de carga */}
+        <div className="mb-6 bg-teal-50 border border-teal-200 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 flex items-center justify-center bg-teal-100 rounded-full flex-shrink-0">
+            <i className="ri-ship-line text-teal-600 text-xl"></i>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-teal-800">
+              Preparando el tablero de {tipoModulo === 'dropship' ? 'Dropship' : 'ZF'}
+            </p>
+            <p className="text-xs text-teal-600 mt-0.5">
+              Estamos trayendo los expedientes desde la base de datos...
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+          </div>
+        </div>
+
+        {/* Esqueleto del tablero Kanban */}
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {ESTADOS.map(estado => (
+            <div
+              key={estado}
+              className="flex-shrink-0 w-80 bg-gray-50 rounded-xl border border-gray-200"
+            >
+              <div className="px-4 py-3 rounded-t-xl flex items-center justify-between bg-gray-200 animate-pulse">
+                <div className="h-4 w-24 bg-gray-300 rounded animate-pulse"></div>
+                <div className="h-5 w-8 bg-gray-300 rounded-full animate-pulse"></div>
+              </div>
+
+              <div className="p-3 space-y-3">
+                {[0, 1, 2].map(i => (
+                  <div key={i} className="bg-white rounded-lg border border-gray-200 p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div>
+                        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
+                      </div>
+                      <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse"></div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="h-3 w-full bg-gray-100 rounded animate-pulse"></div>
+                      <div className="h-3 w-3/4 bg-gray-100 rounded animate-pulse"></div>
+                      <div className="h-3 w-1/2 bg-gray-100 rounded animate-pulse"></div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
+                      <div className="h-6 w-6 bg-gray-100 rounded animate-pulse"></div>
+                      <div className="h-6 w-6 bg-gray-100 rounded animate-pulse"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -1330,6 +1756,21 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                               TLC
                             </span>
                           )}
+                          {expediente.mcg && (
+                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
+                              MCG
+                            </span>
+                          )}
+                          {expediente.finiquito && (
+                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+                              Finiquito
+                            </span>
+                          )}
+                          {expediente.incidente && (
+                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                              ⚠ Incidente
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1431,6 +1872,35 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {/* Línea especial: quién cargó originalmente el ticket desde Carga CAA */}
+              {cargadorNoAutorizado && (
+                <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3">
+                  <div className="w-8 h-8 flex items-center justify-center bg-red-100 rounded-full flex-shrink-0">
+                    <i className="ri-error-warning-line text-red-600 text-base"></i>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-red-700 font-bold uppercase tracking-wide">⚠️ Cargador no autorizado</p>
+                    <p className="text-sm text-gray-800 font-semibold">
+                      Este ticket no fue cargado por un usuario autorizado de Carga CAA.
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">Solo lchavala, smcdonald, mpaniagua y los administradores pueden cargar documentos.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-4 bg-teal-50 border border-teal-200 rounded-lg p-3 flex items-start gap-3">
+                <div className="w-8 h-8 flex items-center justify-center bg-teal-100 rounded-full flex-shrink-0">
+                  <i className="ri-upload-cloud-2-line text-teal-600 text-base"></i>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-teal-700 font-medium uppercase tracking-wide">Origen del ticket</p>
+                  <p className="text-sm text-gray-800 font-semibold">
+                    Cargado por: {expedienteSeleccionado?.cargador_documentos || expedienteSeleccionado?.solicitante || 'N/A'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">Documentos y PO cargados desde Carga CAA</p>
+                </div>
+              </div>
+
               {historialData.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No hay cambios registrados</p>
               ) : (
@@ -1666,20 +2136,27 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Solicitante</label>
-                  {editMode ? (
-                    <select
-                      value={selectedExpediente.solicitante}
-                      onChange={(e) => handleChange('solicitante', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    >
-                      {solicitantes.map(nombre => (
-                        <option key={nombre} value={nombre}>{nombre}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="text-gray-900">{selectedExpediente.solicitante}</p>
-                  )}
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Solicitante
+                    <span className="ml-2 text-xs font-normal text-gray-400">(inmutable)</span>
+                  </label>
+                  <div className="flex items-center gap-2 w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                    <i className="ri-lock-line text-gray-400 text-sm"></i>
+                    <span className="text-gray-900">{selectedExpediente.solicitante}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Quien consolidó y creó el ticket desde Documentación. No se puede modificar.</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cargador de Documentos
+                    <span className="ml-2 text-xs font-normal text-gray-400">(inmutable)</span>
+                  </label>
+                  <div className="flex items-center gap-2 w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                    <i className="ri-lock-line text-gray-400 text-sm"></i>
+                    <span className="text-gray-900">{selectedExpediente.cargador_documentos || 'N/A'}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Quien cargó los documentos y la PO desde Carga CAA. No se puede modificar.</p>
                 </div>
 
                 <div>
@@ -1808,15 +2285,21 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                     Responsable Creación
                   </label>
                   {editMode ? (
-                    <select
-                      value={selectedExpediente.responsable_creacion}
-                      onChange={(e) => handleChange('responsable_creacion', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    >
-                      {responsables.map(nombre => (
-                        <option key={nombre} value={nombre}>{nombre}</option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        value={selectedExpediente.responsable_creacion}
+                        onChange={(e) => handleChange('responsable_creacion', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+                      >
+                        {responsables.map(nombre => (
+                          <option key={nombre} value={nombre}>{nombre}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                        <i className="ri-history-line"></i>
+                        Al cambiar el responsable, el historial conservará quién lo tenía antes.
+                      </p>
+                    </>
                   ) : (
                     <p className="text-gray-900">{selectedExpediente.responsable_creacion}</p>
                   )}
@@ -1899,6 +2382,112 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                         </span>
                       )}
                     </div>
+
+                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.finiquito ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">
+                          Finiquito
+                        </label>
+                        <p className="text-xs text-gray-500">Marcar si el expediente tiene finiquito</p>
+                      </div>
+                      {editMode ? (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('finiquito', !selectedExpediente.finiquito)}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                            selectedExpediente.finiquito ? 'bg-orange-500' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              selectedExpediente.finiquito ? 'translate-x-8' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.finiquito ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {selectedExpediente.finiquito ? 'Sí' : 'No'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.mcg ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">
+                          MCG
+                        </label>
+                        <p className="text-xs text-gray-500">Marcar si aplica MCG</p>
+                      </div>
+                      {editMode ? (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('mcg', !selectedExpediente.mcg)}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                            selectedExpediente.mcg ? 'bg-indigo-500' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              selectedExpediente.mcg ? 'translate-x-8' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.mcg ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {selectedExpediente.mcg ? 'Sí' : 'No'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.incidente ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">
+                          Incidente
+                        </label>
+                        <p className="text-xs text-gray-500">Marcar si el expediente presenta un incidente</p>
+                      </div>
+                      {editMode ? (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('incidente', !selectedExpediente.incidente)}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                            selectedExpediente.incidente ? 'bg-red-500' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              selectedExpediente.incidente ? 'translate-x-8' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.incidente ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {selectedExpediente.incidente ? 'Sí' : 'No'}
+                        </span>
+                      )}
+                    </div>
+
+                    {selectedExpediente.incidente && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Comentario del Incidente
+                        </label>
+                        {editMode ? (
+                          <textarea
+                            value={selectedExpediente.comentario_incidente || ''}
+                            onChange={(e) => handleChange('comentario_incidente', e.target.value)}
+                            rows={3}
+                            maxLength={500}
+                            className="w-full px-4 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm resize-none"
+                            placeholder="Describe el incidente..."
+                          />
+                        ) : (
+                          <p className="text-gray-900 bg-red-50 px-4 py-2 rounded-lg border border-red-200">
+                            {selectedExpediente.comentario_incidente || 'Sin comentario'}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -2080,6 +2669,16 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                         <i className="ri-delete-bin-line mr-2"></i>
                         Eliminar
                       </button>
+                      {esAdmin && selectedExpediente.estado_expediente === 'No Asignado' && (
+                        <button
+                          type="button"
+                          onClick={() => abrirConfirmacionDevolver(selectedExpediente)}
+                          className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors cursor-pointer whitespace-nowrap"
+                        >
+                          <i className="ri-arrow-go-back-line mr-2"></i>
+                          Devolver a Documentación
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={cerrarModal}
@@ -2121,6 +2720,91 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                     </>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación: Devolver a Documentación */}
+      {showDevolverConfirm && selectedExpediente && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 flex items-center justify-center bg-amber-100 rounded-full flex-shrink-0">
+                  <i className="ri-arrow-go-back-line text-amber-600 text-xl"></i>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">¿Devolver a Documentación?</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    El ticket <strong>{selectedExpediente.po_tiquetera}</strong> volverá a la bandeja de{' '}
+                    <strong>Documentación</strong> y se quitará del Kanban. Podrás volver a consolidarlo cuando lo necesites.
+                  </p>
+                </div>
+              </div>
+
+              {/* Aviso visual: estructura de POs a separar */}
+              {devolverCargandoInfo ? (
+                <div className="mb-4 flex items-center gap-2 text-gray-400 text-sm">
+                  <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin flex-shrink-0"></div>
+                  <span>Analizando estructura del ticket...</span>
+                </div>
+              ) : devolverGrupos.length > 1 ? (
+                <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <i className="ri-git-branch-line text-indigo-600 text-lg"></i>
+                    <p className="text-sm font-semibold text-indigo-800">
+                      Este ticket se separará en {devolverGrupos.length} POs independientes
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {devolverGrupos.map((g: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between bg-white rounded-md px-3 py-2 border border-indigo-100">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-6 h-6 flex items-center justify-center bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold flex-shrink-0">
+                            {i + 1}
+                          </span>
+                          <span className="text-sm text-gray-700 font-medium truncate">
+                            {g.po_tiquetera ?? selectedExpediente.po_tiquetera}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500 whitespace-nowrap ml-3">
+                          {contarDocs(g.doc ?? null)} doc(s)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-indigo-600 mt-3 flex items-center gap-1">
+                    <i className="ri-file-list-3-line"></i>
+                    Cada PO conservará sus propios documentos asociados.
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-start gap-2">
+                  <i className="ri-information-line text-gray-400 mt-0.5 flex-shrink-0"></i>
+                  <p className="text-xs text-gray-500">
+                    Este ticket volverá como <strong>una sola fila</strong> en Documentación (sin POs separadas).
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShowDevolverConfirm(false)}
+                  className="px-5 py-2 text-gray-700 bg-gray-100 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => devolverADocumentacion(selectedExpediente)}
+                  disabled={saving}
+                  className="px-5 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {saving ? 'Devolviendo...' : 'Sí, devolver'}
+                </button>
               </div>
             </div>
           </div>

@@ -7,7 +7,6 @@ import Dashboard from './components/Dashboard';
 import GestionExpedientes from './components/GestionExpedientes';
 import ListaExpedientes from './components/ListaExpedientes';
 import Reportes from './components/Reportes';
-import CargaMasiva from './components/CargaMasiva';
 import Configuracion from './components/Configuracion';
 import FormularioExpediente from './components/FormularioExpediente';
 import CargaDocumentosCAA from './components/CargaDocumentosCAA';
@@ -144,7 +143,6 @@ export default function Home() {
           )}
           {activeView === 'lista-expedientes' && <ListaExpedientes />}
           {activeView === 'reportes' && <Reportes />}
-          {activeView === 'carga-masiva' && <CargaMasiva />}
           {activeView === 'configuracion' && <Configuracion />}
           {activeView === 'carga-caa' && <CargaDocumentosCAA />}
           {activeView === 'documentacion' && <Documentacion />}

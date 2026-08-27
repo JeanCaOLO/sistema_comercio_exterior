@@ -7,6 +7,7 @@ interface Expediente {
   po_tiquetera: string;
   tipo_po: string;
   solicitante: string;
+  cargador_documentos: string;
   fecha_solicitud: string;
   prioridad: string;
   prioridad_urgente: boolean;
@@ -35,6 +36,10 @@ interface Expediente {
   aplica_tlc?: boolean;
   etd?: string;
   eta_real?: string;
+  incidente?: boolean;
+  comentario_incidente?: string | null;
+  finiquito?: boolean;
+  mcg?: boolean;
 }
 
 // Estados combinados de ambos módulos
@@ -59,6 +64,7 @@ export default function ListaExpedientes() {
   const [showHistorial, setShowHistorial] = useState(false);
   const [historialData, setHistorialData] = useState<any[]>([]);
   const [expedienteSeleccionado, setExpedienteSeleccionado] = useState<any>(null);
+  const [cargadorNoAutorizado, setCargadorNoAutorizado] = useState(false);
   const [showDocumentos, setShowDocumentos] = useState(false);
   const [documentosExpediente, setDocumentosExpediente] = useState<string[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -383,6 +389,39 @@ export default function ListaExpedientes() {
       setHistorialData(data || []);
       setExpedienteSeleccionado(expediente);
       setShowHistorial(true);
+
+      // Verificar si el cargador original está autorizado (por email o rol administrador)
+      const cargador = expediente.cargador_documentos || expediente.solicitante || '';
+      if (!cargador) {
+        setCargadorNoAutorizado(true);
+      } else {
+        const { data: usuarioData } = await supabase
+          .from('usuarios')
+          .select('id, email')
+          .eq('nombre', cargador)
+          .maybeSingle();
+
+        if (usuarioData?.email) {
+          const email = usuarioData.email.toLowerCase();
+          const esListaBlanca = ['lchavala', 'smcdonald', 'mpaniagua'].some(u => 
+            email.startsWith(u.toLowerCase() + '@') || email === u.toLowerCase()
+          );
+
+          // Verificar si el cargador es administrador
+          let esAdministrador = false;
+          if (usuarioData?.id) {
+            const { data: rolesData } = await supabase
+              .from('usuario_roles')
+              .select('roles!inner(nombre)')
+              .eq('usuario_id', usuarioData.id);
+            esAdministrador = (rolesData || []).some((r: any) => r.roles?.nombre === 'Administrador');
+          }
+
+          setCargadorNoAutorizado(!(esListaBlanca || esAdministrador));
+        } else {
+          setCargadorNoAutorizado(true);
+        }
+      }
     } catch (error) {
       console.error('Error al cargar historial:', error);
     }
@@ -589,7 +628,6 @@ export default function ListaExpedientes() {
       const updates: any = {
         po_tiquetera: selectedExpediente.po_tiquetera,
         tipo_po: selectedExpediente.tipo_po,
-        solicitante: selectedExpediente.solicitante,
         prioridad: selectedExpediente.prioridad,
         prioridad_urgente: selectedExpediente.prioridad_urgente,
         motivo_urgencia: selectedExpediente.prioridad_urgente ? selectedExpediente.motivo_urgencia : null,
@@ -608,7 +646,11 @@ export default function ListaExpedientes() {
         ok_pais: selectedExpediente.ok_pais ?? false,
         aplica_tlc: selectedExpediente.aplica_tlc ?? false,
         etd: selectedExpediente.etd || null,
-        eta_real: selectedExpediente.eta_real || null
+        eta_real: selectedExpediente.eta_real || null,
+        incidente: selectedExpediente.tipo_modulo === 'dropship' ? (selectedExpediente.incidente ?? false) : false,
+        comentario_incidente: selectedExpediente.tipo_modulo === 'dropship' && selectedExpediente.incidente ? (selectedExpediente.comentario_incidente || null) : null,
+        finiquito: selectedExpediente.tipo_modulo === 'dropship' ? (selectedExpediente.finiquito ?? false) : false,
+        mcg: selectedExpediente.tipo_modulo === 'dropship' ? (selectedExpediente.mcg ?? false) : false
       };
 
       // Documentos: detectar si se agregaron archivos nuevos
@@ -652,7 +694,6 @@ export default function ListaExpedientes() {
       const camposAComparar = [
         { key: 'po_tiquetera', label: 'PO/Tiquetera' },
         { key: 'tipo_po', label: 'Ruta Logística' },
-        { key: 'solicitante', label: 'Solicitante' },
         { key: 'prioridad', label: 'Prioridad' },
         { key: 'prioridad_urgente', label: 'Prioridad Urgente' },
         { key: 'motivo_urgencia', label: 'Motivo de Urgencia' },
@@ -669,6 +710,10 @@ export default function ListaExpedientes() {
         { key: 'ok_pais', label: 'OK País' },
         { key: 'bl_cargado', label: 'BL Cargado' },
         { key: 'aplica_tlc', label: 'Aplica TLC' },
+        { key: 'incidente', label: 'Incidente' },
+        { key: 'comentario_incidente', label: 'Comentario Incidente' },
+        { key: 'finiquito', label: 'Finiquito' },
+        { key: 'mcg', label: 'MCG' },
         { key: 'etd', label: 'ETD' },
         { key: 'eta_real', label: 'ETA Real' }
       ];
@@ -797,16 +842,95 @@ export default function ListaExpedientes() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="relative inline-flex">
-            <div className="w-20 h-20 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <i className="ri-file-list-3-line text-3xl text-teal-600"></i>
-            </div>
+      <div className="p-8">
+        {/* Encabezado con indicador de carga */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">Lista de Expedientes</h1>
+          <div className="flex items-center gap-2 mt-2">
+            <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+            <p className="text-sm text-teal-600 font-medium">Cargando expedientes...</p>
           </div>
-          <p className="mt-6 text-gray-700 font-semibold text-lg">Cargando expedientes...</p>
-          <p className="mt-2 text-sm text-gray-500">Intenta ajustar los filtros de búsqueda</p>
+        </div>
+
+        {/* Banner de carga */}
+        <div className="mb-6 bg-teal-50 border border-teal-200 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 flex items-center justify-center bg-teal-100 rounded-full flex-shrink-0">
+            <i className="ri-file-list-3-line text-teal-600 text-xl"></i>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-teal-800">
+              Preparando la lista de expedientes
+            </p>
+            <p className="text-xs text-teal-600 mt-0.5">
+              Estamos trayendo todos los expedientes (Dropship y ZF) desde la base de datos...
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+          </div>
+        </div>
+
+        {/* Esqueleto de la tabla */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {Array.from({ length: 11 }).map((_, i) => (
+                    <th key={i} className="px-3 py-3">
+                      <div className="h-3 w-16 bg-gray-200 rounded animate-pulse mx-auto"></div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => (
+                  <tr key={i}>
+                    <td className="px-3 py-3">
+                      <div className="h-5 w-16 bg-gray-100 rounded-full animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div>
+                      <div className="h-3 w-20 bg-gray-100 rounded animate-pulse mt-1"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-3 w-12 bg-gray-100 rounded animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-5 w-20 bg-gray-100 rounded-full animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-5 w-14 bg-gray-100 rounded-full animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-5 w-14 bg-gray-100 rounded-full animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-4 w-14 bg-gray-200 rounded animate-pulse"></div>
+                      <div className="h-3 w-12 bg-gray-100 rounded animate-pulse mt-1"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 bg-gray-100 rounded animate-pulse"></div>
+                        <div className="h-6 w-6 bg-gray-100 rounded animate-pulse"></div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
@@ -1124,6 +1248,35 @@ export default function ListaExpedientes() {
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {/* Línea especial: quién cargó originalmente el ticket desde Carga CAA */}
+              {cargadorNoAutorizado && (
+                <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3">
+                  <div className="w-8 h-8 flex items-center justify-center bg-red-100 rounded-full flex-shrink-0">
+                    <i className="ri-error-warning-line text-red-600 text-base"></i>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-red-700 font-bold uppercase tracking-wide">⚠️ Cargador no autorizado</p>
+                    <p className="text-sm text-gray-800 font-semibold">
+                      Este ticket no fue cargado por un usuario autorizado de Carga CAA.
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">Solo lchavala, smcdonald, mpaniagua y los administradores pueden cargar documentos.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-4 bg-teal-50 border border-teal-200 rounded-lg p-3 flex items-start gap-3">
+                <div className="w-8 h-8 flex items-center justify-center bg-teal-100 rounded-full flex-shrink-0">
+                  <i className="ri-upload-cloud-2-line text-teal-600 text-base"></i>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-teal-700 font-medium uppercase tracking-wide">Origen del ticket</p>
+                  <p className="text-sm text-gray-800 font-semibold">
+                    Cargado por: {expedienteSeleccionado?.cargador_documentos || expedienteSeleccionado?.solicitante || 'N/A'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">Documentos y PO cargados desde Carga CAA</p>
+                </div>
+              </div>
+
               {historialData.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No hay cambios registrados</p>
               ) : (
@@ -1339,20 +1492,27 @@ export default function ListaExpedientes() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Solicitante</label>
-                  {editMode ? (
-                    <select
-                      value={selectedExpediente.solicitante}
-                      onChange={(e) => handleChange('solicitante', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    >
-                      {solicitantes.map(nombre => (
-                        <option key={nombre} value={nombre}>{nombre}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">{selectedExpediente.solicitante}</p>
-                  )}
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Solicitante
+                    <span className="ml-2 text-xs font-normal text-gray-400">(inmutable)</span>
+                  </label>
+                  <div className="flex items-center gap-2 w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                    <i className="ri-lock-line text-gray-400 text-sm"></i>
+                    <span className="text-gray-900">{selectedExpediente.solicitante}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Quien consolidó y creó el ticket desde Documentación. No se puede modificar.</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cargador de Documentos
+                    <span className="ml-2 text-xs font-normal text-gray-400">(inmutable)</span>
+                  </label>
+                  <div className="flex items-center gap-2 w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                    <i className="ri-lock-line text-gray-400 text-sm"></i>
+                    <span className="text-gray-900">{selectedExpediente.cargador_documentos || 'N/A'}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Quien cargó los documentos y la PO desde Carga CAA. No se puede modificar.</p>
                 </div>
 
                 <div>
@@ -1452,15 +1612,21 @@ export default function ListaExpedientes() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Responsable Creación</label>
                   {editMode ? (
-                    <select
-                      value={selectedExpediente.responsable_creacion}
-                      onChange={(e) => handleChange('responsable_creacion', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    >
-                      {responsables.map(nombre => (
-                        <option key={nombre} value={nombre}>{nombre}</option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        value={selectedExpediente.responsable_creacion}
+                        onChange={(e) => handleChange('responsable_creacion', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+                      >
+                        {responsables.map(nombre => (
+                          <option key={nombre} value={nombre}>{nombre}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                        <i className="ri-history-line"></i>
+                        Al cambiar el responsable, el historial conservará quién lo tenía antes.
+                      </p>
+                    </>
                   ) : (
                     <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">{selectedExpediente.responsable_creacion}</p>
                   )}
@@ -1590,6 +1756,117 @@ export default function ListaExpedientes() {
                     </span>
                   )}
                 </div>
+
+                {/* Finiquito, MCG e Incidente — solo Dropship */}
+                {selectedExpediente.tipo_modulo === 'dropship' && (
+                  <>
+                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.finiquito ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">
+                          Finiquito
+                        </label>
+                        <p className="text-xs text-gray-500">Marcar si el expediente tiene finiquito</p>
+                      </div>
+                      {editMode ? (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('finiquito', !selectedExpediente.finiquito)}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                            selectedExpediente.finiquito ? 'bg-orange-500' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              selectedExpediente.finiquito ? 'translate-x-8' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.finiquito ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {selectedExpediente.finiquito ? 'Sí' : 'No'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.mcg ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">
+                          MCG
+                        </label>
+                        <p className="text-xs text-gray-500">Marcar si aplica MCG</p>
+                      </div>
+                      {editMode ? (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('mcg', !selectedExpediente.mcg)}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                            selectedExpediente.mcg ? 'bg-indigo-500' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              selectedExpediente.mcg ? 'translate-x-8' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.mcg ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {selectedExpediente.mcg ? 'Sí' : 'No'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.incidente ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-gray-800 mb-1">
+                          Incidente
+                        </label>
+                        <p className="text-xs text-gray-500">Marcar si el expediente presenta un incidente</p>
+                      </div>
+                      {editMode ? (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('incidente', !selectedExpediente.incidente)}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                            selectedExpediente.incidente ? 'bg-red-500' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              selectedExpediente.incidente ? 'translate-x-8' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.incidente ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {selectedExpediente.incidente ? 'Sí' : 'No'}
+                        </span>
+                      )}
+                    </div>
+
+                    {selectedExpediente.incidente && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Comentario del Incidente
+                        </label>
+                        {editMode ? (
+                          <textarea
+                            value={selectedExpediente.comentario_incidente || ''}
+                            onChange={(e) => handleChange('comentario_incidente', e.target.value)}
+                            rows={3}
+                            maxLength={500}
+                            className="w-full px-4 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm resize-none"
+                            placeholder="Describe el incidente..."
+                          />
+                        ) : (
+                          <p className="text-gray-900 bg-red-50 px-4 py-2 rounded-lg border border-red-200">
+                            {selectedExpediente.comentario_incidente || 'Sin comentario'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
 
                 {selectedExpediente.prioridad_urgente && selectedExpediente.motivo_urgencia && (
                   <div className="md:col-span-2">

@@ -4,7 +4,15 @@ import DonutChart from './DonutChart';
 import BarChart from './BarChart';
 import ProgressBar from './ProgressBar';
 import { supabase } from '../../../lib/supabase';
-import { formatearFechaCorta } from '../../../lib/fechas';
+import { formatearFechaCorta, parseFechaSegura } from '../../../lib/fechas';
+import { descargarExcel } from '../../../lib/exportar';
+
+const aFechaISO = (fecha: Date): string => {
+  const año = fecha.getFullYear();
+  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+  const dia = String(fecha.getDate()).padStart(2, '0');
+  return `${año}-${mes}-${dia}`;
+};
 
 interface HistorialCambio {
   id: string;
@@ -28,6 +36,8 @@ export default function Dashboard() {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [periodoActivo, setPeriodoActivo] = useState('mes-actual');
+  const [rangoPersonalizado, setRangoPersonalizado] = useState<{ inicio: string; fin: string } | null>(null);
+  const [errorFiltros, setErrorFiltros] = useState('');
   const [vistaEstados, setVistaEstados] = useState<'general' | 'dropship' | 'zf'>('general');
 
   const [kpiData, setKpiData] = useState({
@@ -127,6 +137,22 @@ export default function Dashboard() {
   const [kpiDsPromedioNotificado, setKpiDsPromedioNotificado] = useState<number>(0);
   const [kpiZfPromedioCompletado, setKpiZfPromedioCompletado] = useState<number>(0);
 
+  // KPI Asignado → Notificado (Dropship)
+  const [kpiAsignadoNotificado, setKpiAsignadoNotificado] = useState({
+    totalEvaluados: 0,
+    promedioDias: 0
+  });
+  const [asignadoNotificadoDetalle, setAsignadoNotificadoDetalle] = useState<{
+    id: string;
+    po_tiquetera: string;
+    exp_id: string;
+    solicitante: string;
+    fechaAsignado: string;
+    fechaNotificado: string;
+    dias: number;
+  }[]>([]);
+  const [showReporteAsignadoNotificado, setShowReporteAsignadoNotificado] = useState(false);
+
   const [notificadoOkPais, setNotificadoOkPais] = useState(0);
 
   // KPI ETD vs Notificado (Dropship)
@@ -139,8 +165,27 @@ export default function Dashboard() {
     promedioDias: 0
   });
 
-  // KPI Duración Mínima 2 días
-  const META_DURACION_DIAS = 2;
+  // KPIs MCG (Dropship con check MCG) — reglas propias y excluidos de los KPIs generales
+  const META_MCG_CREACION_DIAS = 2;
+  const [kpiMcgCreacion, setKpiMcgCreacion] = useState({
+    totalEvaluados: 0,
+    cumplen: 0,
+    noCumplen: 0,
+    porcentajeCumplimiento: 0,
+    diasPromedio: 0
+  });
+
+  const META_MCG_ETD_DIAS = 2;
+  const [kpiMcgEtdNotificado, setKpiMcgEtdNotificado] = useState({
+    totalEvaluados: 0,
+    dentroRango: 0,
+    fueraRango: 0,
+    porcentajeOk: 0,
+    promedioDias: 0
+  });
+
+  // KPI Duración Mínima < 3 días (solo Dropship)
+  const META_DURACION_DIAS = 3;
   const [kpiDuracion, setKpiDuracion] = useState({
     totalEvaluados: 0,
     cumplen: 0,
@@ -164,19 +209,31 @@ export default function Dashboard() {
   const [showReporteDuracion, setShowReporteDuracion] = useState(false);
   const [reporteFiltro, setReporteFiltro] = useState<'todos' | 'cumplen' | 'no-cumplen'>('todos');
 
+  const [etdDetalle, setEtdDetalle] = useState<{
+    id: string;
+    po_tiquetera: string;
+    exp_id: string;
+    solicitante: string;
+    etd: string;
+    fechaNotificado: string;
+    diasDiferencia: number;
+    cumpleMeta: boolean;
+  }[]>([]);
+  const [showReporteEtd, setShowReporteEtd] = useState(false);
+
   useEffect(() => {
     // Establecer mes actual por defecto al cargar
     const hoy = new Date();
     const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
     
-    setFechaInicio(primerDia.toISOString().split('T')[0]);
-    setFechaFin(ultimoDia.toISOString().split('T')[0]);
+    setFechaInicio(aFechaISO(primerDia));
+    setFechaFin(aFechaISO(ultimoDia));
   }, []);
 
   useEffect(() => {
     cargarDatos();
-  }, [fechaInicio, fechaFin, periodoActivo]);
+  }, [periodoActivo, rangoPersonalizado]);
 
   useEffect(() => {
     if (fechaInicio && fechaFin) {
@@ -195,10 +252,10 @@ export default function Dashboard() {
     let inicio: Date;
     let fin: Date;
 
-    if (periodoActivo === 'personalizado' && fechaInicio && fechaFin) {
+    if (periodoActivo === 'personalizado' && rangoPersonalizado) {
       return {
-        inicio: new Date(fechaInicio),
-        fin: new Date(fechaFin)
+        inicio: parseFechaSegura(rangoPersonalizado.inicio),
+        fin: parseFechaSegura(rangoPersonalizado.fin)
       };
     }
 
@@ -246,10 +303,15 @@ export default function Dashboard() {
 
   const calcularKPIDuracionMinima = (listaExpedientes: any[]) => {
     const ahora = new Date();
-    const evaluados = listaExpedientes.map(exp => {
+    // Solo expedientes Dropship (excluye ZF)
+    const expDropship = listaExpedientes.filter(exp =>
+      (exp.tipo_modulo || '').toLowerCase() === 'dropship'
+    );
+
+    const evaluados = expDropship.map(exp => {
       const fechaCreacion = exp.created_at || exp.fecha_creacion_expediente;
-      const estadoFinal = (exp.tipo_modulo || '').toLowerCase() === 'dropship' ? 'Notificado' : 'Completado';
-      const esFinalizado = exp.estado_expediente === estadoFinal;
+      // En Dropship, Notificado y Visto Listo son estados finales
+      const esFinalizado = exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo';
       const fechaFin = esFinalizado && exp.fecha_liberacion ? new Date(exp.fecha_liberacion) : ahora;
       const fechaIni = new Date(fechaCreacion);
       const diffMs = fechaFin.getTime() - fechaIni.getTime();
@@ -258,12 +320,12 @@ export default function Dashboard() {
         id: exp.id,
         po_tiquetera: exp.po_tiquetera,
         exp_id: exp.exp_id || '',
-        tipo_modulo: (exp.tipo_modulo || '').toLowerCase(),
+        tipo_modulo: 'dropship',
         estado_expediente: exp.estado_expediente,
         solicitante: exp.solicitante,
         responsable_creacion: exp.responsable_creacion,
         diasDuracion: Math.round(diasDuracion * 10) / 10,
-        cumpleMeta: diasDuracion <= META_DURACION_DIAS,
+        cumpleMeta: diasDuracion < META_DURACION_DIAS,
         fechaCreacion: fechaCreacion,
         fechaFin: esFinalizado && exp.fecha_liberacion ? exp.fecha_liberacion : null
       };
@@ -282,6 +344,227 @@ export default function Dashboard() {
       diasPromedioTotal: diasPromedio
     });
     setExpedientesReporte(evaluados.sort((a, b) => a.diasDuracion - b.diasDuracion));
+  };
+
+  const calcularKPIsMcg = async (expMcg: any[]) => {
+    if (!expMcg || expMcg.length === 0) {
+      setKpiMcgCreacion({ totalEvaluados: 0, cumplen: 0, noCumplen: 0, porcentajeCumplimiento: 0, diasPromedio: 0 });
+      setKpiMcgEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
+      return;
+    }
+
+    const mcgIds = expMcg.map(e => e.id);
+
+    // Fecha en que el ticket llegó a "Asignado" (inicio del conteo de creación)
+    const { data: tiemposAsignado } = await supabase
+      .from('expedientes_tiempos_estados')
+      .select('expediente_id, fecha_inicio')
+      .in('expediente_id', mcgIds)
+      .eq('estado_nuevo', 'Asignado');
+
+    const fechaAsignadoPorExp: Record<string, string> = {};
+    if (tiemposAsignado) {
+      tiemposAsignado.forEach((t: any) => {
+        if (!fechaAsignadoPorExp[t.expediente_id] || t.fecha_inicio < fechaAsignadoPorExp[t.expediente_id]) {
+          fechaAsignadoPorExp[t.expediente_id] = t.fecha_inicio;
+        }
+      });
+    }
+
+    // Fecha en que se colocó el número de expediente (EXP ID) desde el historial
+    const { data: historialExpId } = await supabase
+      .from('expedientes_historial')
+      .select('expediente_id, valor_nuevo, fecha_cambio')
+      .in('expediente_id', mcgIds)
+      .eq('campo_modificado', 'EXP ID');
+
+    const fechaExpIdPorExp: Record<string, string> = {};
+    if (historialExpId) {
+      historialExpId.forEach((h: any) => {
+        const valor = (h.valor_nuevo || '').trim();
+        if (!valor) return;
+        if (!fechaExpIdPorExp[h.expediente_id] || h.fecha_cambio < fechaExpIdPorExp[h.expediente_id]) {
+          fechaExpIdPorExp[h.expediente_id] = h.fecha_cambio;
+        }
+      });
+    }
+
+    // ── KPI Creación de expediente (≤ 2 días) ──
+    let cumpleCreacion = 0;
+    let noCumpleCreacion = 0;
+    let sumaCreacion = 0;
+    let contadosCreacion = 0;
+
+    expMcg.forEach(exp => {
+      const expId = (exp.exp_id || '').trim();
+      const tieneExpId = expId !== '' && expId !== 'Por Asignar' && expId !== 'No asignado' && expId !== 'No Asignado';
+      if (!tieneExpId) return;
+
+      const fechaAsignado = fechaAsignadoPorExp[exp.id] || exp.created_at;
+      const fechaExpId = fechaExpIdPorExp[exp.id] || fechaAsignado;
+      const dias = (new Date(fechaExpId).getTime() - new Date(fechaAsignado).getTime()) / (1000 * 60 * 60 * 24);
+
+      contadosCreacion++;
+      sumaCreacion += dias;
+      if (dias <= META_MCG_CREACION_DIAS) cumpleCreacion++;
+      else noCumpleCreacion++;
+    });
+
+    setKpiMcgCreacion({
+      totalEvaluados: contadosCreacion,
+      cumplen: cumpleCreacion,
+      noCumplen: noCumpleCreacion,
+      porcentajeCumplimiento: contadosCreacion > 0 ? Math.round((cumpleCreacion / contadosCreacion) * 100) : 0,
+      diasPromedio: contadosCreacion > 0 ? Math.round((sumaCreacion / contadosCreacion) * 10) / 10 : 0
+    });
+
+    // ── KPI ETD → Notificado (< 2 días) ──
+    const expMcgConEtd = expMcg.filter(exp =>
+      (exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo') && exp.etd
+    );
+
+    if (expMcgConEtd.length > 0) {
+      const notIds = expMcgConEtd.map(e => e.id);
+      const { data: tiemposNotif } = await supabase
+        .from('expedientes_tiempos_estados')
+        .select('expediente_id, fecha_inicio')
+        .in('expediente_id', notIds)
+        .eq('estado_nuevo', 'Notificado');
+
+      const fechaNotifPorExp: Record<string, string> = {};
+      if (tiemposNotif) {
+        tiemposNotif.forEach((t: any) => {
+          if (!fechaNotifPorExp[t.expediente_id] || t.fecha_inicio < fechaNotifPorExp[t.expediente_id]) {
+            fechaNotifPorExp[t.expediente_id] = t.fecha_inicio;
+          }
+        });
+      }
+
+      let dentro = 0;
+      let fuera = 0;
+      let sumaDias = 0;
+      let contados = 0;
+
+      expMcgConEtd.forEach(exp => {
+        const fechaNotif = fechaNotifPorExp[exp.id];
+        if (!fechaNotif) return;
+        const dias = (new Date(fechaNotif).getTime() - new Date(exp.etd).getTime()) / (1000 * 60 * 60 * 24);
+        contados++;
+        sumaDias += dias;
+        if (dias < META_MCG_ETD_DIAS) dentro++;
+        else fuera++;
+      });
+
+      setKpiMcgEtdNotificado({
+        totalEvaluados: contados,
+        dentroRango: dentro,
+        fueraRango: fuera,
+        porcentajeOk: contados > 0 ? Math.round((dentro / contados) * 100) : 0,
+        promedioDias: contados > 0 ? Math.round((sumaDias / contados) * 10) / 10 : 0
+      });
+    } else {
+      setKpiMcgEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
+    }
+  };
+
+  const cargarKpiAsignadoNotificado = async (expDropshipNormal: any[]) => {
+    const expNotificados = expDropshipNormal.filter(exp =>
+      exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo'
+    );
+
+    if (expNotificados.length === 0) {
+      setKpiAsignadoNotificado({ totalEvaluados: 0, promedioDias: 0 });
+      setAsignadoNotificadoDetalle([]);
+      return;
+    }
+
+    const ids = expNotificados.map(e => e.id);
+    const createdMap: Record<string, string> = {};
+    expNotificados.forEach(exp => { createdMap[exp.id] = exp.created_at; });
+
+    // Fecha en que el ticket quedó "Asignado"
+    const { data: tiemposAsignado } = await supabase
+      .from('expedientes_tiempos_estados')
+      .select('expediente_id, fecha_inicio')
+      .in('expediente_id', ids)
+      .eq('estado_nuevo', 'Asignado');
+
+    const fechaAsignado: Record<string, string> = {};
+    if (tiemposAsignado) {
+      tiemposAsignado.forEach((t: any) => {
+        if (!fechaAsignado[t.expediente_id] || t.fecha_inicio < fechaAsignado[t.expediente_id]) {
+          fechaAsignado[t.expediente_id] = t.fecha_inicio;
+        }
+      });
+    }
+
+    // Fecha en que llegó a "Notificado"
+    const { data: tiemposNotif } = await supabase
+      .from('expedientes_tiempos_estados')
+      .select('expediente_id, fecha_inicio')
+      .in('expediente_id', ids)
+      .eq('estado_nuevo', 'Notificado');
+
+    const fechaNotif: Record<string, string> = {};
+    if (tiemposNotif) {
+      tiemposNotif.forEach((t: any) => {
+        if (!fechaNotif[t.expediente_id] || t.fecha_inicio < fechaNotif[t.expediente_id]) {
+          fechaNotif[t.expediente_id] = t.fecha_inicio;
+        }
+      });
+    }
+
+    // Fallback: historial para tickets sin registro de tiempo de Notificado
+    const faltantes = ids.filter(id => !fechaNotif[id]);
+    if (faltantes.length > 0) {
+      const { data: histNotif } = await supabase
+        .from('expedientes_historial')
+        .select('expediente_id, fecha_cambio')
+        .in('expediente_id', faltantes)
+        .eq('campo_modificado', 'Estado')
+        .eq('valor_nuevo', 'Notificado');
+      if (histNotif) {
+        histNotif.forEach((h: any) => {
+          if (!fechaNotif[h.expediente_id] || h.fecha_cambio < fechaNotif[h.expediente_id]) {
+            fechaNotif[h.expediente_id] = h.fecha_cambio;
+          }
+        });
+      }
+    }
+
+    const detalle: {
+      id: string;
+      po_tiquetera: string;
+      exp_id: string;
+      solicitante: string;
+      fechaAsignado: string;
+      fechaNotificado: string;
+      dias: number;
+    }[] = [];
+
+    expNotificados.forEach(exp => {
+      const fAsig = fechaAsignado[exp.id] || createdMap[exp.id];
+      const fNotif = fechaNotif[exp.id];
+      if (!fNotif) return;
+      const dias = (new Date(fNotif).getTime() - new Date(fAsig).getTime()) / (1000 * 60 * 60 * 24);
+      detalle.push({
+        id: exp.id,
+        po_tiquetera: exp.po_tiquetera,
+        exp_id: exp.exp_id || '',
+        solicitante: exp.solicitante || '',
+        fechaAsignado: fAsig,
+        fechaNotificado: fNotif,
+        dias: Math.round(dias * 10) / 10
+      });
+    });
+
+    const total = detalle.length;
+    const suma = detalle.reduce((s, d) => s + d.dias, 0);
+    setKpiAsignadoNotificado({
+      totalEvaluados: total,
+      promedioDias: total > 0 ? Math.round((suma / total) * 10) / 10 : 0
+    });
+    setAsignadoNotificadoDetalle(detalle.sort((a, b) => b.dias - a.dias));
   };
 
   const cargarKPIsZF = async (expZF: any[]) => {
@@ -396,8 +679,8 @@ export default function Dashboard() {
       const { data: expedientes, error } = await supabase
         .from('expedientes')
         .select('*')
-        .gte('fecha_solicitud', inicio.toISOString().split('T')[0])
-        .lte('fecha_solicitud', fin.toISOString().split('T')[0]);
+        .gte('fecha_solicitud', aFechaISO(inicio))
+        .lte('fecha_solicitud', aFechaISO(fin));
 
       if (error) throw error;
 
@@ -414,14 +697,14 @@ export default function Dashboard() {
       const { data: expedientesMesAnterior } = await supabase
         .from('expedientes')
         .select('*')
-        .gte('fecha_solicitud', mesAnteriorInicio.toISOString().split('T')[0])
-        .lte('fecha_solicitud', mesAnteriorFin.toISOString().split('T')[0]);
+        .gte('fecha_solicitud', aFechaISO(mesAnteriorInicio))
+        .lte('fecha_solicitud', aFechaISO(mesAnteriorFin));
 
       const { data: expedientesAnoAnterior } = await supabase
         .from('expedientes')
         .select('*')
-        .gte('fecha_solicitud', anoAnteriorInicio.toISOString().split('T')[0])
-        .lte('fecha_solicitud', anoAnteriorFin.toISOString().split('T')[0]);
+        .gte('fecha_solicitud', aFechaISO(anoAnteriorInicio))
+        .lte('fecha_solicitud', aFechaISO(anoAnteriorFin));
 
       if (expedientes && expedientes.length > 0) {
         setExpedientes(expedientes);
@@ -502,6 +785,10 @@ export default function Dashboard() {
         );
         setEstadoDataDropship(contarEstados(expDropship));
 
+        // Tickets MCG (Dropship con check MCG) — se excluyen de los KPIs generales
+        const expDropshipMcg = expDropship.filter(exp => exp.mcg === true);
+        const expDropshipNormal = expDropship.filter(exp => exp.mcg !== true);
+
         // KPI OK País (Dropship) — cuenta Notificado y Visto Listo
         const countNotificadoOkPais = expDropship.filter(exp =>
           (exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo') && exp.ok_pais === true
@@ -509,7 +796,7 @@ export default function Dashboard() {
         setNotificadoOkPais(countNotificadoOkPais);
 
         // KPI ETD vs Notificado (Dropship) — compara fecha ETD con fecha de llegada a Notificado
-        const expNotificadosConEtd = expDropship.filter(exp =>
+        const expNotificadosConEtd = expDropshipNormal.filter(exp =>
           (exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo') && exp.etd
         );
 
@@ -534,6 +821,16 @@ export default function Dashboard() {
           let fueraRango = 0;
           let sumaDias = 0;
           let contados = 0;
+          const detalleEtd: {
+            id: string;
+            po_tiquetera: string;
+            exp_id: string;
+            solicitante: string;
+            etd: string;
+            fechaNotificado: string;
+            diasDiferencia: number;
+            cumpleMeta: boolean;
+          }[] = [];
 
           expNotificadosConEtd.forEach(exp => {
             const fechaNotificado = tiempoPorExp[exp.id];
@@ -542,11 +839,22 @@ export default function Dashboard() {
             const dias = diffMs / (1000 * 60 * 60 * 24);
             contados++;
             sumaDias += dias;
-            if (dias <= META_ETD_DIAS) {
+            const cumple = dias <= META_ETD_DIAS;
+            if (cumple) {
               dentroRango++;
             } else {
               fueraRango++;
             }
+            detalleEtd.push({
+              id: exp.id,
+              po_tiquetera: exp.po_tiquetera,
+              exp_id: exp.exp_id || '',
+              solicitante: exp.solicitante || '',
+              etd: exp.etd,
+              fechaNotificado,
+              diasDiferencia: Math.round(dias * 10) / 10,
+              cumpleMeta: cumple
+            });
           });
 
           setKpiEtdNotificado({
@@ -556,8 +864,10 @@ export default function Dashboard() {
             porcentajeOk: contados > 0 ? Math.round((dentroRango / contados) * 100) : 0,
             promedioDias: contados > 0 ? Math.round(sumaDias / contados * 10) / 10 : 0
           });
+          setEtdDetalle(detalleEtd.sort((a, b) => b.diasDiferencia - a.diasDiferencia));
         } else {
           setKpiEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
+          setEtdDetalle([]);
         }
 
         // Estados ZF — comparación case-insensitive
@@ -567,7 +877,9 @@ export default function Dashboard() {
         setEstadoDataZF(contarEstados(expZF));
 
         // ── KPI Dropship: Promedio días Creación → Notificado ──
-        const expDsNotificados = expDropship.filter(exp => exp.estado_expediente === 'Notificado');
+        const expDsNotificados = expDropshipNormal.filter(exp =>
+          exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo'
+        );
         let promedioDsNoti = 0;
         if (expDsNotificados.length > 0) {
           const dsIds = expDsNotificados.map(e => e.id);
@@ -670,7 +982,9 @@ export default function Dashboard() {
         }
         setKpiZfPromedioCompletado(promedioZfCompl);
 
-        calcularKPIDuracionMinima(expedientes);
+        calcularKPIDuracionMinima(expDropshipNormal);
+        await calcularKPIsMcg(expDropshipMcg);
+        await cargarKpiAsignadoNotificado(expDropshipNormal);
         await cargarTiemposEntreEstados(filtroModuloTiempos);
         await cargarKPIsZF(expZF);
       } else {
@@ -682,8 +996,11 @@ export default function Dashboard() {
         setEstadoDataZF(estadoVacio);
         setNotificadoOkPais(0);
         setKpiEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
+        setEtdDetalle([]);
         setKpiDuracion({ totalEvaluados: 0, cumplen: 0, noCumplen: 0, porcentajeCumplimiento: 0, diasPromedioTotal: 0 });
         setExpedientesReporte([]);
+        setKpiMcgCreacion({ totalEvaluados: 0, cumplen: 0, noCumplen: 0, porcentajeCumplimiento: 0, diasPromedio: 0 });
+        setKpiMcgEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
         setComparativos({
           totalSolicitudes: { mesAnterior: '0%', anoAnterior: '0%' },
           altaPrioridad: { mesAnterior: '0%', anoAnterior: '0%' },
@@ -696,6 +1013,8 @@ export default function Dashboard() {
         });
         setKpiDsPromedioNotificado(0);
         setKpiZfPromedioCompletado(0);
+        setKpiAsignadoNotificado({ totalEvaluados: 0, promedioDias: 0 });
+        setAsignadoNotificadoDetalle([]);
       }
     } catch (error) {
       console.error('Error al cargar datos:', error);
@@ -711,8 +1030,8 @@ export default function Dashboard() {
       let query = supabase
         .from('expedientes')
         .select('id, created_at, estado_expediente, tipo_modulo, fecha_liberacion, tiempo_real_minutos')
-        .gte('fecha_solicitud', inicio.toISOString().split('T')[0])
-        .lte('fecha_solicitud', fin.toISOString().split('T')[0]);
+        .gte('fecha_solicitud', aFechaISO(inicio))
+        .lte('fecha_solicitud', aFechaISO(fin));
 
       if (moduloFiltro !== 'todos') {
         query = query.eq('tipo_modulo', moduloFiltro);
@@ -862,6 +1181,51 @@ export default function Dashboard() {
     }
   };
 
+  const descargarReporteDuracion = () => {
+    const filas = expedientesReporte
+      .filter(e =>
+        reporteFiltro === 'todos' ? true : reporteFiltro === 'cumplen' ? e.cumpleMeta : !e.cumpleMeta
+      )
+      .map(e => ({
+        'PO/Tiquetera': e.po_tiquetera,
+        'EXP ID': e.exp_id || '-',
+        'Módulo': 'Dropship',
+        'Estado': e.estado_expediente,
+        'Solicitante': e.solicitante,
+        'Responsable': e.responsable_creacion,
+        'Creado': formatearFechaCorta(e.fechaCreacion),
+        'Finalizado': e.fechaFin ? formatearFechaCorta(e.fechaFin) : 'En curso',
+        'Días de Duración': e.diasDuracion,
+        'Cumple Meta (<3 días)': e.cumpleMeta ? 'Sí' : 'No'
+      }));
+    descargarExcel(`reporte-duracion-dropship-${new Date().toISOString().split('T')[0]}.xlsx`, filas);
+  };
+
+  const descargarReporteEtd = () => {
+    const filas = etdDetalle.map(e => ({
+      'PO/Tiquetera': e.po_tiquetera,
+      'EXP ID': e.exp_id || '-',
+      'Solicitante': e.solicitante,
+      'ETD': formatearFechaCorta(e.etd),
+      'Fecha Notificado': formatearFechaCorta(e.fechaNotificado),
+      'Días (ETD → Notificado)': e.diasDiferencia,
+      'Cumple Meta (≤5 días)': e.cumpleMeta ? 'Sí' : 'No'
+    }));
+    descargarExcel(`reporte-etd-notificado-${new Date().toISOString().split('T')[0]}.xlsx`, filas);
+  };
+
+  const descargarReporteAsignadoNotificado = () => {
+    const filas = asignadoNotificadoDetalle.map(e => ({
+      'PO/Tiquetera': e.po_tiquetera,
+      'EXP ID': e.exp_id || '-',
+      'Solicitante': e.solicitante,
+      'Fecha Asignado': formatearFechaCorta(e.fechaAsignado),
+      'Fecha Notificado': formatearFechaCorta(e.fechaNotificado),
+      'Días (Asignado → Notificado)': e.dias
+    }));
+    descargarExcel(`reporte-asignado-notificado-${new Date().toISOString().split('T')[0]}.xlsx`, filas);
+  };
+
   const formatearTiempo = (minutos: number | null) => {
     if (!minutos) return 'En curso';
     
@@ -879,9 +1243,15 @@ export default function Dashboard() {
 
   const aplicarFiltroPersonalizado = () => {
     if (!fechaInicio || !fechaFin) {
-      alert('Por favor seleccione ambas fechas');
+      setErrorFiltros('Por favor seleccione ambas fechas');
       return;
     }
+    if (fechaInicio > fechaFin) {
+      setErrorFiltros('La fecha de inicio no puede ser mayor a la fecha de fin');
+      return;
+    }
+    setErrorFiltros('');
+    setRangoPersonalizado({ inicio: fechaInicio, fin: fechaFin });
     setPeriodoActivo('personalizado');
   };
 
@@ -890,9 +1260,11 @@ export default function Dashboard() {
     const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
     
-    setFechaInicio(primerDia.toISOString().split('T')[0]);
-    setFechaFin(ultimoDia.toISOString().split('T')[0]);
+    setFechaInicio(aFechaISO(primerDia));
+    setFechaFin(aFechaISO(ultimoDia));
+    setRangoPersonalizado(null);
     setPeriodoActivo('mes-actual');
+    setErrorFiltros('');
   };
 
   if (loading) {
@@ -916,6 +1288,13 @@ export default function Dashboard() {
       {/* Filtros de Fecha */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Filtros de Período</h3>
+
+        {errorFiltros && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
+            <i className="ri-error-warning-line text-red-600"></i>
+            <span className="text-sm text-red-700 font-medium">{errorFiltros}</span>
+          </div>
+        )}
         
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex gap-2">
@@ -1070,7 +1449,7 @@ export default function Dashboard() {
             </div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">Indicador de Duración Mínima de Expedientes</h3>
-              <p className="text-sm text-gray-600">Meta: cada expediente debe durar como máximo <strong>2 días</strong> desde su creación</p>
+              <p className="text-sm text-gray-600">Meta: cada expediente debe durar menos de <strong>3 días</strong> desde su creación (solo Dropship)</p>
             </div>
           </div>
           {/* Alerta global */}
@@ -1079,7 +1458,7 @@ export default function Dashboard() {
               <i className="ri-alarm-warning-fill text-red-600 text-xl"></i>
               <div className="text-sm">
                 <p className="font-bold text-red-700">{kpiDuracion.noCumplen} expediente{kpiDuracion.noCumplen !== 1 ? 's' : ''} fuera de rango</p>
-                <p className="text-red-600 text-xs">Duración mayor a 2 días</p>
+                <p className="text-red-600 text-xs">Duración de 3 días o más</p>
               </div>
             </div>
           )}
@@ -1127,15 +1506,18 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-1 mt-3">
               <i className="ri-checkbox-circle-fill text-teal-500 text-lg"></i>
-              <span className="text-xs text-teal-700 font-medium">≤ 2 días de duración</span>
+              <span className="text-xs text-teal-700 font-medium">&lt; 3 días de duración</span>
             </div>
             <p className="text-xs text-gray-500 mt-1">Dentro del rango aceptable</p>
           </div>
 
           {/* No Cumplen */}
-          <div className={`bg-white rounded-xl p-5 border-2 ${
-            kpiDuracion.noCumplen > 0 ? 'border-red-300' : 'border-gray-200'
-          }`}>
+          <div
+            onClick={() => { setReporteFiltro('no-cumplen'); setShowReporteDuracion(true); }}
+            className={`bg-white rounded-xl p-5 border-2 cursor-pointer hover:shadow-md transition-shadow ${
+              kpiDuracion.noCumplen > 0 ? 'border-red-300' : 'border-gray-200'
+            }`}
+          >
             <p className="text-xs font-medium text-gray-500 mb-2">No Cumplen Meta</p>
             <div className="flex items-baseline gap-1">
               <span className={`text-4xl font-bold ${
@@ -1149,9 +1531,9 @@ export default function Dashboard() {
               }`}></i>
               <span className={`text-xs font-medium ${
                 kpiDuracion.noCumplen > 0 ? 'text-red-700' : 'text-gray-400'
-              }`}>&gt; 2 días de duración</span>
+              }`}>≥ 3 días de duración</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Superan el límite permitido</p>
+            <p className="text-xs text-teal-600 mt-1 font-medium">Haz clic para ver el detalle</p>
           </div>
 
           {/* Promedio general */}
@@ -1165,7 +1547,7 @@ export default function Dashboard() {
               <i className="ri-bar-chart-box-line text-gray-500 text-lg"></i>
               <span className="text-xs text-gray-600">Promedio del período</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Meta mínima: 2 días</p>
+            <p className="text-xs text-gray-500 mt-1">Meta: menos de 3 días</p>
           </div>
         </div>
 
@@ -1189,14 +1571,23 @@ export default function Dashboard() {
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">Reporte de Duración Mínima</h2>
-                <p className="text-sm text-gray-500 mt-1">Expedientes que cumplen o no la meta de ≤2 días de duración</p>
+                <p className="text-sm text-gray-500 mt-1">Expedientes Dropship que cumplen o no la meta de &lt;3 días de duración</p>
               </div>
-              <button
-                onClick={() => setShowReporteDuracion(false)}
-                className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-              >
-                <i className="ri-close-line text-2xl text-gray-500"></i>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={descargarReporteDuracion}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <i className="ri-download-2-line"></i>
+                  Descargar Excel
+                </button>
+                <button
+                  onClick={() => setShowReporteDuracion(false)}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <i className="ri-close-line text-2xl text-gray-500"></i>
+                </button>
+              </div>
             </div>
 
             {/* Resumen rápido */}
@@ -1208,13 +1599,13 @@ export default function Dashboard() {
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-teal-600">{kpiDuracion.cumplen}</p>
-                  <p className="text-xs text-gray-500">Cumplen (≤2 días)</p>
+                  <p className="text-xs text-gray-500">Cumplen (&lt;3 días)</p>
                 </div>
                 <div className="text-center">
                   <p className={`text-2xl font-bold ${
                     kpiDuracion.noCumplen > 0 ? 'text-red-600' : 'text-gray-400'
                   }`}>{kpiDuracion.noCumplen}</p>
-                  <p className="text-xs text-gray-500">No Cumplen (&gt;2 días)</p>
+                  <p className="text-xs text-gray-500">No Cumplen (≥3 días)</p>
                 </div>
               </div>
             </div>
@@ -1316,6 +1707,194 @@ export default function Dashboard() {
                       <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
                         <i className="ri-inbox-line text-4xl mb-2"></i>
                         <p className="text-sm">No hay expedientes en esta categoría</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========== MODAL DETALLE ETD → NOTIFICADO =========== */}
+      {showReporteEtd && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Detalle ETD → Notificado</h2>
+                <p className="text-sm text-gray-500 mt-1">POs Dropship con días entre su ETD y la fecha de Notificado</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={descargarReporteEtd}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <i className="ri-download-2-line"></i>
+                  Descargar Excel
+                </button>
+                <button
+                  onClick={() => setShowReporteEtd(false)}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <i className="ri-close-line text-2xl text-gray-500"></i>
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-gray-800">{kpiEtdNotificado.totalEvaluados}</p>
+                  <p className="text-xs text-gray-500">Total Evaluados</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-teal-600">{kpiEtdNotificado.dentroRango}</p>
+                  <p className="text-xs text-gray-500">Dentro del rango (≤5 días)</p>
+                </div>
+                <div className="text-center">
+                  <p className={`text-2xl font-bold ${kpiEtdNotificado.fueraRango > 0 ? 'text-red-600' : 'text-gray-400'}`}>{kpiEtdNotificado.fueraRango}</p>
+                  <p className="text-xs text-gray-500">Fuera del rango</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-gray-800">{kpiEtdNotificado.promedioDias} días</p>
+                  <p className="text-xs text-gray-500">Promedio</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">PO / Tiquetera</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">EXP ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Solicitante</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">ETD</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Fecha Notificado</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Días</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Cumple Meta</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {etdDetalle.map(exp => (
+                    <tr key={exp.id} className={`hover:bg-gray-50 transition-colors ${!exp.cumpleMeta ? 'bg-red-50/40' : ''}`}>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{exp.po_tiquetera}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.exp_id || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.solicitante}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatearFechaCorta(exp.etd)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatearFechaCorta(exp.fechaNotificado)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-sm font-bold ${exp.cumpleMeta ? 'text-teal-700' : 'text-red-600'}`}>
+                          {exp.diasDiferencia} días
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {exp.cumpleMeta ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-teal-100 text-teal-700 text-xs font-bold rounded-full">
+                            <i className="ri-checkbox-circle-fill"></i> Cumple
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
+                            <i className="ri-alarm-warning-fill"></i> Alerta
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {etdDetalle.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                        <i className="ri-inbox-line text-4xl mb-2"></i>
+                        <p className="text-sm">No hay POs para mostrar</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========== MODAL DETALLE ASIGNADO → NOTIFICADO =========== */}
+      {showReporteAsignadoNotificado && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Detalle Asignado → Notificado</h2>
+                <p className="text-sm text-gray-500 mt-1">Días entre la asignación y la notificación de cada expediente Dropship</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={descargarReporteAsignadoNotificado}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <i className="ri-download-2-line"></i>
+                  Descargar Excel
+                </button>
+                <button
+                  onClick={() => setShowReporteAsignadoNotificado(false)}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <i className="ri-close-line text-2xl text-gray-500"></i>
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-gray-800">{kpiAsignadoNotificado.totalEvaluados}</p>
+                  <p className="text-xs text-gray-500">Total Evaluados</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-sky-600">{kpiAsignadoNotificado.promedioDias} días</p>
+                  <p className="text-xs text-gray-500">Promedio</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-gray-800">{asignadoNotificadoDetalle.length > 0 ? Math.max(...asignadoNotificadoDetalle.map(d => d.dias)) : 0} días</p>
+                  <p className="text-xs text-gray-500">Máximo</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-gray-800">{asignadoNotificadoDetalle.length > 0 ? Math.min(...asignadoNotificadoDetalle.map(d => d.dias)) : 0} días</p>
+                  <p className="text-xs text-gray-500">Mínimo</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">PO / Tiquetera</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">EXP ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Solicitante</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Fecha Asignado</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Fecha Notificado</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Días</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {asignadoNotificadoDetalle.map(exp => (
+                    <tr key={exp.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{exp.po_tiquetera}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.exp_id || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.solicitante}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatearFechaCorta(exp.fechaAsignado)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatearFechaCorta(exp.fechaNotificado)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm font-bold text-sky-700">{exp.dias} días</span>
+                      </td>
+                    </tr>
+                  ))}
+                  {asignadoNotificadoDetalle.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
+                        <i className="ri-inbox-line text-4xl mb-2"></i>
+                        <p className="text-sm">No hay expedientes para mostrar</p>
                       </td>
                     </tr>
                   )}
@@ -1545,6 +2124,173 @@ export default function Dashboard() {
                   ? `Todos dentro del rango (promedio ${kpiEtdNotificado.promedioDias} días)`
                   : 'Sin datos para evaluar'}
               </p>
+              <button
+                onClick={() => setShowReporteEtd(true)}
+                className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-100 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <i className="ri-file-chart-line"></i>
+                Ver detalle de POs
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* =========== KPI: Duración Promedio Asignado → Notificado =========== */}
+      <div className="bg-gradient-to-br from-sky-50 to-cyan-50 border border-sky-200 rounded-xl p-6 mb-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 flex items-center justify-center bg-sky-500 rounded-xl">
+            <i className="ri-timer-line text-white text-2xl"></i>
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Duración Promedio Asignado → Notificado</h3>
+            <p className="text-sm text-gray-600">Promedio de días entre la asignación y la notificación del expediente (Dropship)</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-sky-100">
+                <i className="ri-time-line text-2xl text-sky-600"></i>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-gray-600">Duración Promedio</h4>
+                <p className="text-xs text-gray-500 mt-1">Asignado → Notificado</p>
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-bold text-sky-600">{kpiAsignadoNotificado.promedioDias}</span>
+              <span className="text-lg text-gray-500">días</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-cyan-100">
+                <i className="ri-file-list-3-line text-2xl text-cyan-600"></i>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-gray-600">Expedientes Evaluados</h4>
+                <p className="text-xs text-gray-500 mt-1">notificados en el período</p>
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-5xl font-bold text-gray-800">{kpiAsignadoNotificado.totalEvaluados}</span>
+              <span className="text-lg text-gray-500">exp.</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl p-6 border border-gray-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-gray-100">
+                <i className="ri-bar-chart-box-line text-2xl text-gray-600"></i>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-gray-600">Desglose</h4>
+                <p className="text-xs text-gray-500 mt-1">detalle por expediente</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowReporteAsignadoNotificado(true)}
+              disabled={asignadoNotificadoDetalle.length === 0}
+              className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 bg-sky-50 text-sky-700 border border-sky-200 rounded-lg hover:bg-sky-100 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i className="ri-file-chart-line"></i>
+              Ver desglose completo
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* =========== KPIs MCG (Dropship con MCG) =========== */}
+      <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-200 rounded-xl p-6 mb-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 flex items-center justify-center bg-indigo-500 rounded-xl">
+            <i className="ri-shield-star-line text-white text-2xl"></i>
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">KPIs MCG</h3>
+            <p className="text-sm text-gray-600">Expedientes Dropship marcados con MCG — evaluados por separado y excluidos de los KPIs generales</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Creación de expediente */}
+          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-indigo-100">
+                  <i className="ri-file-add-line text-2xl text-indigo-600"></i>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-600">Creación de Expediente</h4>
+                  <p className="text-xs text-gray-500 mt-1">Asignado → número de expediente · Meta: ≤ 2 días</p>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className="text-2xl font-bold text-gray-800">{kpiMcgCreacion.totalEvaluados}</p>
+                <p className="text-xs text-gray-500">Evaluados</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className="text-2xl font-bold text-teal-600">{kpiMcgCreacion.cumplen}</p>
+                <p className="text-xs text-gray-500">Cumplen (≤2d)</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className={`text-2xl font-bold ${kpiMcgCreacion.noCumplen > 0 ? 'text-red-600' : 'text-gray-400'}`}>{kpiMcgCreacion.noCumplen}</p>
+                <p className="text-xs text-gray-500">No cumplen</p>
+              </div>
+            </div>
+            <div className="mt-3 bg-gray-200 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all duration-700 ${kpiMcgCreacion.porcentajeCumplimiento >= 80 ? 'bg-teal-500' : kpiMcgCreacion.porcentajeCumplimiento >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                style={{ width: `${kpiMcgCreacion.porcentajeCumplimiento}%` }}
+              ></div>
+            </div>
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-xs text-gray-500">Promedio: <strong>{kpiMcgCreacion.diasPromedio} días</strong></span>
+              <span className="text-xs font-semibold text-gray-600">{kpiMcgCreacion.porcentajeCumplimiento}% cumple</span>
+            </div>
+          </div>
+
+          {/* ETD → Notificado */}
+          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-indigo-100">
+                  <i className="ri-ship-line text-2xl text-indigo-600"></i>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-600">ETD → Notificado</h4>
+                  <p className="text-xs text-gray-500 mt-1">Meta: &lt; 2 días entre ETD y Notificado</p>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className="text-2xl font-bold text-gray-800">{kpiMcgEtdNotificado.totalEvaluados}</p>
+                <p className="text-xs text-gray-500">Evaluados</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className="text-2xl font-bold text-teal-600">{kpiMcgEtdNotificado.dentroRango}</p>
+                <p className="text-xs text-gray-500">Dentro (&lt;2d)</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-center">
+                <p className={`text-2xl font-bold ${kpiMcgEtdNotificado.fueraRango > 0 ? 'text-red-600' : 'text-gray-400'}`}>{kpiMcgEtdNotificado.fueraRango}</p>
+                <p className="text-xs text-gray-500">Fuera</p>
+              </div>
+            </div>
+            <div className="mt-3 bg-gray-200 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all duration-700 ${kpiMcgEtdNotificado.porcentajeOk >= 80 ? 'bg-teal-500' : kpiMcgEtdNotificado.porcentajeOk >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                style={{ width: `${kpiMcgEtdNotificado.porcentajeOk}%` }}
+              ></div>
+            </div>
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-xs text-gray-500">Promedio: <strong>{kpiMcgEtdNotificado.promedioDias} días</strong></span>
+              <span className="text-xs font-semibold text-gray-600">{kpiMcgEtdNotificado.porcentajeOk}% OK</span>
             </div>
           </div>
         </div>
