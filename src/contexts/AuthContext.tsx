@@ -21,6 +21,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   refreshPerfil: () => Promise<void>;
   isBodega: () => boolean;
+  isAdmin: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,6 +34,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isBodega = () => {
     if (!perfil?.roles || perfil.roles.length === 0) return false;
     return perfil.roles.some(r => r.toLowerCase() === 'bodega');
+  };
+
+  const isAdmin = () => {
+    if (!perfil?.roles || perfil.roles.length === 0) return false;
+    return perfil.roles.some(r => r.toLowerCase() === 'admin');
   };
 
   const cargarPerfil = async (userEmail: string) => {
@@ -164,7 +170,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signInWithGoogle,
     signOut,
     refreshPerfil,
-    isBodega
+    isBodega,
+    isAdmin
   };
 
   return (

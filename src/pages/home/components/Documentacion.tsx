@@ -2,6 +2,13 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion } from '../../../lib/notificaciones';
 import { hoyLocal } from '../../../lib/fechas';
+import { useAuth } from '../../../contexts/AuthContext';
+
+// Emails autorizados para eliminar documentos en el módulo de Documentación
+const EMAILS_AUTORIZADOS_ELIMINAR = [
+  'jalvarez@ologistics.com',
+  'jmora@ologistics.com',
+];
 
 interface DocumentoCAA {
   id: string;
@@ -18,6 +25,7 @@ interface DocumentoCAA {
 }
 
 export default function Documentacion() {
+  const { user } = useAuth();
   const [documentos, setDocumentos] = useState<DocumentoCAA[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -649,16 +657,18 @@ export default function Documentacion() {
               <span className="text-gray-500">Pág. {safePage} de {Math.max(1, totalPages)}</span>
             </span>
 
-            {/* Botón eliminar */}
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(true)}
-              disabled={selectedIds.size === 0}
-              className="px-4 py-2 text-red-600 bg-red-50 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-            >
-              <i className="ri-delete-bin-line mr-1.5"></i>
-              Eliminar
-            </button>
+            {/* Botón eliminar — solo visible para administradores */}
+            {user && user.email && EMAILS_AUTORIZADOS_ELIMINAR.includes(user.email) && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={selectedIds.size === 0}
+                className="px-4 py-2 text-red-600 bg-red-50 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                <i className="ri-delete-bin-line mr-1.5"></i>
+                Eliminar
+              </button>
+            )}
 
             {/* Botón generar ticket */}
             <button

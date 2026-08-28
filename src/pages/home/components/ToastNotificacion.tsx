@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import {
   getIconoColor,
   getTipoLabel,
@@ -40,6 +41,8 @@ function estilosPorCantidad(cantidad: number) {
     mensaje: 'text-[15px]',
   };
 }
+
+const MAX_VISIBLES = 5;
 
 interface TarjetaToastProps {
   item: ToastItem;
@@ -95,18 +98,52 @@ interface ToastNotificacionesProps {
 }
 
 export default function ToastNotificaciones({ toasts, onCerrar }: ToastNotificacionesProps) {
+  const [expandido, setExpandido] = useState(false);
+
+  const hayMuchos = toasts.length > MAX_VISIBLES;
+  const ocultos = hayMuchos ? toasts.length - MAX_VISIBLES : 0;
+
+  const visibles = useMemo(() => {
+    if (!hayMuchos || expandido) return toasts;
+    return toasts.slice(0, MAX_VISIBLES);
+  }, [toasts, hayMuchos, expandido]);
+
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[999] flex flex-col gap-3 pointer-events-none">
-      {toasts.map((item) => (
-        <TarjetaToast
-          key={item.clave}
-          item={item}
-          cantidad={toasts.length}
-          onCerrar={onCerrar}
-        />
-      ))}
+    <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[999] flex flex-col gap-3 pointer-events-none max-h-[calc(100vh-2rem)]">
+      {/* Solo los visibles se muestran; el resto queda oculto hasta que el usuario expanda */}
+      <div className="flex flex-col gap-3 overflow-y-auto pointer-events-none">
+        {visibles.map((item) => (
+          <TarjetaToast
+            key={item.clave}
+            item={item}
+            cantidad={visibles.length}
+            onCerrar={onCerrar}
+          />
+        ))}
+      </div>
+
+      {/* Botón para desplegar / contraer el resto */}
+      {hayMuchos && (
+        <button
+          type="button"
+          onClick={() => setExpandido((prev) => !prev)}
+          className="pointer-events-auto self-end flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-900 border border-zinc-700/70 text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer whitespace-nowrap text-sm font-medium"
+        >
+          {expandido ? (
+            <>
+              <span>Mostrar menos</span>
+              <i className="ri-arrow-up-s-line text-base"></i>
+            </>
+          ) : (
+            <>
+              <span>Ver {ocultos} notificación{ocultos !== 1 ? 'es' : ''} más</span>
+              <i className="ri-arrow-down-s-line text-base"></i>
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 }
