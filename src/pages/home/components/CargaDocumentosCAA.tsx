@@ -744,6 +744,8 @@ export default function CargaDocumentosCAA() {
               placeholder="Agrega notas, instrucciones adicionales o cualquier información relevante para este documento..."
               maxLength={500}
               rows={3}
+              spellCheck="true"
+              lang="es"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
             />
             <div className="flex justify-between items-center mt-1.5">

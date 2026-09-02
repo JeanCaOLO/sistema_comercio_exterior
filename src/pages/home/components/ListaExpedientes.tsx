@@ -1855,6 +1855,8 @@ export default function ListaExpedientes() {
                             onChange={(e) => handleChange('comentario_incidente', e.target.value)}
                             rows={3}
                             maxLength={500}
+                            spellCheck="true"
+                            lang="es"
                             className="w-full px-4 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm resize-none"
                             placeholder="Describe el incidente..."
                           />
@@ -1885,6 +1887,8 @@ export default function ListaExpedientes() {
                         value={selectedExpediente.motivo_revision || ''}
                         onChange={(e) => handleChange('motivo_revision', e.target.value)}
                         rows={3}
+                        spellCheck="true"
+                        lang="es"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm resize-none"
                       />
                     ) : (
@@ -1905,6 +1909,8 @@ export default function ListaExpedientes() {
                         value={selectedExpediente.instrucciones_adicionales || ''}
                         onChange={(e) => handleChange('instrucciones_adicionales', e.target.value)}
                         rows={6}
+                        spellCheck="true"
+                        lang="es"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm resize-none"
                         placeholder="Agregue observaciones adicionales..."
                       />

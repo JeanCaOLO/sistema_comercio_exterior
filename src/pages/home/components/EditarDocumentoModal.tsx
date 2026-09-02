@@ -773,6 +773,8 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
               placeholder="Notas, instrucciones adicionales o información relevante..."
               maxLength={500}
               rows={3}
+              spellCheck="true"
+              lang="es"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent resize-none"
             />
             <div className="flex justify-between items-center mt-1">

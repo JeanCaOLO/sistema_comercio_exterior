@@ -933,6 +933,8 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                             onChange={handleChange}
                             rows={3}
                             maxLength={500}
+                            spellCheck="true"
+                            lang="es"
                             className="w-full px-4 py-2.5 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm resize-none"
                             placeholder="Describe el incidente..."
                           />
@@ -1026,6 +1028,8 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                   value={formData.observaciones}
                   onChange={handleChange}
                   rows={6}
+                  spellCheck="true"
+                  lang="es"
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm resize-none"
                   placeholder="Ingrese cualquier observación adicional relevante para el expediente..."
                 />
