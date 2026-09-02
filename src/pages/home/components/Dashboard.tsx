@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import KPICard from './KPICard';
 import DonutChart from './DonutChart';
 import BarChart from './BarChart';
+import BarChartTiempos from './BarChartTiempos';
 import ProgressBar from './ProgressBar';
 import { supabase } from '../../../lib/supabase';
 import { formatearFechaCorta, parseFechaSegura } from '../../../lib/fechas';
@@ -2450,75 +2451,22 @@ export default function Dashboard() {
                   </p>
                 </div>
               )}
-              {tiemposEntreEstados.map((item, index) => (
-                <div key={index} className="group relative">
-                  <div className="flex items-center gap-2 p-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-100">
-                    {/* Estado origen */}
-                    <div className="flex-shrink-0 w-32">
-                      <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-lg block text-center truncate">
-                        {item.desde}
-                      </span>
-                    </div>
-
-                    {/* Flecha + tiempo */}
-                    <div className="flex-1 flex flex-col items-center">
-                      <span className={`text-sm font-bold ${
-                        filtroModuloTiempos === 'dropship' ? 'text-sky-700' :
-                        filtroModuloTiempos === 'zf' ? 'text-violet-700' : 'text-teal-700'
-                      }`}>
-                        {formatearTiempo(item.minutosPromedio)}
-                      </span>
-                      <div className="flex items-center w-full mt-1">
-                        <div className={`flex-1 h-px ${
-                          filtroModuloTiempos === 'dropship' ? 'bg-sky-300' :
-                          filtroModuloTiempos === 'zf' ? 'bg-violet-300' : 'bg-teal-300'
-                        }`}></div>
-                        <i className={`ri-arrow-right-line mx-1 flex-shrink-0 ${
-                          filtroModuloTiempos === 'dropship' ? 'text-sky-500' :
-                          filtroModuloTiempos === 'zf' ? 'text-violet-500' : 'text-teal-500'
-                        }`}></i>
-                      </div>
-                      {item.fuente === 'real' && (
-                        <span className="text-xs text-gray-400">{item.cantidad} transic.</span>
-                      )}
-                    </div>
-
-                    {/* Estado destino */}
-                    <div className="flex-shrink-0 w-36">
-                      <span className={`text-xs font-semibold px-2 py-1 rounded-lg block text-center truncate border ${
-                        filtroModuloTiempos === 'dropship'
-                          ? 'text-sky-800 bg-sky-50 border-sky-200'
-                          : filtroModuloTiempos === 'zf'
-                          ? 'text-violet-800 bg-violet-50 border-violet-200'
-                          : 'text-teal-800 bg-teal-50 border-teal-200'
-                      }`}>
-                        {item.hasta}
-                      </span>
-                    </div>
-
-                    {/* Barra de tiempo relativa */}
-                    <div className="flex-shrink-0 w-16">
-                      <div className="bg-gray-100 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full ${
-                            filtroModuloTiempos === 'dropship' ? 'bg-sky-400' :
-                            filtroModuloTiempos === 'zf' ? 'bg-violet-400' : 'bg-teal-400'
-                          }`}
-                          style={{
-                            width: `${
-                              Math.min(
-                                100,
-                                (item.minutosPromedio /
-                                  Math.max(...tiemposEntreEstados.map(t => t.minutosPromedio))) * 100
-                              )
-                            }%`
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              <BarChartTiempos
+                data={tiemposEntreEstados.map(item => ({
+                  label: `${item.desde} → ${item.hasta}`,
+                  tiempoMinutos: item.minutosPromedio,
+                  tiempoTexto: formatearTiempo(item.minutosPromedio),
+                  cantidad: item.cantidad,
+                  fuente: item.fuente
+                }))}
+                colorTema={
+                  filtroModuloTiempos === 'dropship'
+                    ? 'sky'
+                    : filtroModuloTiempos === 'zf'
+                    ? 'violet'
+                    : 'teal'
+                }
+              />
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-10 text-center">
