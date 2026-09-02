@@ -51,6 +51,21 @@ interface Expediente {
 const ESTADOS_DROPSHIP = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
 const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado'];
 
+// Verifica si una transición de estado en Dropship es un retroceso no permitido.
+// No se puede mover un ticket a una columna anterior, salvo estas excepciones:
+//   1. Hacia "Espera de Respuesta" (desde cualquier estado posterior).
+//   2. De "Espera de Respuesta" a "En Proceso".
+const esRetrocesoNoPermitido = (estadoAnterior: string, estadoNuevo: string): boolean => {
+  const idxAnterior = ESTADOS_DROPSHIP.indexOf(estadoAnterior);
+  const idxNuevo = ESTADOS_DROPSHIP.indexOf(estadoNuevo);
+  if (idxNuevo === -1 || idxAnterior === -1 || idxNuevo >= idxAnterior) return false;
+
+  const excepcionHaciaEspera = estadoNuevo === 'Espera de Respuesta';
+  const excepcionDeEsperaAProceso = estadoAnterior === 'Espera de Respuesta' && estadoNuevo === 'En Proceso';
+
+  return !(excepcionHaciaEspera || excepcionDeEsperaAProceso);
+};
+
 // Tiempo para ocultar tickets terminados del kanban (10 días en ms)
 const DIEZ_DIAS_MS = 10 * 24 * 60 * 60 * 1000;
 
@@ -982,6 +997,24 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     }
   };
 
+  // Aplica la misma regla de retroceso de Dropship al selector de Estado del modal de edición.
+  // Compara contra el estado original guardado en la base (no contra el estado ya editado en el modal).
+  const handleEstadoChange = (nuevoEstado: string) => {
+    if (!selectedExpediente) return;
+
+    const expedienteOriginal = expedientes.find(e => e.id === selectedExpediente.id);
+    const estadoAnterior = expedienteOriginal?.estado_expediente ?? selectedExpediente.estado_expediente;
+
+    if (tipoModulo === 'dropship' && esRetrocesoNoPermitido(estadoAnterior, nuevoEstado)) {
+      setErrorMessage('No se puede mover el ticket a una columna anterior. Solo se permite retroceder a "Espera de Respuesta" o de "Espera de Respuesta" a "En Proceso".');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 5000);
+      return;
+    }
+
+    handleChange('estado_expediente', nuevoEstado);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
@@ -1316,6 +1349,18 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     e.preventDefault();
     
     if (!draggedItem || draggedItem.estado_expediente === nuevoEstado) {
+      setDraggedItem(null);
+      return;
+    }
+
+    // ── Regla Dropship: no se puede mover un ticket a una columna anterior ──
+    // Excepciones permitidas:
+    //   1. Hacia "Espera de Respuesta" (desde cualquier estado posterior).
+    //   2. De "Espera de Respuesta" a "En Proceso".
+    if (tipoModulo === 'dropship' && esRetrocesoNoPermitido(draggedItem.estado_expediente, nuevoEstado)) {
+      setErrorMessage('No se puede mover el ticket a una columna anterior. Solo se permite retroceder a "Espera de Respuesta" o de "Espera de Respuesta" a "En Proceso".');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 5000);
       setDraggedItem(null);
       return;
     }
@@ -2164,7 +2209,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                   {editMode ? (
                     <select
                       value={selectedExpediente.estado_expediente}
-                      onChange={(e) => handleChange('estado_expediente', e.target.value)}
+                      onChange={(e) => handleEstadoChange(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
                     >
                       {ESTADOS.map(estado => (
