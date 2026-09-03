@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { formatearFecha } from '../../../lib/fechas';
+import { useAutocorrector } from '@/hooks/useAutocorrector';
 
 interface Expediente {
   id: string;
@@ -50,6 +51,7 @@ const TODOS_ESTADOS = Array.from(new Set([...ESTADOS_DROPSHIP, ...ESTADOS_ZF])).
 const ITEMS_PER_PAGE = 25;
 
 export default function ListaExpedientes() {
+  const { corregir } = useAutocorrector();
   const [expedientes, setExpedientes] = useState<Expediente[]>([]);
   const [filteredExpedientes, setFilteredExpedientes] = useState<Expediente[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1852,7 +1854,10 @@ export default function ListaExpedientes() {
                         {editMode ? (
                           <textarea
                             value={selectedExpediente.comentario_incidente || ''}
-                            onChange={(e) => handleChange('comentario_incidente', e.target.value)}
+                            onChange={(e) => {
+                              handleChange('comentario_incidente', e.target.value);
+                              corregir(e.target, (v) => handleChange('comentario_incidente', v));
+                            }}
                             rows={3}
                             maxLength={500}
                             spellCheck="true"
@@ -1885,7 +1890,10 @@ export default function ListaExpedientes() {
                     {editMode ? (
                       <textarea
                         value={selectedExpediente.motivo_revision || ''}
-                        onChange={(e) => handleChange('motivo_revision', e.target.value)}
+                        onChange={(e) => {
+                          handleChange('motivo_revision', e.target.value);
+                          corregir(e.target, (v) => handleChange('motivo_revision', v));
+                        }}
                         rows={3}
                         spellCheck="true"
                         lang="es"
@@ -1907,7 +1915,10 @@ export default function ListaExpedientes() {
                     {editMode ? (
                       <textarea
                         value={selectedExpediente.instrucciones_adicionales || ''}
-                        onChange={(e) => handleChange('instrucciones_adicionales', e.target.value)}
+                        onChange={(e) => {
+                          handleChange('instrucciones_adicionales', e.target.value);
+                          corregir(e.target, (v) => handleChange('instrucciones_adicionales', v));
+                        }}
                         rows={6}
                         spellCheck="true"
                         lang="es"

@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase';
 import { crearNotificacion, notificarCargaCAA } from '../../../lib/notificaciones';
 import { hoyLocal } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useAutocorrector } from '@/hooks/useAutocorrector';
 
 const USUARIOS_CARGA_CAA = ['lchavala', 'smcdonald', 'mpaniagua'];
 
@@ -19,6 +20,7 @@ interface SolicitudCreada {
 
 export default function CargaDocumentosCAA() {
   const { perfil } = useAuth();
+  const { corregir } = useAutocorrector();
   const [tipoModulo, setTipoModulo] = useState<'dropship' | 'zf' | null>(null);
   const [tipoRuta, setTipoRuta] = useState<string>('');
   const [blCargado, setBlCargado] = useState(false);
@@ -740,7 +742,10 @@ export default function CargaDocumentosCAA() {
             </div>
             <textarea
               value={comentario}
-              onChange={(e) => setComentario(e.target.value)}
+              onChange={(e) => {
+                setComentario(e.target.value);
+                corregir(e.target, setComentario);
+              }}
               placeholder="Agrega notas, instrucciones adicionales o cualquier información relevante para este documento..."
               maxLength={500}
               rows={3}

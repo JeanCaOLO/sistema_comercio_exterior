@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase';
 import { crearNotificacion } from '../../../lib/notificaciones';
 import { formatearFecha } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useAutocorrector } from '@/hooks/useAutocorrector';
 
 interface Expediente {
   id: string;
@@ -154,6 +155,7 @@ interface GestionExpedientesProps {
 export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, tipoModulo = 'dropship' }: GestionExpedientesProps) {
   const { perfil } = useAuth();
   const esAdmin = perfil?.roles?.includes('Administrador') ?? false;
+  const { corregir } = useAutocorrector();
 
   const [expedientes, setExpedientes] = useState<Expediente[]>([]);
   const [filteredExpedientes, setFilteredExpedientes] = useState<Expediente[]>([]);
@@ -2520,7 +2522,10 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                         {editMode ? (
                           <textarea
                             value={selectedExpediente.comentario_incidente || ''}
-                            onChange={(e) => handleChange('comentario_incidente', e.target.value)}
+                            onChange={(e) => {
+                              handleChange('comentario_incidente', e.target.value);
+                              corregir(e.target, (v) => handleChange('comentario_incidente', v));
+                            }}
                             rows={3}
                             maxLength={500}
                             spellCheck="true"
@@ -2623,7 +2628,10 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                     {editMode ? (
                       <textarea
                         value={selectedExpediente.motivo_revision || ''}
-                        onChange={(e) => handleChange('motivo_revision', e.target.value)}
+                        onChange={(e) => {
+                          handleChange('motivo_revision', e.target.value);
+                          corregir(e.target, (v) => handleChange('motivo_revision', v));
+                        }}
                         rows={3}
                         spellCheck="true"
                         lang="es"
@@ -2642,7 +2650,10 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                   {editMode ? (
                     <textarea
                       value={selectedExpediente.instrucciones_adicionales || ''}
-                      onChange={(e) => handleChange('instrucciones_adicionales', e.target.value)}
+                      onChange={(e) => {
+                        handleChange('instrucciones_adicionales', e.target.value);
+                        corregir(e.target, (v) => handleChange('instrucciones_adicionales', v));
+                      }}
                       rows={6}
                       spellCheck="true"
                       lang="es"

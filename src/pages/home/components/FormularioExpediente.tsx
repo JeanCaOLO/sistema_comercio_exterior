@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { useAutocorrector } from '@/hooks/useAutocorrector';
 
 // Feriados de El Salvador
 const FERIADOS = [
@@ -81,6 +82,7 @@ const calcularTiempoYDias = (dificultad: string, lineas: number) => {
 };
 
 export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' }: { onClose: () => void; tipoModulo?: 'dropship' | 'zf' }) {
+  const { corregir } = useAutocorrector();
   const obtenerFechaActual = () => {
     const hoy = new Date();
     const año = hoy.getFullYear();
@@ -930,7 +932,10 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                           <textarea
                             name="comentarioIncidente"
                             value={formData.comentarioIncidente}
-                            onChange={handleChange}
+                            onChange={(e) => {
+                              handleChange(e);
+                              corregir(e.target, (v) => setFormData(prev => ({ ...prev, comentarioIncidente: v })));
+                            }}
                             rows={3}
                             maxLength={500}
                             spellCheck="true"
@@ -1026,7 +1031,10 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                 <textarea
                   name="observaciones"
                   value={formData.observaciones}
-                  onChange={handleChange}
+                  onChange={(e) => {
+                    handleChange(e);
+                    corregir(e.target, (v) => setFormData(prev => ({ ...prev, observaciones: v })));
+                  }}
                   rows={6}
                   spellCheck="true"
                   lang="es"

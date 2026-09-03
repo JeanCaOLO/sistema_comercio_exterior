@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion } from '../../../lib/notificaciones';
+import { useAutocorrector } from '@/hooks/useAutocorrector';
 
 interface RegistroDocumento {
   id: string;
@@ -113,6 +114,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { corregir } = useAutocorrector();
 
   // Inicializar estado cuando cambia el registro o se abre el modal
   useEffect(() => {
@@ -769,7 +771,10 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
             <h3 className="text-sm font-bold text-gray-700 mb-2">Comentario / Instrucciones</h3>
             <textarea
               value={comentario}
-              onChange={(e) => setComentario(e.target.value)}
+              onChange={(e) => {
+                setComentario(e.target.value);
+                corregir(e.target, setComentario);
+              }}
               placeholder="Notas, instrucciones adicionales o información relevante..."
               maxLength={500}
               rows={3}
