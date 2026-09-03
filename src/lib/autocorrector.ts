@@ -86,6 +86,16 @@ function distanciaLevenshtein(a: string, b: string): number {
   return fila[n];
 }
 
+// Normaliza una palabra para compararla ignorando tildes y diacríticos.
+// Así "manana" y "mañana" se consideran la misma palabra a nivel de letras,
+// lo que permite priorizar la corrección de acentos sobre otros cambios.
+function normalizar(palabra: string): string {
+  return palabra
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 export interface Correccion {
   texto: string;
   cursor: number;
@@ -123,16 +133,36 @@ export async function corregirTexto(
   if (sugerencias.length === 0) return null;
 
   const palabraLower = palabra.toLowerCase();
+  const palabraNormalizada = normalizar(palabraLower);
+
+  // Primera pasada: si existe una sugerencia que coincide con la palabra
+  // escrita ignorando tildes (ej. "manana" -> "mañana"), la priorizamos.
+  // Esto evita que "manana" se convierta en "banana" cuando ambas están a
+  // distancia 1, porque la diferencia real aquí es solo un acento.
   let mejor: string | null = null;
   let mejorDistancia = Infinity;
-
   for (const sugerencia of sugerencias) {
     const sugerenciaLower = sugerencia.toLowerCase();
     if (sugerenciaLower === palabraLower) continue;
+    if (normalizar(sugerenciaLower) !== palabraNormalizada) continue;
     const distancia = distanciaLevenshtein(palabraLower, sugerenciaLower);
-    if (distancia <= 2 && distancia < mejorDistancia) {
+    if (distancia < mejorDistancia) {
       mejorDistancia = distancia;
       mejor = sugerencia;
+    }
+  }
+
+  // Segunda pasada: si no hubo coincidencia por acentos, caemos a la
+  // distancia de Levenshtein como criterio general.
+  if (!mejor) {
+    for (const sugerencia of sugerencias) {
+      const sugerenciaLower = sugerencia.toLowerCase();
+      if (sugerenciaLower === palabraLower) continue;
+      const distancia = distanciaLevenshtein(palabraLower, sugerenciaLower);
+      if (distancia <= 2 && distancia < mejorDistancia) {
+        mejorDistancia = distancia;
+        mejor = sugerencia;
+      }
     }
   }
 
