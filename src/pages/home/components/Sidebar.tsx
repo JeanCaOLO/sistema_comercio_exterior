@@ -62,7 +62,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
       id: 'documentacion', 
       label: 'Documentación', 
       icon: 'ri-folder-open-line',
-      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega || esSolicitante
+      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega || esSolicitante || esExpedientes
     },
     { 
       id: 'repositorio', 
