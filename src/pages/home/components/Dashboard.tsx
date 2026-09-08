@@ -248,19 +248,20 @@ export default function Dashboard() {
     return cambio > 0 ? `+${cambio.toFixed(1)}%` : `${cambio.toFixed(1)}%`;
   };
 
-  const obtenerRangoFechas = () => {
+  const obtenerRangoFechas = (periodoOverride?: string) => {
     const hoy = new Date();
+    const periodo = periodoOverride ?? periodoActivo;
     let inicio: Date;
     let fin: Date;
 
-    if (periodoActivo === 'personalizado' && rangoPersonalizado) {
+    if (periodo === 'personalizado' && rangoPersonalizado) {
       return {
         inicio: parseFechaSegura(rangoPersonalizado.inicio),
         fin: parseFechaSegura(rangoPersonalizado.fin)
       };
     }
 
-    switch (periodoActivo) {
+    switch (periodo) {
       case 'mes-actual':
         inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
         fin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
@@ -1256,6 +1257,14 @@ export default function Dashboard() {
     setPeriodoActivo('personalizado');
   };
 
+  const seleccionarPeriodo = (periodo: string) => {
+    setPeriodoActivo(periodo);
+    setRangoPersonalizado(null);
+    const { inicio, fin } = obtenerRangoFechas(periodo);
+    setFechaInicio(aFechaISO(inicio));
+    setFechaFin(aFechaISO(fin));
+  };
+
   const limpiarFiltros = () => {
     const hoy = new Date();
     const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -1300,7 +1309,7 @@ export default function Dashboard() {
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex gap-2">
             <button
-              onClick={() => setPeriodoActivo('mes-actual')}
+              onClick={() => seleccionarPeriodo('mes-actual')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 periodoActivo === 'mes-actual'
                   ? 'bg-teal-600 text-white'
@@ -1310,7 +1319,7 @@ export default function Dashboard() {
               Mes Actual
             </button>
             <button
-              onClick={() => setPeriodoActivo('mes-anterior')}
+              onClick={() => seleccionarPeriodo('mes-anterior')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 periodoActivo === 'mes-anterior'
                   ? 'bg-teal-600 text-white'
@@ -1320,7 +1329,7 @@ export default function Dashboard() {
               Mes Anterior
             </button>
             <button
-              onClick={() => setPeriodoActivo('trimestre')}
+              onClick={() => seleccionarPeriodo('trimestre')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 periodoActivo === 'trimestre'
                   ? 'bg-teal-600 text-white'
@@ -1330,7 +1339,7 @@ export default function Dashboard() {
               Trimestre
             </button>
             <button
-              onClick={() => setPeriodoActivo('ano-actual')}
+              onClick={() => seleccionarPeriodo('ano-actual')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 periodoActivo === 'ano-actual'
                   ? 'bg-teal-600 text-white'

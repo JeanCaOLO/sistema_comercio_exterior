@@ -1642,16 +1642,18 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
           <h1 className="text-3xl font-bold text-gray-900">{tituloModulo}</h1>
           <p className="text-gray-500 mt-2">Administra y da seguimiento a todos los expedientes</p>
         </div>
-        <button
-          onClick={() => {
-            const event = new CustomEvent('openFormularioExpediente', { detail: { tipoModulo } });
-            window.dispatchEvent(event);
-          }}
-          className="px-6 py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-2"
-        >
-          <i className="ri-add-line text-xl"></i>
-          Nuevo Expediente
-        </button>
+        {tipoModulo !== 'dropship' && (
+          <button
+            onClick={() => {
+              const event = new CustomEvent('openFormularioExpediente', { detail: { tipoModulo } });
+              window.dispatchEvent(event);
+            }}
+            className="px-6 py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-2"
+          >
+            <i className="ri-add-line text-xl"></i>
+            Nuevo Expediente
+          </button>
+        )}
       </div>
 
       {showSuccess && (

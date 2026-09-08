@@ -6,76 +6,23 @@ interface SidebarProps {
   onLogout: () => void;
   userName: string;
   userRoles: string[];
+  modulosPermitidos: string[];
 }
 
-export default function Sidebar({ activeView, setActiveView, onLogout, userName, userRoles }: SidebarProps) {
+export default function Sidebar({ activeView, setActiveView, onLogout, userName, userRoles, modulosPermitidos }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  
-  // Verificar roles
-  const esAdministrador = userRoles.includes('Administrador');
-  const esGestorDropship = userRoles.includes('Gestor Dropship');
-  const esGestorZF = userRoles.includes('Gestor ZF');
-  const esBodega = userRoles.includes('Bodega');
-  const esDocumentos = userRoles.includes('Documentos');
-  const esExpedientes = userRoles.includes('Expedientes');
-  const esSolicitante = userRoles.includes('Solicitante');
 
-  // Construir menú según roles
+  // Construir menú según los permisos cargados desde la matriz
   const menuItems = [
-    { 
-      id: 'dashboard', 
-      label: 'Dashboard', 
-      icon: 'ri-dashboard-line',
-      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega
-    },
-    { 
-      id: 'gestion-dropship', 
-      label: 'Gestión Dropship', 
-      icon: 'ri-ship-line',
-      visible: esAdministrador || esGestorDropship || esExpedientes
-    },
-    { 
-      id: 'gestion-zf', 
-      label: 'Gestión ZF', 
-      icon: 'ri-building-line',
-      visible: esAdministrador || esGestorZF || esBodega || esExpedientes
-    },
-    { 
-      id: 'lista-expedientes', 
-      label: 'Lista de Expedientes', 
-      icon: 'ri-file-list-3-line',
-      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega || esDocumentos || esExpedientes
-    },
-    { 
-      id: 'reportes', 
-      label: 'Reportes', 
-      icon: 'ri-bar-chart-box-line',
-      visible: esAdministrador
-    },
-    { 
-      id: 'carga-caa', 
-      label: 'Carga CAA', 
-      icon: 'ri-file-upload-line',
-      visible: esAdministrador || esSolicitante || esDocumentos
-    },
-    { 
-      id: 'documentacion', 
-      label: 'Documentación', 
-      icon: 'ri-folder-open-line',
-      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega || esSolicitante || esExpedientes
-    },
-    { 
-      id: 'repositorio', 
-      label: 'Repositorio Docs', 
-      icon: 'ri-archive-line',
-      visible: esAdministrador || esGestorDropship || esGestorZF || esBodega || esSolicitante || esDocumentos || esExpedientes
-    },
-    { 
-      id: 'configuracion', 
-      label: 'Configuración', 
-      icon: 'ri-settings-3-line',
-      visible: esAdministrador
-    }
+    { id: 'dashboard', label: 'Dashboard', icon: 'ri-dashboard-line' },
+    { id: 'gestion-dropship', label: 'Gestión Dropship', icon: 'ri-ship-line' },
+    { id: 'gestion-zf', label: 'Gestión ZF', icon: 'ri-building-line' },
+    { id: 'lista-expedientes', label: 'Lista de Expedientes', icon: 'ri-file-list-3-line' },
+    { id: 'reportes', label: 'Reportes', icon: 'ri-bar-chart-box-line' },
+    { id: 'carga-caa', label: 'Carga CAA', icon: 'ri-file-upload-line' },
+    { id: 'documentacion', label: 'Documentación', icon: 'ri-folder-open-line' },
+    { id: 'repositorio', label: 'Repositorio Docs', icon: 'ri-archive-line' },
+    { id: 'configuracion', label: 'Configuración', icon: 'ri-settings-3-line' },
   ];
 
   return (
@@ -104,7 +51,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
       </div>
 
       <nav className="flex-1 p-4 space-y-1">
-        {menuItems.filter(item => item.visible).map((item) => (
+        {menuItems.filter(item => modulosPermitidos.includes(item.id)).map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveView(item.id)}

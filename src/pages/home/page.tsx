@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { PERMISOS_DEFAULT, cargarMatrizPermisos, obtenerModulosPermitidos } from '@/lib/permisos';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import GestionExpedientes from './components/GestionExpedientes';
@@ -20,6 +21,7 @@ export default function Home() {
   const [refreshExpedientes, setRefreshExpedientes] = useState(0);
   const [tipoModuloActual, setTipoModuloActual] = useState<'dropship' | 'zf'>('dropship');
   const [usuarioId, setUsuarioId] = useState('');
+  const [matrizPermisos, setMatrizPermisos] = useState<Record<string, string[]>>(PERMISOS_DEFAULT);
   const navigate = useNavigate();
   const { user, perfil, loading, signOut } = useAuth();
 
@@ -50,6 +52,11 @@ export default function Home() {
     };
     obtenerUsuarioId();
   }, [user]);
+
+  // Cargar la matriz de permisos desde la base de datos
+  useEffect(() => {
+    cargarMatrizPermisos().then((m) => setMatrizPermisos(m));
+  }, []);
 
   useEffect(() => {
     const handleOpenFormulario = (event: any) => {
@@ -104,6 +111,7 @@ export default function Home() {
   };
 
   const userRoles = perfil?.roles || [];
+  const modulosPermitidos = obtenerModulosPermitidos(userRoles, matrizPermisos);
   const userName = perfil?.nombre || user.email || '';
 
   return (
@@ -114,6 +122,7 @@ export default function Home() {
         onLogout={handleLogout}
         userName={userName}
         userRoles={userRoles}
+        modulosPermitidos={modulosPermitidos}
       />
       
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -143,7 +152,7 @@ export default function Home() {
           )}
           {activeView === 'lista-expedientes' && <ListaExpedientes />}
           {activeView === 'reportes' && <Reportes />}
-          {activeView === 'configuracion' && <Configuracion />}
+          {activeView === 'configuracion' && <Configuracion onPermisosActualizados={setMatrizPermisos} />}
           {activeView === 'carga-caa' && <CargaDocumentosCAA />}
           {activeView === 'documentacion' && <Documentacion />}
           {activeView === 'repositorio' && <RepositorioDocumentacion />}

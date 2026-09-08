@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
+import MatrizPermisos from './MatrizPermisos';
 
-export default function Configuracion() {
+interface ConfiguracionProps {
+  onPermisosActualizados?: (matriz: Record<string, string[]>) => void;
+}
+
+export default function Configuracion({ onPermisosActualizados }: ConfiguracionProps) {
   const [activeTab, setActiveTab] = useState('usuarios');
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +28,16 @@ export default function Configuracion() {
   const [nuevoCorreo, setNuevoCorreo] = useState('');
   const [loadingCorreos, setLoadingCorreos] = useState(false);
   const [savingCorreos, setSavingCorreos] = useState(false);
+
+  // Estados para la configuración general
+  const [configGeneral, setConfigGeneral] = useState({
+    nombreEmpresa: '',
+    diasAlertaVencimiento: '3',
+    tiempoBaja: '30',
+    tiempoMedia: '60',
+    tiempoAlta: '120'
+  });
+  const [savingGeneral, setSavingGeneral] = useState(false);
 
   // Roles disponibles
   const rolesDisponibles = [
@@ -69,6 +84,7 @@ export default function Configuracion() {
       cargarUsuarios();
     } else if (activeTab === 'general') {
       cargarCorreosNotificacion();
+      cargarConfigGeneral();
     }
   }, [activeTab]);
 
@@ -118,6 +134,72 @@ export default function Configuracion() {
 
   const eliminarCorreo = (correo: string) => {
     setCorreosNotificacion(correosNotificacion.filter(c => c !== correo));
+  };
+
+  const cargarConfigGeneral = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('configuracion_sistema')
+        .select('valor')
+        .eq('clave', 'configuracion_general')
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data && data.valor && typeof data.valor === 'object') {
+        const v = data.valor as any;
+        setConfigGeneral({
+          nombreEmpresa: v.nombreEmpresa ?? '',
+          diasAlertaVencimiento: v.diasAlertaVencimiento ?? '3',
+          tiempoBaja: v.tiempoBaja ?? '30',
+          tiempoMedia: v.tiempoMedia ?? '60',
+          tiempoAlta: v.tiempoAlta ?? '120'
+        });
+      }
+    } catch (error) {
+      console.error('Error al cargar configuración general:', error);
+    }
+  };
+
+  const guardarConfigGeneral = async () => {
+    try {
+      setSavingGeneral(true);
+
+      const { data: existente } = await supabase
+        .from('configuracion_sistema')
+        .select('id')
+        .eq('clave', 'configuracion_general')
+        .maybeSingle();
+
+      if (existente) {
+        const { error } = await supabase
+          .from('configuracion_sistema')
+          .update({
+            valor: configGeneral,
+            updated_at: new Date().toISOString()
+          })
+          .eq('clave', 'configuracion_general');
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('configuracion_sistema')
+          .insert([{
+            clave: 'configuracion_general',
+            valor: configGeneral,
+            descripcion: 'Configuración general del sistema'
+          }]);
+
+        if (error) throw error;
+      }
+
+      alert('Configuración guardada correctamente');
+    } catch (error: any) {
+      console.error('Error al guardar configuración general:', error);
+      alert('Error al guardar: ' + (error?.message || 'error desconocido'));
+    } finally {
+      setSavingGeneral(false);
+    }
   };
 
   const guardarCorreosNotificacion = async () => {
@@ -462,6 +544,17 @@ export default function Configuracion() {
               <i className="ri-database-2-line mr-2"></i>
               Datos
             </button>
+            <button
+              onClick={() => setActiveTab('roles')}
+              className={`px-6 py-3 rounded-lg font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                activeTab === 'roles'
+                  ? 'bg-teal-50 text-teal-700'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <i className="ri-shield-check-line mr-2"></i>
+              Roles
+            </button>
           </div>
         </div>
 
@@ -678,7 +771,8 @@ export default function Configuracion() {
                   </label>
                   <input
                     type="text"
-                    defaultValue="Mi Empresa"
+                    value={configGeneral.nombreEmpresa}
+                    onChange={(e) => setConfigGeneral({ ...configGeneral, nombreEmpresa: e.target.value })}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
                   />
                 </div>
@@ -688,7 +782,8 @@ export default function Configuracion() {
                   </label>
                   <input
                     type="number"
-                    defaultValue="3"
+                    value={configGeneral.diasAlertaVencimiento}
+                    onChange={(e) => setConfigGeneral({ ...configGeneral, diasAlertaVencimiento: e.target.value })}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
                   />
                 </div>
@@ -698,7 +793,8 @@ export default function Configuracion() {
                   </label>
                   <input
                     type="number"
-                    defaultValue="30"
+                    value={configGeneral.tiempoBaja}
+                    onChange={(e) => setConfigGeneral({ ...configGeneral, tiempoBaja: e.target.value })}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
                   />
                 </div>
@@ -708,7 +804,8 @@ export default function Configuracion() {
                   </label>
                   <input
                     type="number"
-                    defaultValue="60"
+                    value={configGeneral.tiempoMedia}
+                    onChange={(e) => setConfigGeneral({ ...configGeneral, tiempoMedia: e.target.value })}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
                   />
                 </div>
@@ -718,12 +815,27 @@ export default function Configuracion() {
                   </label>
                   <input
                     type="number"
-                    defaultValue="120"
+                    value={configGeneral.tiempoAlta}
+                    onChange={(e) => setConfigGeneral({ ...configGeneral, tiempoAlta: e.target.value })}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
                   />
                 </div>
-                <button className="px-6 py-2.5 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer">
-                  Guardar Cambios
+                <button
+                  onClick={guardarConfigGeneral}
+                  disabled={savingGeneral}
+                  className="px-6 py-2.5 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {savingGeneral ? (
+                    <>
+                      <i className="ri-loader-4-line animate-spin mr-2"></i>
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <i className="ri-save-line mr-2"></i>
+                      Guardar Cambios
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -766,6 +878,10 @@ export default function Configuracion() {
                 </div>
               </div>
             </div>
+          )}
+
+          {activeTab === 'roles' && (
+            <MatrizPermisos onPermisosActualizados={onPermisosActualizados} />
           )}
         </div>
       </div>
