@@ -5,6 +5,7 @@ import BarChart from './BarChart';
 import BarChartTiempos from './BarChartTiempos';
 import ProgressBar from './ProgressBar';
 import TopMotivosEspera from './TopMotivosEspera';
+import ModalDetalleMcg, { FilaCreacionMcg, FilaEtdMcg } from './ModalDetalleMcg';
 import { supabase } from '../../../lib/supabase';
 import { formatearFechaCorta, parseFechaSegura } from '../../../lib/fechas';
 import { descargarExcel } from '../../../lib/exportar';
@@ -186,6 +187,12 @@ export default function Dashboard() {
     porcentajeOk: 0,
     promedioDias: 0
   });
+
+  // Desglose de POs para KPIs MCG
+  const [mcgCreacionDetalle, setMcgCreacionDetalle] = useState<FilaCreacionMcg[]>([]);
+  const [showMcgCreacionDetalle, setShowMcgCreacionDetalle] = useState(false);
+  const [mcgEtdDetalle, setMcgEtdDetalle] = useState<FilaEtdMcg[]>([]);
+  const [showMcgEtdDetalle, setShowMcgEtdDetalle] = useState(false);
 
   // KPI Duración Mínima < 3 días (solo Dropship)
   const META_DURACION_DIAS = 3;
@@ -378,6 +385,8 @@ export default function Dashboard() {
     if (!expMcg || expMcg.length === 0) {
       setKpiMcgCreacion({ totalEvaluados: 0, cumplen: 0, noCumplen: 0, porcentajeCumplimiento: 0, diasPromedio: 0 });
       setKpiMcgEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
+      setMcgCreacionDetalle([]);
+      setMcgEtdDetalle([]);
       return;
     }
 
@@ -422,6 +431,7 @@ export default function Dashboard() {
     let noCumpleCreacion = 0;
     let sumaCreacion = 0;
     let contadosCreacion = 0;
+    const detalleCreacion: FilaCreacionMcg[] = [];
 
     expMcg.forEach(exp => {
       const expId = (exp.exp_id || '').trim();
@@ -431,11 +441,23 @@ export default function Dashboard() {
       const fechaAsignado = fechaAsignadoPorExp[exp.id] || exp.created_at;
       const fechaExpId = fechaExpIdPorExp[exp.id] || fechaAsignado;
       const dias = (new Date(fechaExpId).getTime() - new Date(fechaAsignado).getTime()) / (1000 * 60 * 60 * 24);
+      const cumple = dias <= META_MCG_CREACION_DIAS;
 
       contadosCreacion++;
       sumaCreacion += dias;
-      if (dias <= META_MCG_CREACION_DIAS) cumpleCreacion++;
+      if (cumple) cumpleCreacion++;
       else noCumpleCreacion++;
+
+      detalleCreacion.push({
+        id: exp.id,
+        po_tiquetera: exp.po_tiquetera,
+        exp_id: exp.exp_id || '',
+        solicitante: exp.solicitante || '',
+        fechaAsignado,
+        fechaExpId,
+        dias: Math.round(dias * 10) / 10,
+        cumpleMeta: cumple
+      });
     });
 
     setKpiMcgCreacion({
@@ -445,6 +467,7 @@ export default function Dashboard() {
       porcentajeCumplimiento: contadosCreacion > 0 ? Math.round((cumpleCreacion / contadosCreacion) * 100) : 0,
       diasPromedio: contadosCreacion > 0 ? Math.round((sumaCreacion / contadosCreacion) * 10) / 10 : 0
     });
+    setMcgCreacionDetalle(detalleCreacion.sort((a, b) => b.dias - a.dias));
 
     // ── KPI ETD → Notificado (< 2 días) ──
     const expMcgConEtd = expMcg.filter(exp =>
@@ -472,15 +495,28 @@ export default function Dashboard() {
       let fuera = 0;
       let sumaDias = 0;
       let contados = 0;
+      const detalleEtd: FilaEtdMcg[] = [];
 
       expMcgConEtd.forEach(exp => {
         const fechaNotif = fechaNotifPorExp[exp.id];
         if (!fechaNotif) return;
         const dias = (new Date(fechaNotif).getTime() - new Date(exp.etd).getTime()) / (1000 * 60 * 60 * 24);
+        const cumple = dias < META_MCG_ETD_DIAS;
         contados++;
         sumaDias += dias;
-        if (dias < META_MCG_ETD_DIAS) dentro++;
+        if (cumple) dentro++;
         else fuera++;
+
+        detalleEtd.push({
+          id: exp.id,
+          po_tiquetera: exp.po_tiquetera,
+          exp_id: exp.exp_id || '',
+          solicitante: exp.solicitante || '',
+          etd: exp.etd,
+          fechaNotificado: fechaNotif,
+          dias: Math.round(dias * 10) / 10,
+          cumpleMeta: cumple
+        });
       });
 
       setKpiMcgEtdNotificado({
@@ -490,6 +526,7 @@ export default function Dashboard() {
         porcentajeOk: contados > 0 ? Math.round((dentro / contados) * 100) : 0,
         promedioDias: contados > 0 ? Math.round((sumaDias / contados) * 10) / 10 : 0
       });
+      setMcgEtdDetalle(detalleEtd.sort((a, b) => b.dias - a.dias));
     } else {
       setKpiMcgEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
     }
@@ -2304,6 +2341,14 @@ export default function Dashboard() {
               <span className="text-xs text-gray-500">Promedio: <strong>{kpiMcgCreacion.diasPromedio} días</strong></span>
               <span className="text-xs font-semibold text-gray-600">{kpiMcgCreacion.porcentajeCumplimiento}% cumple</span>
             </div>
+            <button
+              onClick={() => setShowMcgCreacionDetalle(true)}
+              disabled={mcgCreacionDetalle.length === 0}
+              className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i className="ri-file-chart-line"></i>
+              Ver detalle de POs
+            </button>
           </div>
 
           {/* ETD → Notificado */}
@@ -2343,6 +2388,14 @@ export default function Dashboard() {
               <span className="text-xs text-gray-500">Promedio: <strong>{kpiMcgEtdNotificado.promedioDias} días</strong></span>
               <span className="text-xs font-semibold text-gray-600">{kpiMcgEtdNotificado.porcentajeOk}% OK</span>
             </div>
+            <button
+              onClick={() => setShowMcgEtdDetalle(true)}
+              disabled={mcgEtdDetalle.length === 0}
+              className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i className="ri-file-chart-line"></i>
+              Ver detalle de POs
+            </button>
           </div>
         </div>
       </div>
@@ -2657,6 +2710,32 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* =========== MODAL DETALLE MCG: CREACIÓN =========== */}
+      {showMcgCreacionDetalle && (
+        <ModalDetalleMcg
+          tipo="creacion"
+          filas={mcgCreacionDetalle}
+          total={kpiMcgCreacion.totalEvaluados}
+          cumplen={kpiMcgCreacion.cumplen}
+          noCumplen={kpiMcgCreacion.noCumplen}
+          promedioDias={kpiMcgCreacion.diasPromedio}
+          onClose={() => setShowMcgCreacionDetalle(false)}
+        />
+      )}
+
+      {/* =========== MODAL DETALLE MCG: ETD → NOTIFICADO =========== */}
+      {showMcgEtdDetalle && (
+        <ModalDetalleMcg
+          tipo="etd"
+          filas={mcgEtdDetalle}
+          total={kpiMcgEtdNotificado.totalEvaluados}
+          cumplen={kpiMcgEtdNotificado.dentroRango}
+          noCumplen={kpiMcgEtdNotificado.fueraRango}
+          promedioDias={kpiMcgEtdNotificado.promedioDias}
+          onClose={() => setShowMcgEtdDetalle(false)}
+        />
       )}
     </div>
   );
