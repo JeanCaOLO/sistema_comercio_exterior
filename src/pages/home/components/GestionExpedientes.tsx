@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { crearNotificacion } from '../../../lib/notificaciones';
+import { crearNotificacion, notificarComentario } from '../../../lib/notificaciones';
 import { formatearFecha } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
@@ -1305,6 +1305,20 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
           mensaje: `${nombreUsuario} agregó ${countDocsNuevos} documento(s) al expediente ${selectedExpediente.po_tiquetera} (${selectedExpediente.exp_id})`,
           icono: 'ri-file-add-line',
           expedienteId: selectedExpediente.id,
+        });
+      }
+
+      // === Notificación de comentario (si se agregó o modificó la observación) ===
+      const comentarioAnterior = (expedienteOriginal.instrucciones_adicionales || '').trim();
+      const comentarioNuevo = (selectedExpediente.instrucciones_adicionales || '').trim();
+      if (comentarioNuevo && comentarioNuevo !== comentarioAnterior) {
+        notificarComentario({
+          poTiquetera: selectedExpediente.po_tiquetera,
+          solicitante: selectedExpediente.solicitante || '',
+          responsable: selectedExpediente.responsable_creacion || '',
+          usuarioGenero: nombreUsuario,
+          expedienteId: selectedExpediente.id,
+          textoComentario: comentarioNuevo,
         });
       }
 

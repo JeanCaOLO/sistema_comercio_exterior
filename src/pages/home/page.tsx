@@ -25,18 +25,35 @@ export default function Home() {
   const navigate = useNavigate();
   const { user, perfil, loading, signOut } = useAuth();
 
+  const userRoles = perfil?.roles || [];
+  const modulosPermitidos = obtenerModulosPermitidos(userRoles, matrizPermisos);
+  const vistaPermitida = modulosPermitidos.includes(activeView);
+  const userName = perfil?.nombre || user?.email || '';
+
   useEffect(() => {
     if (!loading && !user) {
       navigate('/login');
     }
   }, [user, loading, navigate]);
 
-  // Establecer vista inicial según roles
+  // Establecer vista inicial según roles y permisos
   useEffect(() => {
     if (perfil?.roles && perfil.roles.length > 0 && !activeView) {
-      setActiveView('dashboard');
+      const inicial = modulosPermitidos.includes('dashboard')
+        ? 'dashboard'
+        : (modulosPermitidos[0] || '');
+      setActiveView(inicial);
     }
-  }, [perfil, activeView]);
+  }, [perfil, activeView, modulosPermitidos]);
+
+  // Si la vista actual deja de estar permitida (por ejemplo al cargar los permisos reales), redirigir
+  useEffect(() => {
+    if (!activeView) return;
+    if (modulosPermitidos.length === 0) return;
+    if (!modulosPermitidos.includes(activeView)) {
+      setActiveView(modulosPermitidos.includes('dashboard') ? 'dashboard' : modulosPermitidos[0]);
+    }
+  }, [modulosPermitidos, activeView]);
 
   // Obtener usuarioId para las notificaciones
   useEffect(() => {
@@ -110,10 +127,6 @@ export default function Home() {
     }
   };
 
-  const userRoles = perfil?.roles || [];
-  const modulosPermitidos = obtenerModulosPermitidos(userRoles, matrizPermisos);
-  const userName = perfil?.nombre || user.email || '';
-
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar 
@@ -135,27 +148,47 @@ export default function Home() {
 
         {/* Contenido principal */}
         <div className="flex-1 overflow-auto">
-          {activeView === 'dashboard' && <Dashboard />}
-          {activeView === 'gestion-dropship' && (
-            <GestionExpedientes 
-              onNuevoExpediente={() => setShowFormulario(true)}
-              refreshTrigger={refreshExpedientes}
-              tipoModulo="dropship"
-            />
+          {modulosPermitidos.length === 0 ? (
+            <div className="p-12 flex flex-col items-center justify-center text-center">
+              <i className="ri-shield-line text-5xl text-gray-300 mb-4"></i>
+              <h2 className="text-lg font-semibold text-gray-800 mb-1">Sin módulos asignados</h2>
+              <p className="text-sm text-gray-500 max-w-md">
+                Tu rol no tiene acceso a ningún módulo del sistema. Contacta al administrador para que te asigne permisos en la Matriz de Permisos.
+              </p>
+            </div>
+          ) : vistaPermitida ? (
+            <>
+              {activeView === 'dashboard' && <Dashboard />}
+              {activeView === 'gestion-dropship' && (
+                <GestionExpedientes 
+                  onNuevoExpediente={() => setShowFormulario(true)}
+                  refreshTrigger={refreshExpedientes}
+                  tipoModulo="dropship"
+                />
+              )}
+              {activeView === 'gestion-zf' && (
+                <GestionExpedientes 
+                  onNuevoExpediente={() => setShowFormulario(true)}
+                  refreshTrigger={refreshExpedientes}
+                  tipoModulo="zf"
+                />
+              )}
+              {activeView === 'lista-expedientes' && <ListaExpedientes />}
+              {activeView === 'reportes' && <Reportes />}
+              {activeView === 'configuracion' && <Configuracion onPermisosActualizados={setMatrizPermisos} />}
+              {activeView === 'carga-caa' && <CargaDocumentosCAA />}
+              {activeView === 'documentacion' && <Documentacion />}
+              {activeView === 'repositorio' && <RepositorioDocumentacion />}
+            </>
+          ) : (
+            <div className="p-12 flex flex-col items-center justify-center text-center">
+              <i className="ri-lock-line text-5xl text-gray-300 mb-4"></i>
+              <h2 className="text-lg font-semibold text-gray-800 mb-1">Acceso restringido</h2>
+              <p className="text-sm text-gray-500 max-w-md">
+                No tienes permiso para ver este módulo. Selecciona otra opción del menú lateral.
+              </p>
+            </div>
           )}
-          {activeView === 'gestion-zf' && (
-            <GestionExpedientes 
-              onNuevoExpediente={() => setShowFormulario(true)}
-              refreshTrigger={refreshExpedientes}
-              tipoModulo="zf"
-            />
-          )}
-          {activeView === 'lista-expedientes' && <ListaExpedientes />}
-          {activeView === 'reportes' && <Reportes />}
-          {activeView === 'configuracion' && <Configuracion onPermisosActualizados={setMatrizPermisos} />}
-          {activeView === 'carga-caa' && <CargaDocumentosCAA />}
-          {activeView === 'documentacion' && <Documentacion />}
-          {activeView === 'repositorio' && <RepositorioDocumentacion />}
         </div>
       </div>
 

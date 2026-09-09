@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { crearNotificacion } from '../../../lib/notificaciones';
+import { crearNotificacion, notificarComentario } from '../../../lib/notificaciones';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
 
 interface RegistroDocumento {
@@ -424,6 +424,18 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         icono: 'ri-edit-line',
         expedienteId: registro.origen === 'expediente' ? registro.id : undefined,
       });
+
+      // === Notificación de comentario (si se agregó o modificó) ===
+      if (comentario.trim() && comentario.trim() !== (registro.instrucciones_adicionales || '').trim()) {
+        notificarComentario({
+          poTiquetera: posCombinadas || registro.po_tiquetera,
+          solicitante: registro.solicitante || '',
+          responsable: registro.responsable_creacion || '',
+          usuarioGenero: nombreUsuario,
+          expedienteId: registro.origen === 'expediente' ? registro.id : undefined,
+          textoComentario: comentario.trim(),
+        });
+      }
 
       // Cerrar después de breve delay
       setTimeout(() => {

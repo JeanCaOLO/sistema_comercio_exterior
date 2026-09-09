@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { formatearFecha } from '../../../lib/fechas';
+import { notificarComentario } from '../../../lib/notificaciones';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
 
 interface Expediente {
@@ -776,6 +777,20 @@ export default function ListaExpedientes() {
       // Registrar tiempo si cambió el estado
       if (estadoAnterior && estadoNuevo && estadoAnterior !== estadoNuevo) {
         await registrarTiempoEstado(selectedExpediente.id, estadoAnterior, estadoNuevo);
+      }
+
+      // === Notificación de comentario (si se agregó o modificó la observación) ===
+      const comentarioAnterior = (expedienteOriginal.instrucciones_adicionales || '').trim();
+      const comentarioNuevo = (selectedExpediente.instrucciones_adicionales || '').trim();
+      if (comentarioNuevo && comentarioNuevo !== comentarioAnterior) {
+        notificarComentario({
+          poTiquetera: selectedExpediente.po_tiquetera,
+          solicitante: selectedExpediente.solicitante || '',
+          responsable: selectedExpediente.responsable_creacion || '',
+          usuarioGenero: nombreUsuario,
+          expedienteId: selectedExpediente.id,
+          textoComentario: comentarioNuevo,
+        });
       }
 
       // Actualizar el expediente en el estado local al instante (sin bloquear la UI)

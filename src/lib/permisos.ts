@@ -52,15 +52,26 @@ export const PERMISOS_DEFAULT: MatrizPermisos = {
 
 const CLAVE_PERMISOS = 'matriz_permisos';
 
+// Normaliza un nombre de rol para comparar sin depender de mayúsculas, espacios o separadores
+function normalizarRol(valor: string): string {
+  return valor.trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
+}
+
 // Devuelve los módulos a los que un usuario puede acceder según sus roles
 export function obtenerModulosPermitidos(roles: string[], matriz: MatrizPermisos): string[] {
   if (!roles || roles.length === 0) return [];
-  if (roles.includes('Administrador')) {
+  const rolesNorm = roles.map(normalizarRol);
+  if (rolesNorm.includes('administrador')) {
     return MODULOS.map((m) => m.id);
   }
+  // Construir un mapa de la matriz con claves normalizadas para tolerar diferencias de formato
+  const mapa: Record<string, string[]> = {};
+  Object.keys(matriz).forEach((clave) => {
+    mapa[normalizarRol(clave)] = matriz[clave] || [];
+  });
   const permitidos = new Set<string>();
-  roles.forEach((rol) => {
-    (matriz[rol] || []).forEach((id) => permitidos.add(id));
+  rolesNorm.forEach((rol) => {
+    (mapa[rol] || []).forEach((id) => permitidos.add(id));
   });
   return Array.from(permitidos);
 }
@@ -79,10 +90,15 @@ export async function cargarMatrizPermisos(): Promise<MatrizPermisos> {
     }
 
     const guardado = data.valor as MatrizPermisos;
+    // Construir un mapa de lo guardado con claves normalizadas para alinear con los roles actuales
+    const mapaGuardado: Record<string, string[]> = {};
+    Object.keys(guardado).forEach((clave) => {
+      mapaGuardado[normalizarRol(clave)] = guardado[clave] || [];
+    });
     // Fusionar con los defaults para no perder roles/módulos que se agreguen después
     const fusionado: MatrizPermisos = {};
     ROLES.forEach((rol) => {
-      fusionado[rol.nombre] = guardado[rol.nombre] || PERMISOS_DEFAULT[rol.nombre] || [];
+      fusionado[rol.nombre] = mapaGuardado[normalizarRol(rol.nombre)] || PERMISOS_DEFAULT[rol.nombre] || [];
     });
     return fusionado;
   } catch (error) {

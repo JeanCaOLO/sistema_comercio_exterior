@@ -172,6 +172,81 @@ export async function notificarCargaCAA({
   }
 }
 
+interface NotificarComentarioParams {
+  poTiquetera: string;
+  solicitante: string;
+  responsable: string;
+  usuarioGenero: string;
+  expedienteId?: string;
+  textoComentario: string;
+}
+
+// Notifica al solicitante, responsable y administradores cuando se agrega o
+// modifica un comentario/observación en un ticket o documento.
+export async function notificarComentario({
+  poTiquetera,
+  solicitante,
+  responsable,
+  usuarioGenero,
+  expedienteId,
+  textoComentario,
+}: NotificarComentarioParams): Promise<void> {
+  try {
+    const detalle = textoComentario.trim();
+    const detalleCorto = detalle.length > 140 ? `${detalle.substring(0, 140)}…` : detalle;
+    const mensaje = detalleCorto
+      ? `Nuevo comentario en ${poTiquetera}: "${detalleCorto}"`
+      : `Nuevo comentario en ${poTiquetera}`;
+
+    // 1) Destinatarios por nombre (solicitante / responsable)
+    const nombresUnicos = [...new Set([solicitante, responsable].filter(Boolean))];
+    let usuariosPorNombre: { id: string; nombre: string }[] = [];
+    if (nombresUnicos.length > 0) {
+      const { data } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('nombre', nombresUnicos);
+      usuariosPorNombre = data || [];
+    }
+
+    // 2) Admins por rol (Administrador / admin)
+    const { data: usuariosAdmin } = await supabase
+      .from('usuarios')
+      .select('id, nombre')
+      .or('rol.ilike.%Administrador%,rol.ilike.%admin%');
+
+    // 3) Admins globales (siempre reciben todo)
+    const { data: usuariosGlobales } = await supabase
+      .from('usuarios')
+      .select('id, nombre')
+      .in('email', EMAILS_NOTIFICACION_GLOBAL);
+
+    const usuarios = [
+      ...usuariosPorNombre,
+      ...(usuariosAdmin || []),
+      ...(usuariosGlobales || []),
+    ];
+    const unicos = Array.from(new Map(usuarios.map((u) => [u.id, u])).values());
+
+    if (unicos.length === 0) return;
+
+    const notificaciones = unicos.map((u) => ({
+      usuario_id: u.id,
+      mensaje,
+      tipo: 'comentario_agregado',
+      expediente_id: expedienteId || null,
+      po_tiquetera: poTiquetera,
+      usuario_genero: usuarioGenero,
+      icono: 'ri-chat-3-line',
+    }));
+
+    const { error } = await supabase.from('notificaciones').insert(notificaciones);
+    if (error) console.error('[Notificaciones] Error al insertar (comentario):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (comentario):', err.message || err);
+  }
+}
+
 export async function obtenerNotificaciones(usuarioId: string): Promise<Notificacion[]> {
   try {
     const { data, error } = await supabase
@@ -242,6 +317,8 @@ export function getIconoColor(tipo: string): string {
       return 'text-orange-600 bg-orange-100';
     case 'ticket_estancado':
       return 'text-red-600 bg-red-100';
+    case 'comentario_agregado':
+      return 'text-blue-600 bg-blue-100';
     default:
       return 'text-gray-600 bg-gray-100';
   }
@@ -261,6 +338,8 @@ export function getTipoLabel(tipo: string): string {
       return 'Carga CAA';
     case 'ticket_estancado':
       return 'Alerta de estancamiento';
+    case 'comentario_agregado':
+      return 'Comentario agregado';
     default:
       return tipo;
   }
