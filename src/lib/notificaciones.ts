@@ -240,6 +240,8 @@ export function getIconoColor(tipo: string): string {
       return 'text-rose-600 bg-rose-100';
     case 'carga_caa':
       return 'text-orange-600 bg-orange-100';
+    case 'ticket_estancado':
+      return 'text-red-600 bg-red-100';
     default:
       return 'text-gray-600 bg-gray-100';
   }
@@ -257,7 +259,155 @@ export function getTipoLabel(tipo: string): string {
       return 'Creación inicial';
     case 'carga_caa':
       return 'Carga CAA';
+    case 'ticket_estancado':
+      return 'Alerta de estancamiento';
     default:
       return tipo;
+  }
+}
+
+// ============================================================
+// ALERTA DE TICKETS ESTANCADOS EN "ESPERA DE RESPUESTA"
+// Notifica al solicitante, responsable y admins cuando un
+// ticket lleva más de N días sin moverse en ese estado.
+// ============================================================
+
+const DIAS_UMBRAL_ESTANCAMIENTO = 2;
+
+const ESTADOS_ESPERA = ['Espera de Respuesta', 'Espera de respuesta'];
+
+interface NotificarTicketEstancadoParams {
+  poTiquetera: string;
+  solicitante: string;
+  responsable: string;
+  expedienteId: string;
+  dias: number;
+}
+
+async function notificarTicketEstancado({
+  poTiquetera,
+  solicitante,
+  responsable,
+  expedienteId,
+  dias,
+}: NotificarTicketEstancadoParams): Promise<void> {
+  try {
+    const mensaje = `El ticket ${poTiquetera} lleva ${dias} día(s) en "Espera de Respuesta" sin moverse. Por favor actualiza la observación del caso.`;
+
+    // 1) Destinatarios por nombre (solicitante / responsable)
+    const nombresUnicos = [...new Set([solicitante, responsable].filter(Boolean))];
+    let usuariosPorNombre: { id: string; nombre: string }[] = [];
+    if (nombresUnicos.length > 0) {
+      const { data } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('nombre', nombresUnicos);
+      usuariosPorNombre = data || [];
+    }
+
+    // 2) Admins por rol (Administrador / admin)
+    const { data: usuariosAdmin } = await supabase
+      .from('usuarios')
+      .select('id, nombre')
+      .or('rol.ilike.%Administrador%,rol.ilike.%admin%');
+
+    // 3) Admins globales (siempre reciben todo)
+    const { data: usuariosGlobales } = await supabase
+      .from('usuarios')
+      .select('id, nombre')
+      .in('email', EMAILS_NOTIFICACION_GLOBAL);
+
+    const usuarios = [
+      ...usuariosPorNombre,
+      ...(usuariosAdmin || []),
+      ...(usuariosGlobales || []),
+    ];
+    const unicos = Array.from(new Map(usuarios.map((u) => [u.id, u])).values());
+
+    if (unicos.length === 0) return;
+
+    const notificaciones = unicos.map((u) => ({
+      usuario_id: u.id,
+      mensaje,
+      tipo: 'ticket_estancado',
+      expediente_id: expedienteId,
+      po_tiquetera: poTiquetera,
+      usuario_genero: 'Sistema',
+      icono: 'ri-alert-line',
+    }));
+
+    const { error } = await supabase.from('notificaciones').insert(notificaciones);
+    if (error) console.error('[Notificaciones] Error al insertar (ticket estancado):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (ticket estancado):', err.message || err);
+  }
+}
+
+// Revisa los tickets que están en "Espera de Respuesta" y notifica
+// a los involucrados si llevan más de DIAS_UMBRAL_ESTANCAMIENTO días.
+export async function verificarTicketsEstancados(): Promise<void> {
+  try {
+    // 1) Tickets actualmente en Espera de Respuesta
+    const { data: expedientes, error: expError } = await supabase
+      .from('expedientes')
+      .select('id, po_tiquetera, solicitante, responsable_creacion, created_at')
+      .in('estado_expediente', ESTADOS_ESPERA);
+
+    if (expError) throw expError;
+    if (!expedientes || expedientes.length === 0) return;
+
+    const ids = (expedientes as any[]).map((e) => e.id);
+
+    // 2) Última fecha en que cada uno entró a "Espera de Respuesta" (historial)
+    const { data: historial, error: histError } = await supabase
+      .from('expedientes_historial')
+      .select('expediente_id, fecha_cambio')
+      .in('expediente_id', ids)
+      .eq('campo_modificado', 'Estado')
+      .in('valor_nuevo', ESTADOS_ESPERA);
+
+    if (histError) throw histError;
+
+    const fechaEntrada: Record<string, string> = {};
+    (historial || []).forEach((h: any) => {
+      const actual = fechaEntrada[h.expediente_id];
+      if (!actual || new Date(h.fecha_cambio) > new Date(actual)) {
+        fechaEntrada[h.expediente_id] = h.fecha_cambio;
+      }
+    });
+
+    // 3) Notificaciones ya enviadas para no duplicar
+    const { data: yaNotificados, error: notifError } = await supabase
+      .from('notificaciones')
+      .select('expediente_id')
+      .eq('tipo', 'ticket_estancado')
+      .in('expediente_id', ids);
+
+    if (notifError) throw notifError;
+    const notificados = new Set(
+      (yaNotificados || []).map((n: any) => n.expediente_id).filter(Boolean)
+    );
+
+    const ahora = Date.now();
+
+    for (const exp of expedientes as any[]) {
+      if (notificados.has(exp.id)) continue;
+
+      const fecha = fechaEntrada[exp.id] || exp.created_at;
+      if (!fecha) continue;
+
+      const dias = (ahora - new Date(fecha).getTime()) / (1000 * 60 * 60 * 24);
+      if (dias <= DIAS_UMBRAL_ESTANCAMIENTO) continue;
+
+      await notificarTicketEstancado({
+        poTiquetera: exp.po_tiquetera,
+        solicitante: exp.solicitante || '',
+        responsable: exp.responsable_creacion || '',
+        expedienteId: exp.id,
+        dias: Math.floor(dias),
+      });
+    }
+  } catch (err: any) {
+    console.error('[Notificaciones] Error verificando tickets estancados:', err.message || err);
   }
 }

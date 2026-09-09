@@ -4,6 +4,7 @@ import DonutChart from './DonutChart';
 import BarChart from './BarChart';
 import BarChartTiempos from './BarChartTiempos';
 import ProgressBar from './ProgressBar';
+import TopMotivosEspera from './TopMotivosEspera';
 import { supabase } from '../../../lib/supabase';
 import { formatearFechaCorta, parseFechaSegura } from '../../../lib/fechas';
 import { descargarExcel } from '../../../lib/exportar';
@@ -2325,6 +2326,9 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* =========== MOTIVOS DE ESPERA DE RESPUESTA (DROPSHIP) =========== */}
+      <TopMotivosEspera />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
