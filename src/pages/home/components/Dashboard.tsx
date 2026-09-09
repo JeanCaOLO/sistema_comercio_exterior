@@ -206,7 +206,7 @@ export default function Dashboard() {
     responsable_creacion: string;
     diasDuracion: number;
     cumpleMeta: boolean;
-    fechaCreacion: string;
+    fechaAsignado: string;
     fechaFin: string | null;
   }[]>([]);
   const [showReporteDuracion, setShowReporteDuracion] = useState(false);
@@ -309,19 +309,39 @@ export default function Dashboard() {
     total: lista.length
   });
 
-  const calcularKPIDuracionMinima = (listaExpedientes: any[]) => {
+  const calcularKPIDuracionMinima = async (listaExpedientes: any[]) => {
     const ahora = new Date();
     // Solo expedientes Dropship (excluye ZF)
     const expDropship = listaExpedientes.filter(exp =>
       (exp.tipo_modulo || '').toLowerCase() === 'dropship'
     );
 
+    // Fecha de asignación (estado "Asignado") de cada expediente = inicio del conteo
+    const fechasAsignado: Record<string, string> = {};
+    if (expDropship.length > 0) {
+      const ids = expDropship.map(e => e.id);
+      const { data: tiemposAsignado } = await supabase
+        .from('expedientes_tiempos_estados')
+        .select('expediente_id, fecha_inicio')
+        .in('expediente_id', ids)
+        .eq('estado_nuevo', 'Asignado');
+
+      if (tiemposAsignado) {
+        tiemposAsignado.forEach((t: any) => {
+          if (!fechasAsignado[t.expediente_id] || t.fecha_inicio < fechasAsignado[t.expediente_id]) {
+            fechasAsignado[t.expediente_id] = t.fecha_inicio;
+          }
+        });
+      }
+    }
+
     const evaluados = expDropship.map(exp => {
+      // Inicio: fecha en que fue asignado (fallback: fecha de creación)
       const fechaCreacion = exp.created_at || exp.fecha_creacion_expediente;
-      // En Dropship, Notificado y Visto Listo son estados finales
-      const esFinalizado = exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo';
-      const fechaFin = esFinalizado && exp.fecha_liberacion ? new Date(exp.fecha_liberacion) : ahora;
-      const fechaIni = new Date(fechaCreacion);
+      const fechaAsignadoStr = fechasAsignado[exp.id] || fechaCreacion;
+      // Fin: cuando llegó a "Liberado" o, si sigue en curso, el momento actual
+      const fechaFin = exp.fecha_liberacion ? new Date(exp.fecha_liberacion) : ahora;
+      const fechaIni = new Date(fechaAsignadoStr);
       const diffMs = fechaFin.getTime() - fechaIni.getTime();
       const diasDuracion = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
       return {
@@ -334,8 +354,8 @@ export default function Dashboard() {
         responsable_creacion: exp.responsable_creacion,
         diasDuracion: Math.round(diasDuracion * 10) / 10,
         cumpleMeta: diasDuracion < META_DURACION_DIAS,
-        fechaCreacion: fechaCreacion,
-        fechaFin: esFinalizado && exp.fecha_liberacion ? exp.fecha_liberacion : null
+        fechaAsignado: fechaAsignadoStr,
+        fechaFin: exp.fecha_liberacion || null
       };
     });
 
@@ -1005,7 +1025,7 @@ export default function Dashboard() {
         }
         setKpiZfPromedioCompletado(promedioZfCompl);
 
-        calcularKPIDuracionMinima(expDropshipNormal);
+        await calcularKPIDuracionMinima(expDropshipNormal);
         await calcularKPIsMcg(expDropshipMcg);
         await cargarKpiAsignadoNotificado(expDropshipNormal);
         await cargarTiemposEntreEstados(filtroModuloTiempos);
@@ -1216,7 +1236,7 @@ export default function Dashboard() {
         'Estado': e.estado_expediente,
         'Solicitante': e.solicitante,
         'Responsable': e.responsable_creacion,
-        'Creado': formatearFechaCorta(e.fechaCreacion),
+        'Asignado': formatearFechaCorta(e.fechaAsignado),
         'Finalizado': e.fechaFin ? formatearFechaCorta(e.fechaFin) : 'En curso',
         'Días de Duración': e.diasDuracion,
         'Cumple Meta (<3 días)': e.cumpleMeta ? 'Sí' : 'No'
@@ -1480,7 +1500,7 @@ export default function Dashboard() {
             </div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">Indicador de Duración Mínima de Expedientes</h3>
-              <p className="text-sm text-gray-600">Meta: cada expediente debe durar menos de <strong>3 días</strong> desde su creación (solo Dropship)</p>
+              <p className="text-sm text-gray-600">Meta: cada expediente debe durar menos de <strong>3 días</strong> desde su asignación hasta su liberación (solo Dropship)</p>
             </div>
           </div>
           {/* Alerta global */}
@@ -1671,7 +1691,7 @@ export default function Dashboard() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">EXP ID</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Módulo</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Responsable</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Creado</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Asignado</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Duración</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Cumple Meta</th>
                   </tr>
@@ -1703,7 +1723,7 @@ export default function Dashboard() {
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.responsable_creacion}</td>
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                          {formatearFechaCorta(exp.fechaCreacion)}
+                          {formatearFechaCorta(exp.fechaAsignado)}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`text-sm font-bold ${
