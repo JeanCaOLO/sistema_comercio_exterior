@@ -137,6 +137,7 @@ export default function Dashboard() {
 
   const [kpiDsPromedioNotificado, setKpiDsPromedioNotificado] = useState<number>(0);
   const [kpiZfPromedioCompletado, setKpiZfPromedioCompletado] = useState<number>(0);
+  const [documentosPendientes, setDocumentosPendientes] = useState(0);
 
   // KPI Asignado → Notificado (Dropship)
   const [kpiAsignadoNotificado, setKpiAsignadoNotificado] = useState({
@@ -235,6 +236,10 @@ export default function Dashboard() {
   useEffect(() => {
     cargarDatos();
   }, [periodoActivo, rangoPersonalizado]);
+
+  useEffect(() => {
+    cargarDocumentosPendientes();
+  }, []);
 
   useEffect(() => {
     if (fechaInicio && fechaFin) {
@@ -669,6 +674,21 @@ export default function Dashboard() {
       setKpisZF({
         creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
       });
+    }
+  };
+
+  const cargarDocumentosPendientes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('documentos_caa')
+        .select('id');
+      if (error) throw error;
+
+      // Contar registros (filas) pendientes en el módulo de Documentación
+      setDocumentosPendientes((data || []).length);
+    } catch (error) {
+      console.error('Error al cargar documentos pendientes:', error);
+      setDocumentosPendientes(0);
     }
   };
 
@@ -1431,10 +1451,10 @@ export default function Dashboard() {
           color="bg-sky-500"
         />
         <KPICard
-          title="Promedio → Completado (ZF)"
-          value={kpiZfPromedioCompletado > 0 ? `${kpiZfPromedioCompletado} días` : '—'}
-          icon="ri-building-line"
-          color="bg-violet-500"
+          title="Pendientes en Documentación"
+          value={documentosPendientes}
+          icon="ri-folder-open-line"
+          color="bg-amber-500"
         />
       </div>
 
