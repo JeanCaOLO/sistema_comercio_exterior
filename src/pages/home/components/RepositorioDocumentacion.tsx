@@ -17,6 +17,7 @@ interface ExpedienteRepo {
   exp_id: string;
   created_at: string;
   responsable_creacion: string;
+  cargador_documentos?: string;
   prioridad: string;
   prioridad_urgente: boolean;
   origen?: string;
@@ -88,7 +89,7 @@ export default function RepositorioDocumentacion() {
       // Cargar de expedientes (los que ya fueron promovidos a expedientes reales)
       const { data: dataExp, error: errorExp } = await supabase
         .from('expedientes')
-        .select('id, po_tiquetera, tipo_po, solicitante, tipo_modulo, estado_expediente, bl_cargado, transito_corto, aplica_tlc, doc, exp_id, created_at, responsable_creacion, prioridad, prioridad_urgente, instrucciones_adicionales')
+        .select('id, po_tiquetera, tipo_po, solicitante, tipo_modulo, estado_expediente, bl_cargado, transito_corto, aplica_tlc, doc, exp_id, created_at, responsable_creacion, cargador_documentos, prioridad, prioridad_urgente, instrucciones_adicionales')
         .order('created_at', { ascending: false });
 
       if (errorExp) console.error('Error al cargar expedientes:', errorExp);
@@ -177,6 +178,17 @@ export default function RepositorioDocumentacion() {
     } catch {
       return doc.trim() ? [doc] : [];
     }
+  };
+
+  // Quién cargó realmente los documentos:
+  // - En documentos_caa (staging) el responsable_creacion ES quien subió los docs.
+  // - En expedientes el responsable_creacion es el RESPONSABLE ASIGNADO (no el cargador);
+  //   el cargador real vive en cargador_documentos (inmutable, se setea en la consolidación).
+  const getCargador = (doc: ExpedienteRepo): string => {
+    if (doc.origen === 'expediente') {
+      return doc.cargador_documentos || doc.responsable_creacion || 'Sistema';
+    }
+    return doc.responsable_creacion || 'Sistema';
   };
 
   const extractFileName = (url: string): string => {
@@ -502,7 +514,7 @@ export default function RepositorioDocumentacion() {
                                 <div className="w-6 h-6 flex items-center justify-center bg-gray-100 rounded-full">
                                   <i className="ri-user-line text-xs text-gray-500"></i>
                                 </div>
-                                <span className="text-sm text-gray-700">{doc.responsable_creacion}</span>
+                                <span className="text-sm text-gray-700">{getCargador(doc)}</span>
                               </div>
                             </td>
                             <td className="px-3 py-3 whitespace-nowrap">
@@ -695,7 +707,7 @@ export default function RepositorioDocumentacion() {
           poTiquetera={registroHistorial.po_tiquetera}
           expId={registroHistorial.exp_id}
           createdAt={registroHistorial.created_at}
-          responsableCreacion={registroHistorial.responsable_creacion}
+          responsableCreacion={getCargador(registroHistorial)}
           documentosIniciales={parseDocUrls(registroHistorial.doc)}
         />
       )}
