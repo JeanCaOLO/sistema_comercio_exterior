@@ -408,20 +408,18 @@ export default function Dashboard() {
       });
     }
 
-    // Fecha en que se colocó el número de expediente (EXP ID) desde el historial
-    const { data: historialExpId } = await supabase
-      .from('expedientes_historial')
-      .select('expediente_id, valor_nuevo, fecha_cambio')
+    // Fecha en que el ticket llegó al estado "Liberación" (fin del conteo de creación)
+    const { data: tiemposLiberacion } = await supabase
+      .from('expedientes_tiempos_estados')
+      .select('expediente_id, fecha_inicio')
       .in('expediente_id', mcgIds)
-      .eq('campo_modificado', 'EXP ID');
+      .in('estado_nuevo', ['Liberación', 'Liberacion', 'Liberado', 'LIBERADO']);
 
-    const fechaExpIdPorExp: Record<string, string> = {};
-    if (historialExpId) {
-      historialExpId.forEach((h: any) => {
-        const valor = (h.valor_nuevo || '').trim();
-        if (!valor) return;
-        if (!fechaExpIdPorExp[h.expediente_id] || h.fecha_cambio < fechaExpIdPorExp[h.expediente_id]) {
-          fechaExpIdPorExp[h.expediente_id] = h.fecha_cambio;
+    const fechaLiberacionPorExp: Record<string, string> = {};
+    if (tiemposLiberacion) {
+      tiemposLiberacion.forEach((t: any) => {
+        if (!fechaLiberacionPorExp[t.expediente_id] || t.fecha_inicio < fechaLiberacionPorExp[t.expediente_id]) {
+          fechaLiberacionPorExp[t.expediente_id] = t.fecha_inicio;
         }
       });
     }
@@ -434,13 +432,12 @@ export default function Dashboard() {
     const detalleCreacion: FilaCreacionMcg[] = [];
 
     expMcg.forEach(exp => {
-      const expId = (exp.exp_id || '').trim();
-      const tieneExpId = expId !== '' && expId !== 'Por Asignar' && expId !== 'No asignado' && expId !== 'No Asignado';
-      if (!tieneExpId) return;
+      // Fin: cuando llegó al estado de liberación (fallback: campo fecha_liberacion)
+      const fechaLiberacion = fechaLiberacionPorExp[exp.id] || exp.fecha_liberacion;
+      if (!fechaLiberacion) return;
 
       const fechaAsignado = fechaAsignadoPorExp[exp.id] || exp.created_at;
-      const fechaExpId = fechaExpIdPorExp[exp.id] || fechaAsignado;
-      const dias = (new Date(fechaExpId).getTime() - new Date(fechaAsignado).getTime()) / (1000 * 60 * 60 * 24);
+      const dias = (new Date(fechaLiberacion).getTime() - new Date(fechaAsignado).getTime()) / (1000 * 60 * 60 * 24);
       const cumple = dias <= META_MCG_CREACION_DIAS;
 
       contadosCreacion++;
@@ -454,7 +451,7 @@ export default function Dashboard() {
         exp_id: exp.exp_id || '',
         solicitante: exp.solicitante || '',
         fechaAsignado,
-        fechaExpId,
+        fechaLiberacion,
         dias: Math.round(dias * 10) / 10,
         cumpleMeta: cumple
       });
@@ -2313,7 +2310,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-600">Creación de Expediente</h4>
-                  <p className="text-xs text-gray-500 mt-1">Asignado → número de expediente · Meta: ≤ 2 días</p>
+                  <p className="text-xs text-gray-500 mt-1">Asignado → liberación · Meta: ≤ 2 días</p>
                 </div>
               </div>
             </div>

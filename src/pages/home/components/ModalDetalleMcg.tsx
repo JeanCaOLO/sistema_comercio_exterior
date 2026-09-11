@@ -8,7 +8,7 @@ export interface FilaCreacionMcg {
   exp_id: string;
   solicitante: string;
   fechaAsignado: string;
-  fechaExpId: string;
+  fechaLiberacion: string;
   dias: number;
   cumpleMeta: boolean;
 }
@@ -38,7 +38,7 @@ export default function ModalDetalleMcg({ tipo, filas, total, cumplen, noCumplen
   const esCreacion = tipo === 'creacion';
   const titulo = esCreacion ? 'Detalle Creación de Expediente MCG' : 'Detalle ETD → Notificado MCG';
   const subtitulo = esCreacion
-    ? 'POs Dropship marcadas con MCG — días entre la asignación y la asignación del número de expediente'
+    ? 'POs Dropship marcadas con MCG — días entre la asignación y cuando llega al estado de liberación'
     : 'POs Dropship marcadas con MCG — días entre su ETD y la fecha de Notificado';
 
   const descargar = () => {
@@ -49,8 +49,8 @@ export default function ModalDetalleMcg({ tipo, filas, total, cumplen, noCumplen
         'EXP ID': f.exp_id || '-',
         'Solicitante': f.solicitante,
         'Asignado': formatearFechaCorta(f.fechaAsignado),
-        'Fecha EXP ID': formatearFechaCorta(f.fechaExpId),
-        'Días (Asignado → EXP ID)': f.dias,
+        'Fecha Liberación': formatearFechaCorta(f.fechaLiberacion),
+        'Días (Asignado → Liberación)': f.dias,
         'Cumple Meta (≤2 días)': f.cumpleMeta ? 'Sí' : 'No'
       }));
       descargarExcel(`reporte-mcg-creacion-${new Date().toISOString().split('T')[0]}.xlsx`, filasExcel);
@@ -130,7 +130,7 @@ export default function ModalDetalleMcg({ tipo, filas, total, cumplen, noCumplen
                   {esCreacion ? 'Asignado' : 'ETD'}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">
-                  {esCreacion ? 'Fecha EXP ID' : 'Fecha Notificado'}
+                  {esCreacion ? 'Fecha Liberación' : 'Fecha Notificado'}
                 </th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Días</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Cumple Meta</th>
@@ -151,7 +151,7 @@ export default function ModalDetalleMcg({ tipo, filas, total, cumplen, noCumplen
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                       {esCreacion
-                        ? formatearFechaCorta((f as FilaCreacionMcg).fechaExpId)
+                        ? formatearFechaCorta((f as FilaCreacionMcg).fechaLiberacion)
                         : formatearFechaCorta((f as FilaEtdMcg).fechaNotificado)}
                     </td>
                     <td className="px-4 py-3 text-center">

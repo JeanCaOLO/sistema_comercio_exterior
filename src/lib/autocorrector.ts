@@ -21,6 +21,21 @@ const PALABRAS_DOMINIO = [
   'eta',
   'oc',
   'aduanales',
+  'hapag',
+  'Hapag',
+  'lloyd',
+  'Lloyd',
+  'pil',
+  'cma',
+  'msc',
+  'oocl',
+  'zim',
+  'maersk',
+  'Maersk',
+  'one',
+  'One',
+  'cosiarma',
+  'Cosiarma',
 ];
 
 const URL_AFF = 'https://cdn.jsdelivr.net/npm/dictionary-es@2.0.0/index.aff';
