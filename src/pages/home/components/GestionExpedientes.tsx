@@ -52,19 +52,32 @@ interface Expediente {
 const ESTADOS_DROPSHIP = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
 const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado'];
 
-// Verifica si una transición de estado en Dropship es un retroceso no permitido.
-// No se puede mover un ticket a una columna anterior, salvo estas excepciones:
-//   1. Hacia "Espera de Respuesta" (desde cualquier estado posterior).
-//   2. De "Espera de Respuesta" a "En Proceso".
-const esRetrocesoNoPermitido = (estadoAnterior: string, estadoNuevo: string): boolean => {
+// Valida una transición de estado en Dropship.
+// Reglas:
+//   1. Avance: solo se permite pasar al estado inmediatamente siguiente (no brincar estados).
+//   2. Retroceso: no permitido, salvo estas excepciones:
+//      - Hacia "Espera de Respuesta" (desde cualquier estado posterior).
+//      - De "Espera de Respuesta" a "En Proceso".
+// Devuelve null si la transición es válida, o un mensaje de error si no.
+const validarTransicionDropship = (estadoAnterior: string, estadoNuevo: string): string | null => {
   const idxAnterior = ESTADOS_DROPSHIP.indexOf(estadoAnterior);
   const idxNuevo = ESTADOS_DROPSHIP.indexOf(estadoNuevo);
-  if (idxNuevo === -1 || idxAnterior === -1 || idxNuevo >= idxAnterior) return false;
 
+  // Estados desconocidos o sin cambio: no validar
+  if (idxAnterior === -1 || idxNuevo === -1 || idxAnterior === idxNuevo) return null;
+
+  // Avance: solo un estado a la vez, sin brincar
+  if (idxNuevo > idxAnterior) {
+    if (idxNuevo === idxAnterior + 1) return null;
+    return `No se puede brincar estados. De "${estadoAnterior}" debes pasar primero por "${ESTADOS_DROPSHIP[idxAnterior + 1]}".`;
+  }
+
+  // Retroceso: solo excepciones permitidas
   const excepcionHaciaEspera = estadoNuevo === 'Espera de Respuesta';
   const excepcionDeEsperaAProceso = estadoAnterior === 'Espera de Respuesta' && estadoNuevo === 'En Proceso';
+  if (excepcionHaciaEspera || excepcionDeEsperaAProceso) return null;
 
-  return !(excepcionHaciaEspera || excepcionDeEsperaAProceso);
+  return 'No se puede mover el ticket a una columna anterior. Solo se permite retroceder a "Espera de Respuesta" o de "Espera de Respuesta" a "En Proceso".';
 };
 
 // Tiempo para ocultar tickets terminados del kanban (10 días en ms)
@@ -1007,11 +1020,14 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     const expedienteOriginal = expedientes.find(e => e.id === selectedExpediente.id);
     const estadoAnterior = expedienteOriginal?.estado_expediente ?? selectedExpediente.estado_expediente;
 
-    if (tipoModulo === 'dropship' && esRetrocesoNoPermitido(estadoAnterior, nuevoEstado)) {
-      setErrorMessage('No se puede mover el ticket a una columna anterior. Solo se permite retroceder a "Espera de Respuesta" o de "Espera de Respuesta" a "En Proceso".');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
-      return;
+    if (tipoModulo === 'dropship') {
+      const errorTransicion = validarTransicionDropship(estadoAnterior, nuevoEstado);
+      if (errorTransicion) {
+        setErrorMessage(errorTransicion);
+        setShowError(true);
+        setTimeout(() => setShowError(false), 5000);
+        return;
+      }
     }
 
     handleChange('estado_expediente', nuevoEstado);
@@ -1369,16 +1385,16 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       return;
     }
 
-    // ── Regla Dropship: no se puede mover un ticket a una columna anterior ──
-    // Excepciones permitidas:
-    //   1. Hacia "Espera de Respuesta" (desde cualquier estado posterior).
-    //   2. De "Espera de Respuesta" a "En Proceso".
-    if (tipoModulo === 'dropship' && esRetrocesoNoPermitido(draggedItem.estado_expediente, nuevoEstado)) {
-      setErrorMessage('No se puede mover el ticket a una columna anterior. Solo se permite retroceder a "Espera de Respuesta" o de "Espera de Respuesta" a "En Proceso".');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
-      setDraggedItem(null);
-      return;
+    // ── Regla Dropship: avance uno a uno y sin retrocesos (salvo excepciones) ──
+    if (tipoModulo === 'dropship') {
+      const errorTransicion = validarTransicionDropship(draggedItem.estado_expediente, nuevoEstado);
+      if (errorTransicion) {
+        setErrorMessage(errorTransicion);
+        setShowError(true);
+        setTimeout(() => setShowError(false), 5000);
+        setDraggedItem(null);
+        return;
+      }
     }
 
     // Caso especial: No Asignado → Asignado abre modal para completar campos
