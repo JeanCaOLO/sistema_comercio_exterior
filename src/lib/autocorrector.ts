@@ -36,6 +36,8 @@ const PALABRAS_DOMINIO = [
   'One',
   'cosiarma',
   'Cosiarma',
+  'draft',
+  'Draft',
 ];
 
 const URL_AFF = 'https://cdn.jsdelivr.net/npm/dictionary-es@2.0.0/index.aff';
