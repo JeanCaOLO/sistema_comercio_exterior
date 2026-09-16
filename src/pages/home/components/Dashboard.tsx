@@ -1726,6 +1726,7 @@ export default function Dashboard() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Módulo</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Responsable</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Asignado</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Liberación</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Duración</th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Cumple Meta</th>
                   </tr>
@@ -1759,6 +1760,9 @@ export default function Dashboard() {
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                           {formatearFechaCorta(exp.fechaAsignado)}
                         </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                          {exp.fechaFin ? formatearFechaCorta(exp.fechaFin) : <span className="text-amber-600 font-medium">En curso</span>}
+                        </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`text-sm font-bold ${
                             exp.cumpleMeta ? 'text-teal-700' : 'text-red-600'
@@ -1789,7 +1793,7 @@ export default function Dashboard() {
                     !e.cumpleMeta
                   ).length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
+                      <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
                         <i className="ri-inbox-line text-4xl mb-2"></i>
                         <p className="text-sm">No hay expedientes en esta categoría</p>
                       </td>
