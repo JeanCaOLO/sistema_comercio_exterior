@@ -7,7 +7,7 @@ import ProgressBar from './ProgressBar';
 import TopMotivosEspera from './TopMotivosEspera';
 import ModalDetalleMcg, { FilaCreacionMcg, FilaEtdMcg } from './ModalDetalleMcg';
 import { supabase } from '../../../lib/supabase';
-import { formatearFechaCorta, parseFechaSegura } from '../../../lib/fechas';
+import { formatearFechaCorta, parseFechaSegura, diasHabilesEntre } from '../../../lib/fechas';
 import { descargarExcel } from '../../../lib/exportar';
 
 const aFechaISO = (fecha: Date): string => {
@@ -347,10 +347,8 @@ export default function Dashboard() {
       const fechaCreacion = exp.created_at || exp.fecha_creacion_expediente;
       const fechaAsignadoStr = fechasAsignado[exp.id] || fechaCreacion;
       // Fin: cuando llegó a "Liberado" o, si sigue en curso, el momento actual
-      const fechaFin = exp.fecha_liberacion ? new Date(exp.fecha_liberacion) : ahora;
-      const fechaIni = new Date(fechaAsignadoStr);
-      const diffMs = fechaFin.getTime() - fechaIni.getTime();
-      const diasDuracion = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
+      const fechaFin = exp.fecha_liberacion ? exp.fecha_liberacion : ahora;
+      const diasDuracion = diasHabilesEntre(fechaAsignadoStr, fechaFin);
       return {
         id: exp.id,
         po_tiquetera: exp.po_tiquetera,
@@ -437,7 +435,7 @@ export default function Dashboard() {
       if (!fechaLiberacion) return;
 
       const fechaAsignado = fechaAsignadoPorExp[exp.id] || exp.created_at;
-      const dias = (new Date(fechaLiberacion).getTime() - new Date(fechaAsignado).getTime()) / (1000 * 60 * 60 * 24);
+      const dias = diasHabilesEntre(fechaAsignado, fechaLiberacion);
       const cumple = dias <= META_MCG_CREACION_DIAS;
 
       contadosCreacion++;
@@ -497,7 +495,7 @@ export default function Dashboard() {
       expMcgConEtd.forEach(exp => {
         const fechaNotif = fechaNotifPorExp[exp.id];
         if (!fechaNotif) return;
-        const dias = (new Date(fechaNotif).getTime() - new Date(exp.etd).getTime()) / (1000 * 60 * 60 * 24);
+        const dias = diasHabilesEntre(exp.etd, fechaNotif);
         const cumple = dias < META_MCG_ETD_DIAS;
         contados++;
         sumaDias += dias;
@@ -608,7 +606,7 @@ export default function Dashboard() {
       const fAsig = fechaAsignado[exp.id] || createdMap[exp.id];
       const fNotif = fechaNotif[exp.id];
       if (!fNotif) return;
-      const dias = (new Date(fNotif).getTime() - new Date(fAsig).getTime()) / (1000 * 60 * 60 * 24);
+      const dias = diasHabilesEntre(fAsig, fNotif);
       detalle.push({
         id: exp.id,
         po_tiquetera: exp.po_tiquetera,
@@ -707,8 +705,7 @@ export default function Dashboard() {
       tiemposCreadoAEspera.forEach(({ expediente_id: expId, fechaEspera }) => {
         const fechaCreacion = createdMap[expId];
         if (!fechaCreacion) return;
-        const diffMs = new Date(fechaEspera).getTime() - new Date(fechaCreacion).getTime();
-        const dias = diffMs / (1000 * 60 * 60 * 24);
+        const dias = diasHabilesEntre(fechaCreacion, fechaEspera);
         diasPorExpediente.push(dias);
       });
 
@@ -912,8 +909,7 @@ export default function Dashboard() {
           expNotificadosConEtd.forEach(exp => {
             const fechaNotificado = tiempoPorExp[exp.id];
             if (!fechaNotificado) return;
-            const diffMs = new Date(fechaNotificado).getTime() - new Date(exp.etd).getTime();
-            const dias = diffMs / (1000 * 60 * 60 * 24);
+            const dias = diasHabilesEntre(exp.etd, fechaNotificado);
             contados++;
             sumaDias += dias;
             const cumple = dias <= META_ETD_DIAS;
@@ -999,7 +995,7 @@ export default function Dashboard() {
           Object.entries(dsFechaLlegada).forEach(([expId, fecha]) => {
             const created = dsCreated[expId];
             if (!created) return;
-            dsDias.push((new Date(fecha).getTime() - new Date(created).getTime()) / (1000 * 60 * 60 * 24));
+            dsDias.push(diasHabilesEntre(created, fecha));
           });
           if (dsDias.length > 0) {
             promedioDsNoti = Math.round((dsDias.reduce((a, b) => a + b, 0) / dsDias.length) * 10) / 10;
@@ -1051,7 +1047,7 @@ export default function Dashboard() {
           Object.entries(zfFechaLlegada).forEach(([expId, fecha]) => {
             const created = zfCreated[expId];
             if (!created) return;
-            zfDias.push((new Date(fecha).getTime() - new Date(created).getTime()) / (1000 * 60 * 60 * 24));
+            zfDias.push(diasHabilesEntre(created, fecha));
           });
           if (zfDias.length > 0) {
             promedioZfCompl = Math.round((zfDias.reduce((a, b) => a + b, 0) / zfDias.length) * 10) / 10;
@@ -1534,7 +1530,7 @@ export default function Dashboard() {
             </div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">Indicador de Duración Mínima de Expedientes</h3>
-              <p className="text-sm text-gray-600">Meta: cada expediente debe durar menos de <strong>3 días</strong> desde su asignación hasta su liberación (solo Dropship)</p>
+              <p className="text-sm text-gray-600">Meta: cada expediente debe durar menos de <strong>3 días hábiles</strong> desde su asignación hasta su liberación (solo Dropship)</p>
             </div>
           </div>
           {/* Alerta global */}
@@ -1632,7 +1628,7 @@ export default function Dashboard() {
               <i className="ri-bar-chart-box-line text-gray-500 text-lg"></i>
               <span className="text-xs text-gray-600">Promedio del período</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Meta: menos de 3 días</p>
+            <p className="text-xs text-gray-500 mt-1">Meta: menos de 3 días hábiles</p>
           </div>
         </div>
 
@@ -1656,7 +1652,7 @@ export default function Dashboard() {
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">Reporte de Duración Mínima</h2>
-                <p className="text-sm text-gray-500 mt-1">Expedientes Dropship que cumplen o no la meta de &lt;3 días de duración</p>
+                <p className="text-sm text-gray-500 mt-1">Expedientes Dropship que cumplen o no la meta de &lt;3 días hábiles de duración</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1684,13 +1680,13 @@ export default function Dashboard() {
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-teal-600">{kpiDuracion.cumplen}</p>
-                  <p className="text-xs text-gray-500">Cumplen (&lt;3 días)</p>
+                  <p className="text-xs text-gray-500">Cumplen (&lt;3 días hábiles)</p>
                 </div>
                 <div className="text-center">
                   <p className={`text-2xl font-bold ${
                     kpiDuracion.noCumplen > 0 ? 'text-red-600' : 'text-gray-400'
                   }`}>{kpiDuracion.noCumplen}</p>
-                  <p className="text-xs text-gray-500">No Cumplen (≥3 días)</p>
+                  <p className="text-xs text-gray-500">No Cumplen (≥3 días hábiles)</p>
                 </div>
               </div>
             </div>
@@ -2020,7 +2016,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-600">Creado → Espera de Respuesta</h4>
-                  <p className="text-xs text-gray-500 mt-1">Meta: &lt;15 días</p>
+                  <p className="text-xs text-gray-500 mt-1">Meta: &lt;15 días hábiles</p>
                 </div>
               </div>
               <div className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -2179,7 +2175,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-600">ETD → Notificado</h4>
-                  <p className="text-xs text-gray-500 mt-1">Meta: ≤ {META_ETD_DIAS} días entre ETD y Notificado</p>
+                  <p className="text-xs text-gray-500 mt-1">Meta: ≤ {META_ETD_DIAS} días hábiles entre ETD y Notificado</p>
                 </div>
               </div>
             </div>
@@ -2233,7 +2229,7 @@ export default function Dashboard() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-gray-900">Duración Promedio Asignado → Notificado</h3>
-            <p className="text-sm text-gray-600">Promedio de días entre la asignación y la notificación del expediente (Dropship)</p>
+            <p className="text-sm text-gray-600">Promedio de días hábiles entre la asignación y la notificación del expediente (Dropship)</p>
           </div>
         </div>
 
@@ -2314,7 +2310,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-600">Creación de Expediente</h4>
-                  <p className="text-xs text-gray-500 mt-1">Asignado → liberación · Meta: ≤ 2 días</p>
+                  <p className="text-xs text-gray-500 mt-1">Asignado → liberación · Meta: ≤ 2 días hábiles</p>
                 </div>
               </div>
             </div>
@@ -2361,7 +2357,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-600">ETD → Notificado</h4>
-                  <p className="text-xs text-gray-500 mt-1">Meta: &lt; 2 días entre ETD y Notificado</p>
+                  <p className="text-xs text-gray-500 mt-1">Meta: &lt; 2 días hábiles entre ETD y Notificado</p>
                 </div>
               </div>
             </div>
