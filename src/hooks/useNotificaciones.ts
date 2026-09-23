@@ -129,12 +129,16 @@ export function useNotificaciones(usuarioId: string, email?: string) {
       prev.map((n) => (n.id === id ? { ...n, leida: true } : n))
     );
     setNoLeidas((prev) => Math.max(0, prev - 1));
+    // Al marcar como leída, se limpia su notificación emergente (toast)
+    setToasts((prev) => prev.filter((t) => t.notificacion.id !== id));
   }, []);
 
   const marcarTodasLeidas = useCallback(async () => {
     await marcarTodasComoLeidas(usuarioId);
     setNotificaciones((prev) => prev.map((n) => ({ ...n, leida: true })));
     setNoLeidas(0);
+    // Al marcar todas como leídas, se limpian todas las notificaciones emergentes
+    setToasts([]);
   }, [usuarioId]);
 
   return {
