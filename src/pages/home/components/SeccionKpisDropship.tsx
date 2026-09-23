@@ -17,6 +17,8 @@ interface SeccionKpisDropshipProps {
   totalEntregados: number;
   transitoCorto: number;
   totalDropship: number;
+  expedientesSinEtd: number;
+  onVerDetalleSinEtd: () => void;
 }
 
 export default function SeccionKpisDropship({
@@ -26,7 +28,9 @@ export default function SeccionKpisDropship({
   notificadoOkPais,
   totalEntregados,
   transitoCorto,
-  totalDropship
+  totalDropship,
+  expedientesSinEtd,
+  onVerDetalleSinEtd
 }: SeccionKpisDropshipProps) {
   const etd = kpiEtdNotificado;
 
@@ -119,7 +123,7 @@ export default function SeccionKpisDropship({
           disabled: etd.totalEvaluados === 0
         }}
       >
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
           <TarjetaDesglose
             etiqueta="Cumplimiento Global"
             valor={etd.porcentajeOk}
@@ -160,6 +164,22 @@ export default function SeccionKpisDropship({
             valorClass="text-gray-800"
             linea={{ icono: 'ri-bar-chart-box-line', texto: 'Promedio del período', colorClass: 'text-gray-600' }}
             footer={`Meta: ≤ ${metaEtdDias} días hábiles`}
+          />
+
+          <TarjetaDesglose
+            etiqueta="Sin ETD"
+            valor={expedientesSinEtd}
+            sufijo="exp."
+            valorClass={expedientesSinEtd > 0 ? 'text-amber-600' : 'text-gray-400'}
+            fondoClass={expedientesSinEtd > 0 ? 'bg-amber-50/70' : 'bg-white'}
+            linea={{
+              icono: 'ri-calendar-line',
+              texto: 'Aún sin fecha ETD',
+              colorClass: expedientesSinEtd > 0 ? 'text-amber-700' : 'text-gray-400'
+            }}
+            nota={expedientesSinEtd > 0 ? 'Haz clic para ver cuáles' : 'Todas las POs tienen ETD'}
+            notaClass={expedientesSinEtd > 0 ? 'text-amber-700' : 'text-gray-400'}
+            onClick={expedientesSinEtd > 0 ? onVerDetalleSinEtd : undefined}
           />
         </div>
       </PanelIndicador>

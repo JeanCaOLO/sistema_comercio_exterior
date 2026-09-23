@@ -18,6 +18,8 @@ interface TarjetaDesgloseProps {
   linea?: LineaDesglose | null;
   footer?: string;
   nota?: string;
+  notaClass?: string;
+  fondoClass?: string;
   resaltado?: boolean;
   onClick?: () => void;
 }
@@ -31,6 +33,8 @@ export default function TarjetaDesglose({
   linea,
   footer,
   nota,
+  notaClass = 'text-teal-600',
+  fondoClass = 'bg-white',
   resaltado,
   onClick
 }: TarjetaDesgloseProps) {
@@ -39,7 +43,7 @@ export default function TarjetaDesglose({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-xl p-5 border-2 ${
+      className={`${fondoClass} rounded-xl p-5 border-2 ${
         resaltado ? 'border-red-300' : 'border-gray-200'
       } ${clickeable ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
     >
@@ -67,7 +71,7 @@ export default function TarjetaDesglose({
       )}
 
       {footer && <p className="text-xs text-gray-500 mt-2">{footer}</p>}
-      {nota && <p className="text-xs text-teal-600 mt-1 font-medium">{nota}</p>}
+      {nota && <p className={`text-xs mt-1 font-medium ${notaClass}`}>{nota}</p>}
     </div>
   );
 }

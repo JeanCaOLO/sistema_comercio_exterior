@@ -161,6 +161,17 @@ export default function Dashboard() {
 
   const [notificadoOkPais, setNotificadoOkPais] = useState(0);
 
+  // KPI: POs Dropship (incluye MCG) que aún no tienen ETD
+  const [sinEtdDetalle, setSinEtdDetalle] = useState<{
+    id: string;
+    po_tiquetera: string;
+    exp_id: string;
+    solicitante: string;
+    estado_expediente: string;
+    tipo_modulo: string;
+  }[]>([]);
+  const [showSinEtdDetalle, setShowSinEtdDetalle] = useState(false);
+
   // KPI ETD vs Notificado (Dropship)
   const META_ETD_DIAS = 5;
   const [kpiEtdNotificado, setKpiEtdNotificado] = useState({
@@ -907,6 +918,19 @@ export default function Dashboard() {
         );
         setEstadoDataDropship(contarEstados(expDropship));
 
+        // KPI: POs Dropship (incluye MCG) que aún no tienen ETD (campo vacío, sin importar su estado)
+        const expSinEtd = expDropship.filter(exp => !exp.etd);
+        setSinEtdDetalle(
+          expSinEtd.map(exp => ({
+            id: exp.id,
+            po_tiquetera: exp.po_tiquetera,
+            exp_id: exp.exp_id || '',
+            solicitante: exp.solicitante || '',
+            estado_expediente: exp.estado_expediente || '—',
+            tipo_modulo: exp.mcg === true ? 'MCG' : 'Dropship'
+          }))
+        );
+
         // Tickets MCG (Dropship con check MCG) — se excluyen de los KPIs generales
         const expDropshipMcg = expDropship.filter(exp => exp.mcg === true);
         const expDropshipNormal = expDropship.filter(exp => exp.mcg !== true);
@@ -1116,6 +1140,7 @@ export default function Dashboard() {
         setEstadoDataDropship(estadoVacio);
         setEstadoDataZF(estadoVacio);
         setNotificadoOkPais(0);
+        setSinEtdDetalle([]);
         setKpiEtdNotificado({ totalEvaluados: 0, dentroRango: 0, fueraRango: 0, porcentajeOk: 0, promedioDias: 0 });
         setEtdDetalle([]);
         setKpiDuracion({ totalEvaluados: 0, cumplen: 0, noCumplen: 0, porcentajeCumplimiento: 0, diasPromedioTotal: 0 });
@@ -1340,6 +1365,18 @@ export default function Dashboard() {
       'Días (Asignado → Notificado)': e.dias
     }));
     descargarExcel(`reporte-asignado-notificado-${new Date().toISOString().split('T')[0]}.xlsx`, filas);
+  };
+
+  const descargarReporteSinEtd = () => {
+    const filas = sinEtdDetalle.map(e => ({
+      'PO/Tiquetera': e.po_tiquetera,
+      'EXP ID': e.exp_id || '-',
+      'Módulo': e.tipo_modulo,
+      'Solicitante': e.solicitante,
+      'Estado': e.estado_expediente,
+      'ETD': 'Sin ETD'
+    }));
+    descargarExcel(`reporte-sin-etd-${new Date().toISOString().split('T')[0]}.xlsx`, filas);
   };
 
   const formatearTiempo = (minutos: number | null) => {
@@ -2121,6 +2158,8 @@ export default function Dashboard() {
         totalEntregados={estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length}
         transitoCorto={expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.transito_corto === true).length}
         totalDropship={estadoDataDropship.total}
+        expedientesSinEtd={sinEtdDetalle.length}
+        onVerDetalleSinEtd={() => setShowSinEtdDetalle(true)}
       />
 
       {/* =========== KPI: Duración Promedio Asignado → Notificado =========== */}
@@ -2509,6 +2548,87 @@ export default function Dashboard() {
                   <p className="text-gray-500 text-sm">No hay cambios registrados</p>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========== MODAL DETALLE POs SIN ETD =========== */}
+      {showSinEtdDetalle && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">POs sin ETD</h2>
+                <p className="text-sm text-gray-500 mt-1">Expedientes Dropship (incluye MCG) que todavía no tienen fecha ETD registrada</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={descargarReporteSinEtd}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <i className="ri-download-2-line"></i>
+                  Descargar Excel
+                </button>
+                <button
+                  onClick={() => setShowSinEtdDetalle(false)}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <i className="ri-close-line text-2xl text-gray-500"></i>
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-amber-50 border-b border-amber-200 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <i className="ri-calendar-line text-amber-600 text-xl"></i>
+                <p className="text-sm text-amber-800">
+                  <span className="font-bold text-amber-900">{sinEtdDetalle.length}</span> expediente{sinEtdDetalle.length !== 1 ? 's' : ''} sin fecha ETD en el período
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">PO / Tiquetera</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">EXP ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Módulo</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Solicitante</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {sinEtdDetalle.map(exp => (
+                    <tr key={exp.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{exp.po_tiquetera}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.exp_id || '-'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
+                          exp.tipo_modulo === 'MCG' ? 'bg-violet-100 text-violet-800' : 'bg-sky-100 text-sky-800'
+                        }`}>
+                          {exp.tipo_modulo}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.solicitante || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-block px-2 py-1 bg-teal-100 text-teal-800 text-xs font-medium rounded-full">
+                          {exp.estado_expediente}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {sinEtdDetalle.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
+                        <i className="ri-inbox-line text-4xl mb-2"></i>
+                        <p className="text-sm">No hay POs sin ETD en el período</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
