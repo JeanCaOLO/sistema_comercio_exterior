@@ -263,6 +263,49 @@ export default function Dashboard() {
     return cambio > 0 ? `+${cambio.toFixed(1)}%` : `${cambio.toFixed(1)}%`;
   };
 
+  // Devuelve la fecha en que cada PO pasó al estado "Asignado",
+  // considerando solo las que caen dentro del rango indicado.
+  const obtenerFechasAsignadoEnRango = async (
+    inicioISO: string,
+    finISO: string
+  ): Promise<{ ids: string[]; fechas: Record<string, string> }> => {
+    const { data, error } = await supabase
+      .from('expedientes_tiempos_estados')
+      .select('expediente_id, fecha_inicio')
+      .eq('estado_nuevo', 'Asignado')
+      .gte('fecha_inicio', `${inicioISO}T00:00:00`)
+      .lte('fecha_inicio', `${finISO}T23:59:59`);
+
+    if (error) throw error;
+
+    const fechas: Record<string, string> = {};
+    (data || []).forEach((t: any) => {
+      if (!fechas[t.expediente_id] || t.fecha_inicio < fechas[t.expediente_id]) {
+        fechas[t.expediente_id] = t.fecha_inicio;
+      }
+    });
+
+    return { ids: Object.keys(fechas), fechas };
+  };
+
+  // Trae los expedientes cuya FECHA DE ASIGNADO está dentro del rango.
+  // Las POs que todavía no fueron asignadas quedan fuera por diseño.
+  const cargarExpedientesPorFechaAsignado = async (
+    inicioISO: string,
+    finISO: string
+  ): Promise<any[]> => {
+    const { ids } = await obtenerFechasAsignadoEnRango(inicioISO, finISO);
+    if (ids.length === 0) return [];
+
+    const { data, error } = await supabase
+      .from('expedientes')
+      .select('*')
+      .in('id', ids);
+
+    if (error) throw error;
+    return data || [];
+  };
+
   const obtenerRangoFechas = (periodoOverride?: string) => {
     const hoy = new Date();
     const periodo = periodoOverride ?? periodoActivo;
@@ -281,6 +324,16 @@ export default function Dashboard() {
         inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
         fin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
         break;
+      case 'semana-anterior': {
+        // Semana anterior (lunes a domingo) respecto a la semana actual
+        const diaSemana = (hoy.getDay() + 6) % 7; // 0 = lunes
+        const lunesEstaSemana = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - diaSemana);
+        inicio = new Date(lunesEstaSemana);
+        inicio.setDate(inicio.getDate() - 7);
+        fin = new Date(inicio);
+        fin.setDate(fin.getDate() + 6);
+        break;
+      }
       case 'mes-anterior':
         inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
         fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
@@ -751,14 +804,9 @@ export default function Dashboard() {
       setLoading(true);
       
       const { inicio, fin } = obtenerRangoFechas();
-      
-      const { data: expedientes, error } = await supabase
-        .from('expedientes')
-        .select('*')
-        .gte('fecha_solicitud', aFechaISO(inicio))
-        .lte('fecha_solicitud', aFechaISO(fin));
 
-      if (error) throw error;
+      // El período se calcula según la FECHA DE ASIGNADO de cada PO
+      const expedientes = await cargarExpedientesPorFechaAsignado(aFechaISO(inicio), aFechaISO(fin));
 
       const mesAnteriorInicio = new Date(inicio);
       mesAnteriorInicio.setMonth(mesAnteriorInicio.getMonth() - 1);
@@ -770,17 +818,15 @@ export default function Dashboard() {
       const anoAnteriorFin = new Date(fin);
       anoAnteriorFin.setFullYear(anoAnteriorFin.getFullYear() - 1);
 
-      const { data: expedientesMesAnterior } = await supabase
-        .from('expedientes')
-        .select('*')
-        .gte('fecha_solicitud', aFechaISO(mesAnteriorInicio))
-        .lte('fecha_solicitud', aFechaISO(mesAnteriorFin));
+      const expedientesMesAnterior = await cargarExpedientesPorFechaAsignado(
+        aFechaISO(mesAnteriorInicio),
+        aFechaISO(mesAnteriorFin)
+      );
 
-      const { data: expedientesAnoAnterior } = await supabase
-        .from('expedientes')
-        .select('*')
-        .gte('fecha_solicitud', aFechaISO(anoAnteriorInicio))
-        .lte('fecha_solicitud', aFechaISO(anoAnteriorFin));
+      const expedientesAnoAnterior = await cargarExpedientesPorFechaAsignado(
+        aFechaISO(anoAnteriorInicio),
+        aFechaISO(anoAnteriorFin)
+      );
 
       if (expedientes && expedientes.length > 0) {
         setExpedientes(expedientes);
@@ -1102,19 +1148,14 @@ export default function Dashboard() {
     try {
       const { inicio, fin } = obtenerRangoFechas();
 
-      let query = supabase
-        .from('expedientes')
-        .select('id, created_at, estado_expediente, tipo_modulo, fecha_liberacion, tiempo_real_minutos')
-        .gte('fecha_solicitud', aFechaISO(inicio))
-        .lte('fecha_solicitud', aFechaISO(fin));
+      // Solo expedientes cuya FECHA DE ASIGNADO cae dentro del período
+      const expedientesDelRango = await cargarExpedientesPorFechaAsignado(aFechaISO(inicio), aFechaISO(fin));
 
-      if (moduloFiltro !== 'todos') {
-        query = query.eq('tipo_modulo', moduloFiltro);
-      }
+      const expedientesPeriodo = moduloFiltro === 'todos'
+        ? expedientesDelRango
+        : expedientesDelRango.filter(exp => (exp.tipo_modulo || '').toLowerCase() === moduloFiltro);
 
-      const { data: expedientesPeriodo, error: errorExp } = await query;
-
-      if (errorExp || !expedientesPeriodo || expedientesPeriodo.length === 0) {
+      if (expedientesPeriodo.length === 0) {
         setTiemposEntreEstados([]);
         return;
       }
@@ -1370,7 +1411,11 @@ export default function Dashboard() {
 
       {/* Filtros de Fecha */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Filtros de Período</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-1">Filtros de Período</h3>
+        <p className="text-sm text-gray-500 mb-4 flex items-center gap-1.5">
+          <i className="ri-information-line text-teal-600"></i>
+          El rango se aplica según la <strong className="font-semibold text-gray-700">fecha de asignación</strong> de cada PO (solo se cuentan las POs ya asignadas).
+        </p>
 
         {errorFiltros && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
@@ -1400,6 +1445,16 @@ export default function Dashboard() {
               }`}
             >
               Mes Anterior
+            </button>
+            <button
+              onClick={() => seleccionarPeriodo('semana-anterior')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                periodoActivo === 'semana-anterior'
+                  ? 'bg-teal-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Semana Anterior
             </button>
             <button
               onClick={() => seleccionarPeriodo('trimestre')}
