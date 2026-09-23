@@ -13,6 +13,7 @@ import FormularioExpediente from './components/FormularioExpediente';
 import CargaDocumentosCAA from './components/CargaDocumentosCAA';
 import Documentacion from './components/Documentacion';
 import RepositorioDocumentacion from './components/RepositorioDocumentacion';
+import Facturas from './components/Facturas';
 import CampanitaNotificaciones from './components/CampanitaNotificaciones';
 
 export default function Home() {
@@ -179,6 +180,7 @@ export default function Home() {
               {activeView === 'carga-caa' && <CargaDocumentosCAA />}
               {activeView === 'documentacion' && <Documentacion />}
               {activeView === 'repositorio' && <RepositorioDocumentacion />}
+              {activeView === 'facturas' && <Facturas />}
             </>
           ) : (
             <div className="p-12 flex flex-col items-center justify-center text-center">

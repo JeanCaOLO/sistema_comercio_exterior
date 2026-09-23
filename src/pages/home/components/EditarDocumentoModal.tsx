@@ -2,6 +2,13 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion, notificarComentario } from '../../../lib/notificaciones';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
+import { parseDocEntries, esFactura, type DocEntry } from '@/lib/documentos';
+
+interface ArchivoNuevo {
+  id: string;
+  file: File;
+  esFactura: boolean;
+}
 
 interface RegistroDocumento {
   id: string;
@@ -34,17 +41,6 @@ interface EditarDocumentoModalProps {
   registro: RegistroDocumento;
   onSaved: () => void;
 }
-
-const parseDocUrls = (doc: string | string[] | null): string[] => {
-  if (!doc) return [];
-  if (Array.isArray(doc)) return doc;
-  try {
-    const parsed = JSON.parse(doc);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return doc.trim() ? [doc] : [];
-  }
-};
 
 const extractFileName = (url: string): string => {
   try {
@@ -101,9 +97,9 @@ const sanitizeFileName = (name: string): string => {
 };
 
 export default function EditarDocumentoModal({ isOpen, onClose, registro, onSaved }: EditarDocumentoModalProps) {
-  const [documentosActuales, setDocumentosActuales] = useState<string[]>([]);
-  const [documentosEliminados, setDocumentosEliminados] = useState<string[]>([]);
-  const [nuevosArchivos, setNuevosArchivos] = useState<File[]>([]);
+  const [documentosActuales, setDocumentosActuales] = useState<DocEntry[]>([]);
+  const [documentosEliminados, setDocumentosEliminados] = useState<DocEntry[]>([]);
+  const [nuevosArchivos, setNuevosArchivos] = useState<ArchivoNuevo[]>([]);
   const [blCargado, setBlCargado] = useState(false);
   const [tcCargado, setTcCargado] = useState(false);
   const [aplicaTLC, setAplicaTLC] = useState(false);
@@ -119,8 +115,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
   // Inicializar estado cuando cambia el registro o se abre el modal
   useEffect(() => {
     if (isOpen) {
-      const urls = parseDocUrls(registro.doc);
-      setDocumentosActuales(urls);
+      setDocumentosActuales(parseDocEntries(registro.doc));
       setDocumentosEliminados([]);
       setNuevosArchivos([]);
       setBlCargado(registro.bl_cargado || false);
@@ -158,7 +153,10 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       const ext = f.name.split('.').pop()?.toLowerCase();
       return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
     });
-    setNuevosArchivos(prev => [...prev, ...droppedFiles]);
+    setNuevosArchivos(prev => [
+      ...prev,
+      ...droppedFiles.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false })),
+    ]);
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,22 +165,35 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         const ext = f.name.split('.').pop()?.toLowerCase();
         return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
       });
-      setNuevosArchivos(prev => [...prev, ...selected]);
+      setNuevosArchivos(prev => [
+        ...prev,
+        ...selected.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false })),
+      ]);
     }
   };
 
-  const quitarDocumentoExistente = (url: string) => {
-    setDocumentosActuales(prev => prev.filter(u => u !== url));
-    setDocumentosEliminados(prev => [...prev, url]);
+  const quitarDocumentoExistente = (entry: DocEntry) => {
+    setDocumentosActuales(prev => prev.filter(e => e.url !== entry.url));
+    setDocumentosEliminados(prev => [...prev, entry]);
   };
 
-  const restaurarDocumento = (url: string) => {
-    setDocumentosEliminados(prev => prev.filter(u => u !== url));
-    setDocumentosActuales(prev => [...prev, url]);
+  const restaurarDocumento = (entry: DocEntry) => {
+    setDocumentosEliminados(prev => prev.filter(e => e.url !== entry.url));
+    setDocumentosActuales(prev => [...prev, entry]);
   };
 
   const quitarNuevoArchivo = (index: number) => {
     setNuevosArchivos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleFacturaActual = (url: string) => {
+    setDocumentosActuales(prev => prev.map(e => (
+      e.url === url ? { ...e, tipo: esFactura(e) ? null : 'factura' } : e
+    )));
+  };
+
+  const toggleFacturaNuevo = (id: string) => {
+    setNuevosArchivos(prev => prev.map(a => (a.id === id ? { ...a, esFactura: !a.esFactura } : a)));
   };
 
   const addPO = () => {
@@ -230,35 +241,41 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       }
 
       // Subir nuevos archivos (en paralelo para no subirlos de a uno)
-      const nuevasUrls = (await Promise.all(
-        nuevosArchivos.map(async (file) => {
+      const nuevasEntradas: DocEntry[] = (await Promise.all(
+        nuevosArchivos.map(async (item) => {
           const tempId = crypto.randomUUID();
-          const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(file.name)}`;
+          const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(item.file.name)}`;
           const { error: uploadError } = await supabase.storage
             .from('expedientes-documentos')
-            .upload(fileName, file, { cacheControl: '3600', upsert: false });
+            .upload(fileName, item.file, { cacheControl: '3600', upsert: false });
 
           if (uploadError) {
             if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
               throw new Error('El bucket de almacenamiento no está configurado. Crea el bucket "expedientes-documentos" en Supabase Storage.');
             }
-            throw new Error(`Error subiendo ${file.name}: ${uploadError.message}`);
+            throw new Error(`Error subiendo ${item.file.name}: ${uploadError.message}`);
           }
 
           const { data: urlData } = supabase.storage
             .from('expedientes-documentos')
             .getPublicUrl(fileName);
 
-          return urlData?.publicUrl || '';
+          const url = urlData?.publicUrl || '';
+          if (!url) return null;
+          return { url, tipo: item.esFactura ? 'factura' : null } as DocEntry;
         })
-      )).filter((url) => url !== '');
+      )).filter((e): e is DocEntry => e !== null);
 
-      // Construir array final de documentos
-      const documentosFinales = [...documentosActuales, ...nuevasUrls];
-      const docJson = JSON.stringify(documentosFinales);
+      // Construir array final de documentos (formato retrocompatible: string u objeto { url, tipo })
+      const documentosFinales: DocEntry[] = [...documentosActuales, ...nuevasEntradas];
 
       // Datos de auditoría
-      const docsAnteriores = parseDocUrls(registro.doc);
+      const docsAnteriores = parseDocEntries(registro.doc);
+      const facturasAntes = new Set(docsAnteriores.filter(esFactura).map(e => e.url));
+      const facturasDespues = new Set(documentosFinales.filter(esFactura).map(e => e.url));
+      const facturasCambiaron =
+        facturasAntes.size !== facturasDespues.size ||
+        [...facturasAntes].some(u => !facturasDespues.has(u));
       const acciones: string[] = [];
 
       if (nuevosArchivos.length > 0) {
@@ -275,6 +292,9 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       }
       if (aplicaTLC !== (registro.aplica_tlc || false)) {
         acciones.push(`Cambió TLC de ${registro.aplica_tlc ? 'Sí' : 'No'} a ${aplicaTLC ? 'Sí' : 'No'}`);
+      }
+      if (facturasCambiaron) {
+        acciones.push('Cambió las marcas de factura');
       }
       if (comentario !== (registro.instrucciones_adicionales || '')) {
         acciones.push('Editó el comentario');
@@ -305,6 +325,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           po_modificado: posCombinadas !== poOriginal,
           po_anterior: poOriginal,
           po_nuevo: posCombinadas,
+          facturas_modificadas: facturasCambiaron,
         },
         documentos_anteriores: docsAnteriores,
         documentos_nuevos: documentosFinales,
@@ -315,7 +336,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
 
       // Construir update según la tabla de origen (tc_cargado en CAA, transito_corto en expedientes)
       const updateData: Record<string, any> = {
-        doc: docJson,
+        doc: documentosFinales,
         bl_cargado: blCargado,
         po_tiquetera: posCombinadas,
         instrucciones_adicionales: comentario.trim() || null,
@@ -347,7 +368,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (docCaaMatch) {
           await supabase
             .from('documentos_caa')
-            .update({ doc: docJson, bl_cargado: blCargado, tc_cargado: tcCargado, aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: documentosFinales, bl_cargado: blCargado, tc_cargado: tcCargado, aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', docCaaMatch.id);
 
           // Registrar también en auditoría para documentos_caa
@@ -373,7 +394,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (expMatch) {
           await supabase
             .from('expedientes')
-            .update({ doc: docJson, bl_cargado: blCargado, transito_corto: tcCargado, aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: documentosFinales, bl_cargado: blCargado, transito_corto: tcCargado, aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', expMatch.id);
 
           try {
@@ -642,12 +663,19 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
               </div>
             ) : (
               <div className="space-y-2">
-                {documentosActuales.map((url, idx) => {
+                {documentosActuales.map((entry, idx) => {
+                  const { url } = entry;
+                  const factura = esFactura(entry);
                   const fileName = extractFileName(url);
                   const { icon, color, bg } = getFileIconFromUrl(url);
                   const esImagen = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(fileName.split('.').pop()?.toLowerCase() || '');
                   return (
-                    <div key={`exist-${idx}`} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
+                    <div
+                      key={`exist-${idx}`}
+                      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                        factura ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'
+                      }`}
+                    >
                       {esImagen ? (
                         <img src={url} alt={fileName} className="w-9 h-9 rounded-lg object-cover bg-gray-100 flex-shrink-0" />
                       ) : (
@@ -659,7 +687,26 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                         <p className="text-sm font-medium text-gray-800 truncate" title={fileName}>
                           {fileName}
                         </p>
+                        {factura && (
+                          <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-700">
+                            <i className="ri-bill-line text-[11px]"></i>
+                            Factura
+                          </span>
+                        )}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleFacturaActual(url)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap ${
+                          factura
+                            ? 'bg-amber-600 text-white hover:bg-amber-700'
+                            : 'bg-white border border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-700'
+                        }`}
+                        title={factura ? 'Quitar marca de factura' : 'Marcar como factura'}
+                      >
+                        <i className={factura ? 'ri-checkbox-circle-fill' : 'ri-bill-line'}></i>
+                        Es factura
+                      </button>
                       <a
                         href={url}
                         target="_blank"
@@ -671,7 +718,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                       </a>
                       <button
                         type="button"
-                        onClick={() => quitarDocumentoExistente(url)}
+                        onClick={() => quitarDocumentoExistente(entry)}
                         className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer flex-shrink-0"
                         title="Quitar documento"
                       >
@@ -692,13 +739,13 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                   <span className="text-gray-400 font-normal">— Click para restaurar</span>
                 </p>
                 <div className="space-y-1.5">
-                  {documentosEliminados.map((url, idx) => {
-                    const fileName = extractFileName(url);
+                  {documentosEliminados.map((entry, idx) => {
+                    const fileName = extractFileName(entry.url);
                     return (
                       <button
                         key={`del-${idx}`}
                         type="button"
-                        onClick={() => restaurarDocumento(url)}
+                        onClick={() => restaurarDocumento(entry)}
                         className="w-full flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-left hover:bg-green-50 hover:border-green-200 transition-colors cursor-pointer group"
                       >
                         <i className="ri-delete-back-line text-red-400 group-hover:text-green-500 text-sm"></i>
@@ -753,17 +800,35 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                   <i className="ri-add-circle-line"></i>
                   {nuevosArchivos.length} archivo(s) nuevo(s) para subir
                 </p>
-                {nuevosArchivos.map((file, idx) => {
-                  const { icon, color, bg } = getFileIconFromFile(file.name);
+                {nuevosArchivos.map((item, idx) => {
+                  const { icon, color, bg } = getFileIconFromFile(item.file.name);
                   return (
-                    <div key={`new-${idx}`} className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <div
+                      key={`new-${idx}`}
+                      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                        item.esFactura ? 'bg-amber-100 border-amber-300' : 'bg-amber-50 border-amber-200'
+                      }`}
+                    >
                       <div className={`w-9 h-9 flex items-center justify-center rounded-lg ${bg} flex-shrink-0`}>
                         <i className={`${icon} ${color} text-lg`}></i>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                        <p className="text-xs text-gray-400">{formatFileSize(file.size)}</p>
+                        <p className="text-sm font-medium text-gray-800 truncate">{item.file.name}</p>
+                        <p className="text-xs text-gray-400">{formatFileSize(item.file.size)}</p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleFacturaNuevo(item.id)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap ${
+                          item.esFactura
+                            ? 'bg-amber-600 text-white hover:bg-amber-700'
+                            : 'bg-white border border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-700'
+                        }`}
+                        title={item.esFactura ? 'Quitar marca de factura' : 'Marcar como factura'}
+                      >
+                        <i className={item.esFactura ? 'ri-checkbox-circle-fill' : 'ri-bill-line'}></i>
+                        Es factura
+                      </button>
                       <button
                         type="button"
                         onClick={() => quitarNuevoArchivo(idx)}

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { parseDocEntries, combinarEntradas, type DocEntry } from '@/lib/documentos';
 import { crearNotificacion } from '../../../lib/notificaciones';
 import { hoyLocal } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -195,7 +196,7 @@ export default function Documentacion() {
       // === CONSOLIDAR: merger todas las POs y docs en UN solo ticket ===
 
       const todasLasPOs: string[] = [];
-      const todosLosDocs: string[] = [];
+      const todasLasEntradas: DocEntry[] = [];
       const grupos: any[] = [];
       let algunBL = false;
       let algunTC = false;
@@ -208,21 +209,9 @@ export default function Documentacion() {
           todasLasPOs.push(...pos);
         }
 
-        // Parsear documentos de esta fila
-        let docUrls: string[] = [];
-        if (doc.doc) {
-          if (Array.isArray(doc.doc)) {
-            docUrls = doc.doc;
-          } else if (typeof doc.doc === 'string') {
-            try {
-              const parsed = JSON.parse(doc.doc);
-              docUrls = Array.isArray(parsed) ? parsed : [doc.doc];
-            } catch {
-              docUrls = doc.doc.trim() ? [doc.doc] : [];
-            }
-          }
-          todosLosDocs.push(...docUrls);
-        }
+        // Parsear documentos de esta fila preservando el tipo ({ url, tipo })
+        const entradasFila = parseDocEntries(doc.doc);
+        todasLasEntradas.push(...entradasFila);
 
         if (doc.bl_cargado) algunBL = true;
         if (doc.tc_cargado) algunTC = true;
@@ -238,7 +227,7 @@ export default function Documentacion() {
           bl_cargado: doc.bl_cargado,
           tc_cargado: doc.tc_cargado,
           aplica_tlc: doc.aplica_tlc,
-          doc: docUrls,
+          doc: entradasFila,
           responsable_creacion: doc.responsable_creacion,
           instrucciones_adicionales: doc.instrucciones_adicionales,
           fecha_solicitud: doc.fecha_solicitud,
@@ -256,9 +245,9 @@ export default function Documentacion() {
         });
       }
 
-      // Dedeuplicar
+      // Deduplicar (conservando la marca de factura si existe)
       const poUnicas = [...new Set(todasLasPOs)];
-      const docsUnicos = [...new Set(todosLosDocs)];
+      const entradasConsolidadas = combinarEntradas(todasLasEntradas);
 
       // Usar la metadata del primer documento como base
       const primerDoc = docsCAA[0];
@@ -281,7 +270,7 @@ export default function Documentacion() {
         .insert([{
           ...basePayload,
           po_tiquetera: poUnicas.join(' / '),
-          doc: docsUnicos,
+          doc: entradasConsolidadas,
           bl_cargado: algunBL,
           transito_corto: algunTC,
           aplica_tlc: algunTLC,
@@ -316,7 +305,7 @@ export default function Documentacion() {
           consolidado_por: nombreUsuario,
           cargador_original: cargadorOriginal,
           total_pos: poUnicas.length,
-          total_docs: docsUnicos.length,
+          total_docs: entradasConsolidadas.length,
           pos: poUnicas,
           grupos,
         }
@@ -338,7 +327,7 @@ export default function Documentacion() {
         .delete()
         .in('id', ids);
 
-      setSuccessMessage(`¡Ticket consolidado generado! 1 expediente con ${poUnicas.length} PO(s) y ${docsUnicos.length} documento(s) enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}.`);
+      setSuccessMessage(`¡Ticket consolidado generado! 1 expediente con ${poUnicas.length} PO(s) y ${entradasConsolidadas.length} documento(s) enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}.`);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 5000);
 
@@ -349,7 +338,7 @@ export default function Documentacion() {
         responsable: primerDoc.responsable_creacion || '',
         usuarioGenero: nombreUsuario,
         tipo: 'ticket_creado',
-        mensaje: `${nombreUsuario} consolidó ${docsUnicos.length} documento(s) en 1 ticket para las POs: ${poUnicas.slice(0, 3).join(', ')}${poUnicas.length > 3 ? ' y más' : ''} — enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}`,
+        mensaje: `${nombreUsuario} consolidó ${entradasConsolidadas.length} documento(s) en 1 ticket para las POs: ${poUnicas.slice(0, 3).join(', ')}${poUnicas.length > 3 ? ' y más' : ''} — enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}`,
         icono: 'ri-send-plane-line',
         expedienteId: nuevoExpId,
       });

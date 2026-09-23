@@ -4,8 +4,15 @@ import { crearNotificacion, notificarCargaCAA } from '../../../lib/notificacione
 import { hoyLocal } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
+import type { DocEntry } from '@/lib/documentos';
 
 const USUARIOS_CARGA_CAA = ['lchavala', 'smcdonald', 'mpaniagua'];
+
+interface ArchivoSeleccionado {
+  id: string;
+  file: File;
+  esFactura: boolean;
+}
 
 interface POItem {
   id: string;
@@ -26,7 +33,7 @@ export default function CargaDocumentosCAA() {
   const [blCargado, setBlCargado] = useState(false);
   const [tcCargado, setTcCargado] = useState(false);
   const [aplicaTLC, setAplicaTLC] = useState(false);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<ArchivoSeleccionado[]>([]);
   const [pos, setPos] = useState<POItem[]>([{ id: crypto.randomUUID(), value: '' }]);
   const [isDragging, setIsDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -76,7 +83,10 @@ export default function CargaDocumentosCAA() {
       const ext = f.name.split('.').pop()?.toLowerCase();
       return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
     });
-    setFiles(prev => [...prev, ...droppedFiles]);
+    setFiles(prev => [
+      ...prev,
+      ...droppedFiles.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false })),
+    ]);
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,12 +95,19 @@ export default function CargaDocumentosCAA() {
         const ext = f.name.split('.').pop()?.toLowerCase();
         return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
       });
-      setFiles(prev => [...prev, ...selected]);
+      setFiles(prev => [
+        ...prev,
+        ...selected.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false })),
+      ]);
     }
   };
 
   const removeFile = (index: number) => {
     setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleFactura = (id: string) => {
+    setFiles(prev => prev.map(f => (f.id === id ? { ...f, esFactura: !f.esFactura } : f)));
   };
 
   const addPO = () => {
@@ -216,28 +233,30 @@ export default function CargaDocumentosCAA() {
       }
 
       // Subir archivos a Storage (en paralelo para no subirlos de a uno)
-      const urlsDocumentos = (await Promise.all(
-        files.map(async (file) => {
+      const entradasDocumentos: DocEntry[] = (await Promise.all(
+        files.map(async (item) => {
           const tempId = crypto.randomUUID();
-          const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(file.name)}`;
+          const fileName = `caa/${tempId}/${Date.now()}_${sanitizeFileName(item.file.name)}`;
           const { error: uploadError } = await supabase.storage
             .from('expedientes-documentos')
-            .upload(fileName, file, { cacheControl: '3600', upsert: false });
+            .upload(fileName, item.file, { cacheControl: '3600', upsert: false });
 
           if (uploadError) {
             if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
               throw new Error('El bucket de almacenamiento no está configurado. Crea el bucket "expedientes-documentos" en Supabase Storage.');
             }
-            throw new Error(`Error subiendo ${file.name}: ${uploadError.message}`);
+            throw new Error(`Error subiendo ${item.file.name}: ${uploadError.message}`);
           }
 
           const { data: urlData } = supabase.storage
             .from('expedientes-documentos')
             .getPublicUrl(fileName);
 
-          return urlData?.publicUrl || '';
+          const url = urlData?.publicUrl || '';
+          if (!url) return null;
+          return { url, tipo: item.esFactura ? 'factura' : null } as DocEntry;
         })
-      )).filter((url) => url !== '');
+      )).filter((e): e is DocEntry => e !== null);
 
       // Guardar en Documentación — NO se crea ticket aún
       const ahora = new Date().toISOString();
@@ -259,7 +278,7 @@ export default function CargaDocumentosCAA() {
           dias_entrega: 0,
           fecha_requerimiento: hoy,
           exp_id: 'Por Asignar',
-          doc: urlsDocumentos,
+          doc: entradasDocumentos,
           lineas_oc: 0,
           bl_cargado: blCargado,
           tc_cargado: tcCargado,
@@ -285,7 +304,7 @@ export default function CargaDocumentosCAA() {
           po_tiquetera: posCombinadas,
           usuario: nombreUsuario,
           usuario_email: user?.email || '',
-          accion: `Creó el registro con ${urlsDocumentos.length} documento(s)`,
+          accion: `Creó el registro con ${entradasDocumentos.length} documento(s)`,
           detalle: {
             tipo: 'creacion_inicial',
             modulo: tipoModulo,
@@ -293,10 +312,10 @@ export default function CargaDocumentosCAA() {
             bl_cargado: blCargado,
             tc_cargado: tcCargado,
             aplica_tlc: aplicaTLC,
-            total_documentos: urlsDocumentos.length,
+            total_documentos: entradasDocumentos.length,
           },
           documentos_anteriores: [],
-          documentos_nuevos: urlsDocumentos,
+          documentos_nuevos: entradasDocumentos,
         }]);
       } catch (auditErr: any) {
         console.error('[Auditoría] Error al registrar creación en documento_modificaciones:', auditErr.message || auditErr);
@@ -310,7 +329,7 @@ export default function CargaDocumentosCAA() {
         responsable: nombreUsuario,
         usuarioGenero: nombreUsuario,
         tipo: 'documento_agregado',
-        mensaje: `${nombreUsuario} subió ${urlsDocumentos.length} documento(s) a Repositorio Docs para las POs: ${posValidas.slice(0, 3).join(', ')}${posValidas.length > 3 ? ' y más' : ''} (${tipoModulo === 'dropship' ? 'Dropship' : 'ZF'})`,
+        mensaje: `${nombreUsuario} subió ${entradasDocumentos.length} documento(s) a Repositorio Docs para las POs: ${posValidas.slice(0, 3).join(', ')}${posValidas.length > 3 ? ' y más' : ''} (${tipoModulo === 'dropship' ? 'Dropship' : 'ZF'})`,
         icono: 'ri-file-upload-line',
       });
 
@@ -320,7 +339,7 @@ export default function CargaDocumentosCAA() {
         poTiquetera: posCombinadas,
         usuarioGenero: nombreUsuario,
         tipoModulo: tipoModulo,
-        totalDocumentos: urlsDocumentos.length,
+        totalDocumentos: entradasDocumentos.length,
       });
 
       setSolicitudesCreadas([{ pos: posValidas, id: docCAA.id, modulo: tipoModulo }]);
@@ -655,18 +674,41 @@ export default function CargaDocumentosCAA() {
             {/* Lista de archivos */}
             {files.length > 0 && (
               <div className="mt-4 space-y-2">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{files.length} archivo(s) seleccionado(s)</p>
-                {files.map((file, index) => {
-                  const { icon, color, bg } = getFileIcon(file.name);
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  {files.length} archivo(s) seleccionado(s)
+                  {files.some(f => f.esFactura) && (
+                    <span className="ml-2 text-amber-600">· {files.filter(f => f.esFactura).length} marcado(s) como factura</span>
+                  )}
+                </p>
+                {files.map((item, index) => {
+                  const { icon, color, bg } = getFileIcon(item.file.name);
                   return (
-                    <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div
+                      key={item.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                        item.esFactura ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
                       <div className={`w-8 h-8 flex items-center justify-center rounded-lg ${bg} flex-shrink-0`}>
                         <i className={`${icon} ${color} text-lg`}></i>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
-                        <p className="text-xs text-gray-400">{formatFileSize(file.size)}</p>
+                        <p className="text-sm font-medium text-gray-800 truncate">{item.file.name}</p>
+                        <p className="text-xs text-gray-400">{formatFileSize(item.file.size)}</p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleFactura(item.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap ${
+                          item.esFactura
+                            ? 'bg-amber-600 text-white hover:bg-amber-700'
+                            : 'bg-white border border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-700'
+                        }`}
+                        title={item.esFactura ? 'Quitar marca de factura' : 'Marcar como factura'}
+                      >
+                        <i className={item.esFactura ? 'ri-checkbox-circle-fill' : 'ri-bill-line'}></i>
+                        Es factura
+                      </button>
                       <button
                         type="button"
                         onClick={() => removeFile(index)}

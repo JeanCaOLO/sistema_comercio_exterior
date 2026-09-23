@@ -22,6 +22,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
     { id: 'carga-caa', label: 'Carga CAA', icon: 'ri-file-upload-line' },
     { id: 'documentacion', label: 'Documentación', icon: 'ri-folder-open-line' },
     { id: 'repositorio', label: 'Repositorio Docs', icon: 'ri-archive-line' },
+    { id: 'facturas', label: 'Facturas', icon: 'ri-bill-line' },
     { id: 'configuracion', label: 'Configuración', icon: 'ri-settings-3-line' },
   ];
 

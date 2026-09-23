@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import EditarDocumentoModal from './EditarDocumentoModal';
 import HistorialDocumentoModal from './HistorialDocumentoModal';
+import { parseDocEntries, esFactura } from '@/lib/documentos';
 
 interface ExpedienteRepo {
   id: string;
@@ -169,16 +170,7 @@ export default function RepositorioDocumentacion() {
   const startIndex = filteredDocs.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0;
   const endIndex = Math.min(safePage * ITEMS_PER_PAGE, filteredDocs.length);
 
-  const parseDocUrls = (doc: string | string[] | null): string[] => {
-    if (!doc) return [];
-    if (Array.isArray(doc)) return doc;
-    try {
-      const parsed = JSON.parse(doc);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return doc.trim() ? [doc] : [];
-    }
-  };
+  const parseDocUrls = (doc: string | string[] | null) => parseDocEntries(doc);
 
   // Quién cargó realmente los documentos:
   // - En documentos_caa (staging) el responsable_creacion ES quien subió los docs.
@@ -557,7 +549,9 @@ export default function RepositorioDocumentacion() {
                                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                                     Archivos ({docCount})
                                   </p>
-                                  {docUrls.map((url, idx) => {
+                                  {docUrls.map((entry, idx) => {
+                                    const url = entry.url;
+                                    const factura = esFactura(entry);
                                     const fileName = extractFileName(url);
                                     const { icon, color, bg } = getFileIconFromUrl(url);
                                     const esImagen = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(fileName.split('.').pop()?.toLowerCase() || '');
@@ -566,7 +560,9 @@ export default function RepositorioDocumentacion() {
                                     return (
                                       <div
                                         key={`${doc.id}-file-${idx}`}
-                                        className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200"
+                                        className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                                          factura ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'
+                                        }`}
                                       >
                                         {esImagen ? (
                                           <img src={url} alt={fileName} className="w-9 h-9 rounded-lg object-cover bg-gray-100 flex-shrink-0" />
@@ -580,6 +576,12 @@ export default function RepositorioDocumentacion() {
                                             <span className="text-gray-400 text-xs mr-1.5">#{fileIndex}</span>
                                             {fileName}
                                           </p>
+                                          {factura && (
+                                            <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-700">
+                                              <i className="ri-bill-line text-[11px]"></i>
+                                              Factura
+                                            </span>
+                                          )}
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
                                           <a

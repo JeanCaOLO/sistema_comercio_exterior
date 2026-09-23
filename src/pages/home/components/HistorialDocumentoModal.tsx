@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { parseDocEntries, esFactura, type DocEntry } from '@/lib/documentos';
 
 interface ModificacionRecord {
   id: string;
@@ -11,8 +12,8 @@ interface ModificacionRecord {
   usuario_email: string | null;
   accion: string;
   detalle: any;
-  documentos_anteriores: string[] | null;
-  documentos_nuevos: string[] | null;
+  documentos_anteriores: unknown;
+  documentos_nuevos: unknown;
   created_at: string;
 }
 
@@ -24,7 +25,7 @@ interface HistorialDocumentoModalProps {
   expId: string;
   createdAt: string;
   responsableCreacion: string;
-  documentosIniciales: string[];
+  documentosIniciales: DocEntry[];
 }
 
 const extractFileName = (url: string): string => {
@@ -114,10 +115,12 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
   if (!isOpen) return null;
 
   const cambiosDocs = (mod: ModificacionRecord) => {
-    const anteriores = mod.documentos_anteriores || [];
-    const nuevos = mod.documentos_nuevos || [];
-    const agregados = nuevos.filter((u: string) => !anteriores.includes(u));
-    const eliminados = anteriores.filter((u: string) => !nuevos.includes(u));
+    const anteriores = parseDocEntries(mod.documentos_anteriores);
+    const nuevos = parseDocEntries(mod.documentos_nuevos);
+    const urlsAnteriores = new Set(anteriores.map(e => e.url));
+    const urlsNuevos = new Set(nuevos.map(e => e.url));
+    const agregados = nuevos.filter(e => !urlsAnteriores.has(e.url));
+    const eliminados = anteriores.filter(e => !urlsNuevos.has(e.url));
     return { agregados, eliminados, anteriores, nuevos };
   };
 
@@ -130,11 +133,11 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
   // "foto previa" (documentos_anteriores) de la modificación MÁS ANTIGUA:
   // justo antes del primer cambio es como estaba el registro al crearse.
   // Si no hay modificaciones registradas, el estado inicial es el actual.
-  const documentosCreacion = (() => {
+  const documentosCreacion: DocEntry[] = (() => {
     if (modificaciones.length === 0) return documentosIniciales;
     const masAntigua = modificaciones[modificaciones.length - 1];
-    const anteriores = masAntigua?.documentos_anteriores;
-    if (Array.isArray(anteriores) && anteriores.length > 0) return anteriores;
+    const anteriores = parseDocEntries(masAntigua?.documentos_anteriores);
+    if (anteriores.length > 0) return anteriores;
     return documentosIniciales;
   })();
 
@@ -228,10 +231,16 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
                               Documentos cargados inicialmente ({documentosCreacion.length})
                             </p>
                             <div className="space-y-1.5">
-                              {documentosCreacion.map((url: string, i: number) => (
+                              {documentosCreacion.map((entry, i) => (
                                 <div key={`init-${i}`} className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-lg">
                                   <i className="ri-file-line text-teal-500 text-sm flex-shrink-0"></i>
-                                  <span className="text-xs text-teal-800 truncate">{extractFileName(url)}</span>
+                                  <span className="text-xs text-teal-800 truncate flex-1">{extractFileName(entry.url)}</span>
+                                  {esFactura(entry) && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700 flex-shrink-0">
+                                      <i className="ri-bill-line text-[10px]"></i>
+                                      Factura
+                                    </span>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -327,10 +336,16 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
                                   Agregados ({agregados.length})
                                 </p>
                                 <div className="space-y-1.5">
-                                  {agregados.map((url: string, i: number) => (
+                                  {agregados.map((entry, i) => (
                                     <div key={`add-${i}`} className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
                                       <i className="ri-file-line text-green-500 text-sm flex-shrink-0"></i>
-                                      <span className="text-xs text-green-800 truncate">{extractFileName(url)}</span>
+                                      <span className="text-xs text-green-800 truncate flex-1">{extractFileName(entry.url)}</span>
+                                      {esFactura(entry) && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700 flex-shrink-0">
+                                          <i className="ri-bill-line text-[10px]"></i>
+                                          Factura
+                                        </span>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -344,10 +359,16 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
                                   Eliminados ({eliminados.length})
                                 </p>
                                 <div className="space-y-1.5">
-                                  {eliminados.map((url: string, i: number) => (
+                                  {eliminados.map((entry, i) => (
                                     <div key={`del-${i}`} className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
                                       <i className="ri-file-line text-red-500 text-sm flex-shrink-0"></i>
-                                      <span className="text-xs text-red-800 truncate">{extractFileName(url)}</span>
+                                      <span className="text-xs text-red-800 truncate flex-1">{extractFileName(entry.url)}</span>
+                                      {esFactura(entry) && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700 flex-shrink-0">
+                                          <i className="ri-bill-line text-[10px]"></i>
+                                          Factura
+                                        </span>
+                                      )}
                                     </div>
                                   ))}
                                 </div>

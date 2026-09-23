@@ -24,6 +24,7 @@ export const MODULOS: Modulo[] = [
   { id: 'carga-caa', nombre: 'Carga CAA', icon: 'ri-file-upload-line' },
   { id: 'documentacion', nombre: 'Documentación', icon: 'ri-folder-open-line' },
   { id: 'repositorio', nombre: 'Repositorio Docs', icon: 'ri-archive-line' },
+  { id: 'facturas', nombre: 'Facturas', icon: 'ri-bill-line' },
   { id: 'configuracion', nombre: 'Configuración', icon: 'ri-settings-3-line' },
 ];
 
@@ -40,14 +41,14 @@ export const ROLES: Rol[] = [
 export const PERMISOS_DEFAULT: MatrizPermisos = {
   'Administrador': [
     'dashboard', 'gestion-dropship', 'gestion-zf', 'lista-expedientes',
-    'reportes', 'carga-caa', 'documentacion', 'repositorio', 'configuracion'
+    'reportes', 'carga-caa', 'documentacion', 'repositorio', 'facturas', 'configuracion'
   ],
-  'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
+  'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
+  'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Bodega': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Documentos': ['lista-expedientes', 'carga-caa', 'repositorio'],
-  'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Solicitante': ['carga-caa', 'documentacion', 'repositorio'],
+  'Documentos': ['lista-expedientes', 'carga-caa', 'repositorio', 'facturas'],
+  'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
+  'Solicitante': ['carga-caa', 'documentacion', 'repositorio', 'facturas'],
 };
 
 const CLAVE_PERMISOS = 'matriz_permisos';
