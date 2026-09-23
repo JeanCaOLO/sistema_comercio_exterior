@@ -5,17 +5,16 @@ import { parseDocEntries, esFactura, nombreDeArchivo } from '@/lib/documentos';
 interface FacturaRow {
   key: string;
   po: string;
-  modulo: string;
-  solicitante: string;
-  fecha: string;
-  expId: string;
+  ruta: string;
   estado: string;
+  expId: string;
   origen: 'cca' | 'expediente';
   url: string;
   fileName: string;
 }
 
 const ITEMS_PER_PAGE = 25;
+const TODAS_LAS_RUTAS = 'Todas';
 
 function getFileIcon(fileName: string) {
   const name = fileName.toLowerCase();
@@ -27,12 +26,40 @@ function getFileIcon(fileName: string) {
   return { icon: 'ri-file-line', color: 'text-gray-500', bg: 'bg-gray-50' };
 }
 
+// Colores de los estados que se manejan en el kanban de expedientes.
+function getEstadoStyle(estado: string) {
+  switch (estado) {
+    case 'No Asignado':
+      return 'bg-gray-100 text-gray-700';
+    case 'Asignado':
+      return 'bg-amber-100 text-amber-800';
+    case 'En Proceso':
+      return 'bg-orange-100 text-orange-800';
+    case 'Espera de Respuesta':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'Liberación':
+      return 'bg-teal-100 text-teal-800';
+    case 'Recepción de Carga':
+      return 'bg-cyan-100 text-cyan-800';
+    case 'Facturación':
+      return 'bg-rose-100 text-rose-800';
+    case 'Notificado':
+      return 'bg-lime-100 text-lime-800';
+    case 'Visto Listo':
+      return 'bg-green-100 text-green-800';
+    case 'Completado':
+      return 'bg-emerald-100 text-emerald-800';
+    default:
+      return 'bg-gray-100 text-gray-600';
+  }
+}
+
 export default function Facturas() {
   const [rows, setRows] = useState<FacturaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filtroModulo, setFiltroModulo] = useState('Todos');
+  const [searchPO, setSearchPO] = useState('');
+  const [filtroRuta, setFiltroRuta] = useState(TODAS_LAS_RUTAS);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -42,7 +69,7 @@ export default function Facturas() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filtroModulo]);
+  }, [searchPO, filtroRuta]);
 
   const cargarFacturas = async () => {
     setLoading(true);
@@ -51,11 +78,11 @@ export default function Facturas() {
       const [resCAA, resExp] = await Promise.all([
         supabase
           .from('documentos_caa')
-          .select('id, po_tiquetera, tipo_modulo, solicitante, doc, exp_id, estado_expediente, created_at')
+          .select('id, po_tiquetera, tipo_po, doc, exp_id, estado_expediente, created_at')
           .order('created_at', { ascending: false }),
         supabase
           .from('expedientes')
-          .select('id, po_tiquetera, tipo_modulo, solicitante, doc, exp_id, estado_expediente, created_at')
+          .select('id, po_tiquetera, tipo_po, doc, exp_id, estado_expediente, created_at')
           .order('created_at', { ascending: false }),
       ]);
 
@@ -70,11 +97,9 @@ export default function Facturas() {
             filas.push({
               key: `${origen}-${d.id}-${idx}`,
               po: d.po_tiquetera || '—',
-              modulo: d.tipo_modulo === 'dropship' ? 'Dropship' : 'ZF',
-              solicitante: d.solicitante || '—',
-              fecha: d.created_at || '',
-              expId: d.exp_id || '—',
+              ruta: d.tipo_po || '—',
               estado: d.estado_expediente || '—',
+              expId: d.exp_id || '—',
               origen,
               url: f.url,
               fileName: nombreDeArchivo(f.url),
@@ -87,7 +112,7 @@ export default function Facturas() {
       const combinadas = [
         ...construirFilas(resCAA.data as any[], 'cca'),
         ...construirFilas(resExp.data as any[], 'expediente'),
-      ].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      ];
 
       setRows(combinadas);
     } catch (err: any) {
@@ -121,27 +146,15 @@ export default function Facturas() {
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleDateString('es-ES', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const rutasDisponibles = Array.from(
+    new Set(rows.map((r) => r.ruta).filter((r) => r && r !== '—'))
+  ).sort();
 
   const filtradas = rows.filter((row) => {
-    if (filtroModulo !== 'Todos' && row.modulo.toLowerCase() !== filtroModulo.toLowerCase()) return false;
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      return (
-        row.po.toLowerCase().includes(term) ||
-        row.solicitante.toLowerCase().includes(term) ||
-        row.expId.toLowerCase().includes(term) ||
-        row.fileName.toLowerCase().includes(term)
-      );
+    if (filtroRuta !== TODAS_LAS_RUTAS && row.ruta !== filtroRuta) return false;
+    if (searchPO.trim()) {
+      const term = searchPO.trim().toLowerCase();
+      if (!row.po.toLowerCase().includes(term)) return false;
     }
     return true;
   });
@@ -152,7 +165,8 @@ export default function Facturas() {
   const startIndex = filtradas.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0;
   const endIndex = Math.min(safePage * ITEMS_PER_PAGE, filtradas.length);
 
-  const totalGrupos = new Set(rows.map((r) => r.po)).size;
+  const totalPOs = new Set(rows.map((r) => r.po)).size;
+  const totalRutas = rutasDisponibles.length;
 
   if (loading) {
     return (
@@ -176,7 +190,7 @@ export default function Facturas() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Facturas</h1>
-            <p className="text-gray-500 text-sm">Archivos marcados como factura al subirlos o desde Repositorio → Editar</p>
+            <p className="text-gray-500 text-sm">Facturas con su PO, ruta logística y estado del kanban</p>
           </div>
         </div>
       </div>
@@ -217,19 +231,19 @@ export default function Facturas() {
                 <i className="ri-file-text-line text-teal-600 text-lg"></i>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{totalGrupos}</p>
-                <p className="text-xs text-gray-500">Grupo(s)/PO con factura</p>
+                <p className="text-2xl font-bold text-gray-900">{totalPOs}</p>
+                <p className="text-xs text-gray-500">PO(s) con factura</p>
               </div>
             </div>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 flex items-center justify-center bg-gray-100 rounded-lg">
-                <i className="ri-filter-3-line text-gray-600 text-lg"></i>
+              <div className="w-10 h-10 flex items-center justify-center bg-orange-50 rounded-lg">
+                <i className="ri-route-line text-orange-600 text-lg"></i>
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{filtradas.length}</p>
-                <p className="text-xs text-gray-500">Resultado(s) con filtros</p>
+                <p className="text-2xl font-bold text-gray-900">{totalRutas}</p>
+                <p className="text-xs text-gray-500">Ruta(s) logística(s)</p>
               </div>
             </div>
           </div>
@@ -245,7 +259,7 @@ export default function Facturas() {
           <h3 className="text-xl font-bold text-gray-800 mb-2">Todavía no hay facturas marcadas</h3>
           <p className="text-gray-500 max-w-md mx-auto">
             Marcá el toggle <strong>"Es factura"</strong> al subir archivos en <strong>Carga CAA</strong>, o editalos desde
-            <strong> Repositorio Docs</strong>. Acá vas a ver todos los archivos de factura con opción de ver y descargar.
+            <strong> Repositorio Docs</strong>. Acá vas a ver todas las facturas con su PO, ruta y estado.
           </p>
         </div>
       )}
@@ -259,24 +273,27 @@ export default function Facturas() {
                 <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
                 <input
                   type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Buscar por PO, EXP ID, solicitante o archivo..."
+                  value={searchPO}
+                  onChange={(e) => setSearchPO(e.target.value)}
+                  placeholder="Buscar por PO..."
                   className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                 />
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-gray-500 whitespace-nowrap">Módulo:</span>
+              <span className="text-xs font-medium text-gray-500 whitespace-nowrap">Ruta:</span>
               <select
-                value={filtroModulo}
-                onChange={(e) => setFiltroModulo(e.target.value)}
-                className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent cursor-pointer"
+                value={filtroRuta}
+                onChange={(e) => setFiltroRuta(e.target.value)}
+                className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent cursor-pointer max-w-[280px]"
               >
-                <option value="Todos">Todos</option>
-                <option value="Dropship">Dropship</option>
-                <option value="ZF">ZF</option>
+                <option value={TODAS_LAS_RUTAS}>Todas las rutas</option>
+                {rutasDisponibles.map((ruta) => (
+                  <option key={ruta} value={ruta}>
+                    {ruta}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -293,24 +310,21 @@ export default function Facturas() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">POs Asociadas</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">EXP ID</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Módulo</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Estado</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Solicitante</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Archivo de factura</th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Acciones</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Factura</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">PO</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Ruta Logística</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Estado (Kanban)</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {paginadas.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-12 text-center">
+                      <td colSpan={5} className="px-4 py-12 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <i className="ri-file-search-line text-4xl text-gray-300"></i>
                           <p className="text-gray-500 font-medium">No se encontraron facturas con esos filtros</p>
-                          <p className="text-gray-400 text-sm">Probá ajustando la búsqueda o el módulo</p>
+                          <p className="text-gray-400 text-sm">Probá ajustando el PO o la ruta</p>
                         </div>
                       </td>
                     </tr>
@@ -321,35 +335,12 @@ export default function Facturas() {
                       return (
                         <tr key={row.key} className="hover:bg-gray-50 transition-colors">
                           <td className="px-4 py-3">
-                            <div className="text-sm font-semibold text-gray-900">{row.po}</div>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <span className="text-xs text-gray-500 font-mono">{row.expId}</span>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              row.modulo === 'Dropship' ? 'bg-teal-100 text-teal-800' : 'bg-sky-100 text-sky-800'
-                            }`}>
-                              <i className={row.modulo === 'Dropship' ? 'ri-ship-line' : 'ri-building-line'}></i>
-                              {row.modulo}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <span className="text-xs text-gray-600">{row.estado}</span>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <span className="text-sm text-gray-700">{row.solicitante}</span>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <span className="text-xs text-gray-500">{formatDate(row.fecha)}</span>
-                          </td>
-                          <td className="px-3 py-3">
                             <div className="flex items-center gap-2.5">
                               <div className={`w-9 h-9 flex items-center justify-center rounded-lg ${bg} flex-shrink-0`}>
                                 <i className={`${icon} ${color} text-lg`}></i>
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-800 truncate max-w-[220px]" title={row.fileName}>
+                                <p className="text-sm font-medium text-gray-800 truncate max-w-[280px]" title={row.fileName}>
                                   {row.fileName}
                                 </p>
                                 <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-700">
@@ -359,7 +350,22 @@ export default function Facturas() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-3 py-3 text-center whitespace-nowrap">
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="text-sm font-semibold text-gray-900">{row.po}</span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-800">
+                              <i className="ri-route-line"></i>
+                              {row.ruta}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${getEstadoStyle(row.estado)}`}>
+                              <i className="ri-kanban-view"></i>
+                              {row.estado}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
                             <div className="inline-flex items-center gap-2">
                               <a
                                 href={row.url}
