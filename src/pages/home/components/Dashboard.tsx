@@ -6,6 +6,8 @@ import BarChartTiempos from './BarChartTiempos';
 import ProgressBar from './ProgressBar';
 import TopMotivosEspera from './TopMotivosEspera';
 import ModalDetalleMcg, { FilaCreacionMcg, FilaEtdMcg } from './ModalDetalleMcg';
+import SeccionKpisDropship from './SeccionKpisDropship';
+import SeccionKpisMcg from './SeccionKpisMcg';
 import { supabase } from '../../../lib/supabase';
 import { formatearFechaCorta, parseFechaSegura, diasHabilesEntre } from '../../../lib/fechas';
 import { descargarExcel } from '../../../lib/exportar';
@@ -2055,171 +2057,16 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI Dropship: Notificado → OK País */}
-      <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-6 mb-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 flex items-center justify-center bg-amber-500 rounded-xl">
-            <i className="ri-checkbox-circle-line text-white text-2xl"></i>
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-gray-900">KPIs de Expedientes Dropship</h3>
-            <p className="text-sm text-gray-600">Indicadores clave para expedientes Dropship</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Contador OK País (Notificado + Visto Listo) */}
-          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-green-100">
-                  <i className="ri-flag-line text-2xl text-green-600"></i>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">Entregados con OK País</h4>
-                  <p className="text-xs text-gray-500 mt-1">Notificados y Visto Listo cerrados con éxito</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-5xl font-bold text-green-600">{notificadoOkPais}</span>
-              <span className="text-lg text-gray-500">expedientes</span>
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-green-500 h-2 rounded-full transition-all"
-                    style={{ width: (estadoDataDropship.notificado + (expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length)) > 0 ? `${Math.min(100, (notificadoOkPais / (estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length)) * 100)}%` : '0%' }}
-                  ></div>
-                </div>
-                <span className="text-xs text-gray-600 font-medium whitespace-nowrap">
-                  {(estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length) > 0
-                    ? `${Math.round((notificadoOkPais / (estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length)) * 100)}% de entregados`
-                    : '0% de entregados'}
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                {estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length} en Notificado / Visto Listo en el período
-              </p>
-            </div>
-          </div>
-
-          {/* Expedientes con Tránsito Corto */}
-          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-amber-100">
-                  <i className="ri-speed-line text-2xl text-amber-600"></i>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">Tránsito Corto</h4>
-                  <p className="text-xs text-gray-500 mt-1">Dropship con tránsito corto</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-5xl font-bold text-amber-600">
-                {expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.transito_corto === true).length}
-              </span>
-              <span className="text-lg text-gray-500">expedientes</span>
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500">
-                Del total de {estadoDataDropship.total} expedientes Dropship en el período
-              </p>
-            </div>
-          </div>
-
-          {/* Pendientes de OK País */}
-          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-orange-100">
-                  <i className="ri-hourglass-line text-2xl text-orange-600"></i>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">Pendientes de OK País</h4>
-                  <p className="text-xs text-gray-500 mt-1">Entregados sin marca de cierre</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-5xl font-bold text-orange-600">
-                {(() => {
-                  const totalEntregados = estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length;
-                  return Math.max(0, totalEntregados - notificadoOkPais);
-                })()}
-              </span>
-              <span className="text-lg text-gray-500">expedientes</span>
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500">
-                Requieren marca de cierre "OK País"
-              </p>
-            </div>
-          </div>
-
-          {/* KPI ETD vs Notificado */}
-          <div className={`bg-white rounded-xl p-6 border-2 hover:shadow-lg transition-shadow ${
-            kpiEtdNotificado.fueraRango > 0 ? 'border-red-300' : 'border-gray-200'
-          }`}>
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 flex items-center justify-center rounded-lg ${
-                  kpiEtdNotificado.fueraRango > 0 ? 'bg-red-100' : 'bg-teal-100'
-                }`}>
-                  <i className={`ri-ship-line text-2xl ${
-                    kpiEtdNotificado.fueraRango > 0 ? 'text-red-600' : 'text-teal-600'
-                  }`}></i>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">ETD → Notificado</h4>
-                  <p className="text-xs text-gray-500 mt-1">Meta: ≤ {META_ETD_DIAS} días hábiles entre ETD y Notificado</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className={`text-5xl font-bold ${
-                kpiEtdNotificado.fueraRango > 0 ? 'text-red-600' : 'text-teal-600'
-              }`}>
-                {kpiEtdNotificado.dentroRango}
-              </span>
-              <span className="text-lg text-gray-500">OK / {kpiEtdNotificado.totalEvaluados}</span>
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-gray-200 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all ${
-                      kpiEtdNotificado.porcentajeOk >= 80 ? 'bg-teal-500' :
-                      kpiEtdNotificado.porcentajeOk >= 50 ? 'bg-amber-500' : 'bg-red-500'
-                    }`}
-                    style={{ width: `${kpiEtdNotificado.porcentajeOk}%` }}
-                  ></div>
-                </div>
-                <span className="text-xs text-gray-600 font-medium whitespace-nowrap">
-                  {kpiEtdNotificado.porcentajeOk}% OK
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                {kpiEtdNotificado.fueraRango > 0
-                  ? `${kpiEtdNotificado.fueraRango} expediente${kpiEtdNotificado.fueraRango !== 1 ? 's' : ''} fuera del KPI (promedio ${kpiEtdNotificado.promedioDias} días)`
-                  : kpiEtdNotificado.totalEvaluados > 0
-                  ? `Todos dentro del rango (promedio ${kpiEtdNotificado.promedioDias} días)`
-                  : 'Sin datos para evaluar'}
-              </p>
-              <button
-                onClick={() => setShowReporteEtd(true)}
-                className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-100 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
-              >
-                <i className="ri-file-chart-line"></i>
-                Ver detalle de POs
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* =========== KPIs de Expedientes Dropship & ETD → Notificado =========== */}
+      <SeccionKpisDropship
+        kpiEtdNotificado={kpiEtdNotificado}
+        metaEtdDias={META_ETD_DIAS}
+        onVerDetalleEtd={() => setShowReporteEtd(true)}
+        notificadoOkPais={notificadoOkPais}
+        totalEntregados={estadoDataDropship.notificado + expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.estado_expediente === 'Visto Listo').length}
+        transitoCorto={expedientes.filter(e => (e.tipo_modulo || '').toLowerCase() === 'dropship' && e.transito_corto === true).length}
+        totalDropship={estadoDataDropship.total}
+      />
 
       {/* =========== KPI: Duración Promedio Asignado → Notificado =========== */}
       <div className="bg-gradient-to-br from-sky-50 to-cyan-50 border border-sky-200 rounded-xl p-6 mb-8">
@@ -2288,114 +2135,17 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* =========== KPIs MCG (Dropship con MCG) =========== */}
-      <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-200 rounded-xl p-6 mb-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 flex items-center justify-center bg-indigo-500 rounded-xl">
-            <i className="ri-shield-star-line text-white text-2xl"></i>
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-gray-900">KPIs MCG</h3>
-            <p className="text-sm text-gray-600">Expedientes Dropship marcados con MCG — evaluados por separado y excluidos de los KPIs generales</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Creación de expediente */}
-          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-indigo-100">
-                  <i className="ri-file-add-line text-2xl text-indigo-600"></i>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">Creación de Expediente</h4>
-                  <p className="text-xs text-gray-500 mt-1">Asignado → liberación · Meta: ≤ 2 días hábiles</p>
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-gray-800">{kpiMcgCreacion.totalEvaluados}</p>
-                <p className="text-xs text-gray-500">Evaluados</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-teal-600">{kpiMcgCreacion.cumplen}</p>
-                <p className="text-xs text-gray-500">Cumplen (≤2d)</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className={`text-2xl font-bold ${kpiMcgCreacion.noCumplen > 0 ? 'text-red-600' : 'text-gray-400'}`}>{kpiMcgCreacion.noCumplen}</p>
-                <p className="text-xs text-gray-500">No cumplen</p>
-              </div>
-            </div>
-            <div className="mt-3 bg-gray-200 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all duration-700 ${kpiMcgCreacion.porcentajeCumplimiento >= 80 ? 'bg-teal-500' : kpiMcgCreacion.porcentajeCumplimiento >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-                style={{ width: `${kpiMcgCreacion.porcentajeCumplimiento}%` }}
-              ></div>
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-xs text-gray-500">Promedio: <strong>{kpiMcgCreacion.diasPromedio} días</strong></span>
-              <span className="text-xs font-semibold text-gray-600">{kpiMcgCreacion.porcentajeCumplimiento}% cumple</span>
-            </div>
-            <button
-              onClick={() => setShowMcgCreacionDetalle(true)}
-              disabled={mcgCreacionDetalle.length === 0}
-              className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <i className="ri-file-chart-line"></i>
-              Ver detalle de POs
-            </button>
-          </div>
-
-          {/* ETD → Notificado */}
-          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-indigo-100">
-                  <i className="ri-ship-line text-2xl text-indigo-600"></i>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">ETD → Notificado</h4>
-                  <p className="text-xs text-gray-500 mt-1">Meta: &lt; 2 días hábiles entre ETD y Notificado</p>
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-gray-800">{kpiMcgEtdNotificado.totalEvaluados}</p>
-                <p className="text-xs text-gray-500">Evaluados</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-bold text-teal-600">{kpiMcgEtdNotificado.dentroRango}</p>
-                <p className="text-xs text-gray-500">Dentro (&lt;2d)</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3 text-center">
-                <p className={`text-2xl font-bold ${kpiMcgEtdNotificado.fueraRango > 0 ? 'text-red-600' : 'text-gray-400'}`}>{kpiMcgEtdNotificado.fueraRango}</p>
-                <p className="text-xs text-gray-500">Fuera</p>
-              </div>
-            </div>
-            <div className="mt-3 bg-gray-200 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all duration-700 ${kpiMcgEtdNotificado.porcentajeOk >= 80 ? 'bg-teal-500' : kpiMcgEtdNotificado.porcentajeOk >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-                style={{ width: `${kpiMcgEtdNotificado.porcentajeOk}%` }}
-              ></div>
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-xs text-gray-500">Promedio: <strong>{kpiMcgEtdNotificado.promedioDias} días</strong></span>
-              <span className="text-xs font-semibold text-gray-600">{kpiMcgEtdNotificado.porcentajeOk}% OK</span>
-            </div>
-            <button
-              onClick={() => setShowMcgEtdDetalle(true)}
-              disabled={mcgEtdDetalle.length === 0}
-              className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <i className="ri-file-chart-line"></i>
-              Ver detalle de POs
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* =========== KPIs MCG =========== */}
+      <SeccionKpisMcg
+        creacion={kpiMcgCreacion}
+        etd={kpiMcgEtdNotificado}
+        metaCreacionDias={META_MCG_CREACION_DIAS}
+        metaEtdDias={META_MCG_ETD_DIAS}
+        onVerDetalleCreacion={() => setShowMcgCreacionDetalle(true)}
+        onVerDetalleEtd={() => setShowMcgEtdDetalle(true)}
+        disabledCreacion={mcgCreacionDetalle.length === 0}
+        disabledEtd={mcgEtdDetalle.length === 0}
+      />
 
       {/* =========== MOTIVOS DE ESPERA DE RESPUESTA (DROPSHIP) =========== */}
       <TopMotivosEspera />
