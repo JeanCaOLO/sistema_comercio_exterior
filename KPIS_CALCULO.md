@@ -4,7 +4,7 @@ Documento de referencia técnica. Explica **cómo se calcula cada indicador**, t
 **Dashboard de Control** como en la sección de **Reportes**.
 
 > Toda la lógica descrita aquí vive en:
-> - Dashboard: `src/pages/home/components/Dashboard.tsx`, `SeccionKpisDropship.tsx`, `SeccionKpisMcg.tsx`, `TopMotivosEspera.tsx`
+> - Dashboard: `src/pages/home/components/Dashboard.tsx`, `SeccionKpisDropship.tsx`, `SeccionKpisMcg.tsx`, `SeccionKpisZf.tsx`, `TopMotivosEspera.tsx`
 > - Reportes: `ReporteAtrasos.tsx`, `ReporteCiclo.tsx`, `ReporteRuta.tsx`
 > - Utilidades de fecha: `src/lib/fechas.ts`
 
@@ -233,16 +233,23 @@ promedio = round( suma(días) / totalEvaluados * 10 ) / 10
 
 **Meta: menos de 15 días hábiles.**
 
-- Universidad: expedientes ZF.
+- Universo: expedientes ZF.
 - **Inicio** = `created_at`.
-- **Fin** = primera vez que llegó a `Espera de Respuesta` (de `expedientes_tiempos_estados` usando
-  `fecha_fin`; fallback: historial de cambios).
+- **Fin** = primera vez que **ENTRÓ** a `Espera de Respuesta`. Se toma de
+  `expedientes_tiempos_estados` (filas con `estado_nuevo = 'Espera de Respuesta'`) usando
+  **`fecha_inicio`** (el momento de entrada al estado). Si falta, se usa el historial de cambios
+  (`valor_nuevo = 'Espera de Respuesta'`).
+- Se incluyen también los tickets que **siguen** en `Espera de Respuesta` (no se exige que tengan
+  fecha de salida).
 - `días = diasHabiles(created_at, fechaEspera)`.
 
 ```txt
 días promedio = round( suma(días) / nº registros * 10 ) / 10
 cumpleMeta    = días promedio < 15
 ```
+
+> El botón **Ver detalle de POs** muestra el desglose por ticket (PO, EXP ID, solicitante, fecha
+> de creación, fecha de entrada a Espera de Respuesta, días y si cumple la meta), con descarga a Excel.
 
 > Internamente también se calcula el **promedio ZF Creación → Completado** (inicio `created_at`,
 > fin llegada a `Completado`) bajo las mismas reglas de días hábiles.

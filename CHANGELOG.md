@@ -336,4 +336,14 @@ Los tres checkboxes se guardan en la base de datos, se registran en el historial
 
 ---
 
+## 📊 Corrección del KPI ZF "Creado → Espera de Respuesta" (223)
+
+223. **Cálculo corregido y detalle por PO** — El KPI **ZF "Creado → Espera de Respuesta"** (meta: menos de 15 días hábiles) estaba midiendo mal el tiempo: usaba la **fecha de salida** de "Espera de Respuesta" en lugar de la **fecha de entrada**, así que sumaba todo el tiempo que el ticket estuvo esperando y el resultado salía inflado (por eso marcaba "No Cumple" aunque varios tickets sí cumplían). Ahora:
+- Se usa la **fecha en que el ticket ENTRA a "Espera de Respuesta"**, igual que el resto de KPIs de la app.
+- Se **incluyen los tickets que todavía siguen** en "Espera de Respuesta" (antes quedaban excluidos).
+- Se agregó un botón **"Ver detalle de POs"** que abre un modal con el desglose por ticket (PO, EXP ID, solicitante, fecha de creación, fecha de entrada a Espera de Respuesta, días y si cumple la meta), con resumen (total / cumplen / no cumplen / promedio) y **descarga a Excel**.
+- La sección se extrajo a un componente propio (`SeccionKpisZf`) para aligerar el Dashboard.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

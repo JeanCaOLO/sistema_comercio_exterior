@@ -8,6 +8,7 @@ import TopMotivosEspera from './TopMotivosEspera';
 import ModalDetalleMcg, { FilaCreacionMcg, FilaEtdMcg } from './ModalDetalleMcg';
 import SeccionKpisDropship from './SeccionKpisDropship';
 import SeccionKpisMcg from './SeccionKpisMcg';
+import SeccionKpisZf, { FilaZfDetalle } from './SeccionKpisZf';
 import { supabase } from '../../../lib/supabase';
 import { formatearFechaCorta, parseFechaSegura, diasHabilesEntre } from '../../../lib/fechas';
 import { descargarExcel } from '../../../lib/exportar';
@@ -135,9 +136,16 @@ export default function Dashboard() {
 
   const [loading, setLoading] = useState(true);
 
-  const [kpisZF, setKpisZF] = useState({
-    creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
+  const [kpisZF, setKpisZF] = useState<{
+    creadoAEsperaRespuesta: { dias: number; cumpleMeta: boolean };
+    detalle: FilaZfDetalle[];
+  }>({
+    creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
+    detalle: []
   });
+
+  // Meta ZF: Creación → Espera de Respuesta
+  const META_ZF_DIAS = 15;
 
   const [kpiDsPromedioNotificado, setKpiDsPromedioNotificado] = useState<number>(0);
   const [kpiZfPromedioCompletado, setKpiZfPromedioCompletado] = useState<number>(0);
@@ -697,7 +705,8 @@ export default function Dashboard() {
     try {
       if (!expZF || expZF.length === 0) {
         setKpisZF({
-          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
+          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
+          detalle: []
         });
         return;
       }
@@ -710,87 +719,85 @@ export default function Dashboard() {
         createdMap[exp.id] = exp.created_at;
       });
 
-      // ── Intento 1: tiempos de estados ──
-      let tiemposCreadoAEspera: { expediente_id: string; fechaEspera: string }[] = [];
+      // Mapa: expediente_id → primera fecha en que ENTRÓ a «Espera de Respuesta»
+      const fechaEsperaPorExp: Record<string, string> = {};
 
+      // ── Intento 1: tiempos de estados ──
+      // Para una fila con estado_nuevo = «Espera de Respuesta», fecha_inicio es
+      // el momento en que el ticket ENTRÓ a ese estado (fecha_fin sería la salida).
       const { data: tiempos, error: errorTiempos } = await supabase
         .from('expedientes_tiempos_estados')
-        .select('expediente_id, estado_nuevo, fecha_fin')
-        .in('expediente_id', expedienteIds)
-        .not('fecha_fin', 'is', null);
+        .select('expediente_id, estado_nuevo, fecha_inicio')
+        .in('expediente_id', expedienteIds);
 
       if (!errorTiempos && tiempos && tiempos.length > 0) {
-        const filtrados = tiempos.filter((t: any) => {
-          const destino = (t.estado_nuevo || '').trim().toLowerCase();
-          return destino === 'espera de respuesta';
-        });
-
-        // Primera vez que llegó a Espera de Respuesta por ticket
-        const primeraPorExp: Record<string, string> = {};
-        filtrados.forEach((t: any) => {
-          if (!primeraPorExp[t.expediente_id] || t.fecha_fin < primeraPorExp[t.expediente_id]) {
-            primeraPorExp[t.expediente_id] = t.fecha_fin;
-          }
-        });
-
-        Object.entries(primeraPorExp).forEach(([expId, fechaEspera]) => {
-          tiemposCreadoAEspera.push({ expediente_id: expId, fechaEspera });
-        });
+        tiempos
+          .filter((t: any) => (t.estado_nuevo || '').trim().toLowerCase() === 'espera de respuesta')
+          .forEach((t: any) => {
+            if (!t.fecha_inicio) return;
+            if (!fechaEsperaPorExp[t.expediente_id] || t.fecha_inicio < fechaEsperaPorExp[t.expediente_id]) {
+              fechaEsperaPorExp[t.expediente_id] = t.fecha_inicio;
+            }
+          });
       }
 
-      // ── Intento 2 (fallback): historial de cambios ──
-      if (tiemposCreadoAEspera.length === 0) {
+      // ── Intento 2 (fallback): historial de cambios, solo para los que falten ──
+      const faltantes = expedienteIds.filter((id: string) => !fechaEsperaPorExp[id]);
+      if (faltantes.length > 0) {
         const { data: historial, error: errorHistorial } = await supabase
           .from('expedientes_historial')
           .select('expediente_id, campo_modificado, valor_nuevo, fecha_cambio')
-          .in('expediente_id', expedienteIds)
+          .in('expediente_id', faltantes)
           .eq('campo_modificado', 'Estado');
 
         if (!errorHistorial && historial && historial.length > 0) {
-          const filtrados = historial.filter((h: any) => {
-            const destino = (h.valor_nuevo || '').trim().toLowerCase();
-            return destino === 'espera de respuesta';
-          });
-
-          // Primera vez que llegó a Espera de Respuesta por ticket
-          const primeraPorExp: Record<string, string> = {};
-          filtrados.forEach((h: any) => {
-            if (!primeraPorExp[h.expediente_id] || h.fecha_cambio < primeraPorExp[h.expediente_id]) {
-              primeraPorExp[h.expediente_id] = h.fecha_cambio;
-            }
-          });
-
-          Object.entries(primeraPorExp).forEach(([expId, fechaEspera]) => {
-            tiemposCreadoAEspera.push({ expediente_id: expId, fechaEspera });
-          });
+          historial
+            .filter((h: any) => (h.valor_nuevo || '').trim().toLowerCase() === 'espera de respuesta')
+            .forEach((h: any) => {
+              if (!fechaEsperaPorExp[h.expediente_id] || h.fecha_cambio < fechaEsperaPorExp[h.expediente_id]) {
+                fechaEsperaPorExp[h.expediente_id] = h.fecha_cambio;
+              }
+            });
         }
       }
 
-      // ── Calcular días desde creación hasta Espera de Respuesta ──
-      const diasPorExpediente: number[] = [];
-      tiemposCreadoAEspera.forEach(({ expediente_id: expId, fechaEspera }) => {
-        const fechaCreacion = createdMap[expId];
-        if (!fechaCreacion) return;
+      // ── Detalle por expediente + promedio ──
+      const detalle: FilaZfDetalle[] = [];
+      expZF.forEach(exp => {
+        const fechaEspera = fechaEsperaPorExp[exp.id];
+        const fechaCreacion = createdMap[exp.id];
+        if (!fechaEspera || !fechaCreacion) return;
         const dias = diasHabilesEntre(fechaCreacion, fechaEspera);
-        diasPorExpediente.push(dias);
+        detalle.push({
+          id: exp.id,
+          po_tiquetera: exp.po_tiquetera,
+          exp_id: exp.exp_id || '',
+          solicitante: exp.solicitante || '',
+          fechaCreacion,
+          fechaEspera,
+          dias: Math.round(dias * 10) / 10,
+          cumpleMeta: dias < META_ZF_DIAS
+        });
       });
 
       let diasPromedioCreadoAEspera = 0;
-      if (diasPorExpediente.length > 0) {
-        const totalDias = diasPorExpediente.reduce((sum, d) => sum + d, 0);
-        diasPromedioCreadoAEspera = Math.round((totalDias / diasPorExpediente.length) * 10) / 10;
+      if (detalle.length > 0) {
+        const totalDias = detalle.reduce((sum, d) => sum + d.dias, 0);
+        diasPromedioCreadoAEspera = Math.round((totalDias / detalle.length) * 10) / 10;
       }
 
       setKpisZF({
         creadoAEsperaRespuesta: {
           dias: diasPromedioCreadoAEspera,
-          cumpleMeta: diasPorExpediente.length > 0 && diasPromedioCreadoAEspera < 15
-        }
+          cumpleMeta: detalle.length > 0 && diasPromedioCreadoAEspera < META_ZF_DIAS
+        },
+        detalle: detalle.sort((a, b) => b.dias - a.dias)
       });
     } catch (error) {
       console.error('Error al cargar KPIs de ZF:', error);
       setKpisZF({
-        creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
+        creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
+        detalle: []
       });
     }
   };
@@ -1155,7 +1162,8 @@ export default function Dashboard() {
           minutosPromedio: { mesAnterior: '0%', anoAnterior: '0%' }
         });
         setKpisZF({
-          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true }
+          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
+          detalle: []
         });
         setKpiDsPromedioNotificado(0);
         setKpiZfPromedioCompletado(0);
@@ -2085,69 +2093,12 @@ export default function Dashboard() {
       )}
 
       {/* KPIs Específicos de ZF */}
-      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-6 mb-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 flex items-center justify-center bg-emerald-600 rounded-xl">
-            <i className="ri-dashboard-line text-white text-2xl"></i>
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-gray-900">KPIs de Expedientes ZF</h3>
-            <p className="text-sm text-gray-600">Indicadores clave de rendimiento para Zona Franca</p>
-          </div>
-        </div>
-
-        <div className="max-w-md">
-          {/* KPI 1: Creado → Espera de Respuesta */}
-          <div className="bg-white rounded-xl p-6 border-2 border-gray-200 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 flex items-center justify-center rounded-lg ${
-                  kpisZF.creadoAEsperaRespuesta.cumpleMeta ? 'bg-green-100' : 'bg-red-100'
-                }`}>
-                  <i className={`ri-calendar-check-line text-2xl ${
-                    kpisZF.creadoAEsperaRespuesta.cumpleMeta ? 'text-green-600' : 'text-red-600'
-                  }`}></i>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-600">Creado → Espera de Respuesta</h4>
-                  <p className="text-xs text-gray-500 mt-1">Meta: &lt;15 días hábiles</p>
-                </div>
-              </div>
-              <div className={`px-3 py-1 rounded-full text-xs font-bold ${
-                kpisZF.creadoAEsperaRespuesta.cumpleMeta 
-                  ? 'bg-green-100 text-green-700' 
-                  : 'bg-red-100 text-red-700'
-              }`}>
-                {kpisZF.creadoAEsperaRespuesta.dias === 0 
-                  ? 'Sin datos' 
-                  : kpisZF.creadoAEsperaRespuesta.cumpleMeta ? '✓ Cumple' : '✗ No Cumple'}
-              </div>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className={`text-4xl font-bold ${
-                kpisZF.creadoAEsperaRespuesta.cumpleMeta ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {kpisZF.creadoAEsperaRespuesta.dias}
-              </span>
-              <span className="text-lg text-gray-600">días</span>
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">Tiempo promedio</span>
-                <span className={`font-semibold ${
-                  kpisZF.creadoAEsperaRespuesta.cumpleMeta ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {kpisZF.creadoAEsperaRespuesta.dias === 0
-                    ? 'Esperando datos'
-                    : kpisZF.creadoAEsperaRespuesta.dias < 15
-                    ? `${(15 - kpisZF.creadoAEsperaRespuesta.dias).toFixed(1)} días bajo meta` 
-                    : `${(kpisZF.creadoAEsperaRespuesta.dias - 15).toFixed(1)} días sobre meta`}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <SeccionKpisZf
+        dias={kpisZF.creadoAEsperaRespuesta.dias}
+        cumpleMeta={kpisZF.creadoAEsperaRespuesta.cumpleMeta}
+        detalle={kpisZF.detalle}
+        metaDias={META_ZF_DIAS}
+      />
 
       {/* =========== KPIs de Expedientes Dropship & ETD → Notificado =========== */}
       <SeccionKpisDropship
