@@ -2,7 +2,7 @@
 
 **Sistema de Gestión de Expedientes de Comercio Exterior**  
 *Dropship & Zona Franca (ZF)*  
-*Última actualización: 27 de agosto de 2026*
+*Última actualización: 25 de septiembre de 2026*
 
 ---
 
@@ -315,4 +315,25 @@ Los tres checkboxes se guardan en la base de datos, se registran en el historial
 
 ---
 
-*Documento generado automáticamente — versión 214 del proyecto*
+## 📅 Filtro por Fecha de Asignación, Semana Anterior y KPI Sin ETD (218–221)
+
+218. **Filtro de período por FECHA DE ASIGNADO** — El rango de Fecha Inicio / Fecha Fin del dashboard dejó de usar la fecha de solicitud/creación y ahora usa la **fecha en que cada PO pasó al estado "Asignado"** (tomada del histórico de estados). Aplica a **todo el dashboard**: KPIs superiores, comparativos vs mes/año anterior, Dropship, MCG, ZF, gráfico de Estados, Tiempos entre Estados e Historial de Expedientes. Las POs que aún no fueron asignadas quedan **fuera** del período. Se agregó una nota aclaratoria debajo del panel de filtros.
+219. **Botón "Semana Anterior"** — Nuevo botón en la fila de filtros de período, junto a Mes Anterior. Toma la semana anterior (lunes a domingo) respecto a la semana actual y rellena automáticamente los campos de Fecha Inicio / Fecha Fin, con el mismo criterio de fecha de asignación.
+220. **KPI "Sin ETD" (Dropship)** — Quinta tarjeta dentro del panel "ETD → Notificado" que cuenta cuántas POs **Dropship (incluyendo las MCG)** tienen el **campo ETD vacío**, sin importar su estado. Se pinta en ámbar cuando hay pendientes y en gris cuando está en cero, es clickeable y abre un **modal con la lista completa** (PO/Tiquetera, EXP ID, Módulo, Solicitante y Estado actual), con resumen y botón de **descarga a Excel**. Respeta el filtro de período del dashboard.
+221. **Favicon y título del navegador** — Se agregó un **favicon propio** del sistema (carpeta de documentos con check) y la pestaña del navegador ahora muestra **"Gestion de Expedientes"** en lugar de estar vacía.
+
+---
+
+## 📎 Corrección del Modal de Documentos en Tickets Consolidados (222)
+
+222. **Nombres reales y vista correcta de documentos** — Al abrir los documentos de un ticket **consolidado** (ya sea en **Gestión Dropship**, **Gestión ZF** o **Lista de Expedientes**), los archivos dejaban de mostrarse bien: aparecían como **"Documento 1"**, **"Documento 2"**, etc. en lugar de su nombre real, y la vista previa/descarga no apuntaba bien al archivo. La causa era que los documentos consolidados se guardan con la estructura `{ url, tipo }` (para poder marcar facturas) y el modal todavía los leía como simples URLs de texto. Ahora:
+- Se muestra el **nombre real de cada archivo**.
+- Se distingue el **ícono según el tipo** (PDF, Excel, CSV, imagen…).
+- Los documentos marcados como **Factura** llevan una **etiqueta** visible.
+- El nombre es clickeable para **abrir el archivo** en una pestaña nueva, además del botón **Descargar**.
+- Al **agregar nuevos documentos** desde la edición, se conserva la estructura `{ url, tipo }` y se combinan sin duplicados, para que nada se rompa a futuro.
+- Se unificó todo en un **componente compartido**, así los tres módulos se ven y funcionan igual.
+
+---
+
+*Documento generado automáticamente — resumen acumulado de cambios del proyecto*

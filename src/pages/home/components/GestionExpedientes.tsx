@@ -4,6 +4,8 @@ import { crearNotificacion, notificarComentario } from '../../../lib/notificacio
 import { formatearFecha } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
+import { parseDocEntries, combinarEntradas, type DocEntry } from '@/lib/documentos';
+import ModalDocumentosExpediente from '@/pages/home/components/ModalDocumentosExpediente';
 
 interface Expediente {
   id: string;
@@ -197,7 +199,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
   const [expedienteSeleccionado, setExpedienteSeleccionado] = useState<any>(null);
   const [cargadorNoAutorizado, setCargadorNoAutorizado] = useState(false);
   const [showDocumentos, setShowDocumentos] = useState(false);
-  const [documentosExpediente, setDocumentosExpediente] = useState<string[]>([]);
+  const [documentosExpediente, setDocumentosExpediente] = useState<DocEntry[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [usuarioActual, setUsuarioActual] = useState<string>('Sistema');
 
@@ -678,30 +680,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         doc = await cargarDocExpediente(expediente.id);
       }
 
-      let docs: string[] = [];
-
-      if (doc) {
-        // Si es un array (formato correcto de PostgreSQL JSONB)
-        if (Array.isArray(doc)) {
-          docs = doc.filter((url: any) => typeof url === 'string' && url.trim() !== '');
-        }
-        // Si es string, intentar parsear
-        else if (typeof doc === 'string') {
-          const docTrimmed = doc.trim();
-          if (docTrimmed.startsWith('[') || docTrimmed.startsWith('{')) {
-            try {
-              const parsed = JSON.parse(docTrimmed);
-              docs = Array.isArray(parsed) ? parsed : [parsed];
-            } catch {
-              docs = [docTrimmed];
-            }
-          } else if (docTrimmed !== '') {
-            docs = [docTrimmed];
-          }
-        }
-      }
-
-      setDocumentosExpediente(docs);
+      setDocumentosExpediente(parseDocEntries(doc));
       setExpedienteSeleccionado(expediente);
       setShowDocumentos(true);
     } catch (error) {
@@ -1177,30 +1156,16 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
           if (docActual === undefined) {
             docActual = await cargarDocExpediente(selectedExpediente.id);
           }
-          let docsExistentes: string[] = [];
-          if (docActual) {
-            if (Array.isArray(docActual)) {
-              docsExistentes = docActual;
-            } else if (typeof docActual === 'string') {
-              try {
-                const parsed = JSON.parse(docActual);
-                docsExistentes = Array.isArray(parsed) ? parsed : [parsed];
-              } catch {
-                docsExistentes = docActual.trim() !== '' ? [docActual] : [];
-              }
-            }
-          }
-          
-          console.log('📋 Documentos existentes:', docsExistentes.length);
-          
-          // Combinar documentos
-          const todosLosDocs = [...docsExistentes, ...nuevasUrls];
+
+          // Preservar la estructura { url, tipo } y combinar con las nuevas URLs subidas
+          const entradasExistentes = parseDocEntries(docActual);
+          const nuevasEntradas: DocEntry[] = nuevasUrls.map((url) => ({ url, tipo: null }));
+          const todosLosDocs = combinarEntradas([...entradasExistentes, ...nuevasEntradas]);
           console.log('📦 Total documentos:', todosLosDocs.length);
-          
+
           docsAgregados = true;
           countDocsNuevos = nuevasUrls.length;
-          
-          // Guardar como array JSON
+
           updates.doc = todosLosDocs;
         } catch (uploadError) {
           console.error('❌ Error al subir archivos:', uploadError);
@@ -2026,115 +1991,15 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       )}
 
       {/* Modal de Documentos */}
-      {showDocumentos && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">Documentos del Expediente</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  PO: {expedienteSeleccionado?.po_tiquetera} | EXP: {expedienteSeleccionado?.exp_id}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowDocumentos(false)}
-                className="text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <i className="ri-close-line text-2xl"></i>
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-              {documentosExpediente.length === 0 ? (
-                <div className="text-center py-12">
-                  <i className="ri-file-list-line text-6xl text-gray-300 mb-4"></i>
-                  <p className="text-gray-500 text-lg font-medium">No hay documentos adjuntos</p>
-                  <p className="text-gray-400 text-sm mt-2">Los documentos que agregues aparecerán aquí</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {documentosExpediente.map((url, index) => {
-                    console.log(`Procesando documento ${index + 1}:`, url);
-                    
-                    // Extraer el nombre del archivo de la URL
-                    let fileName = `Documento ${index + 1}`;
-                    try {
-                      const urlParts = url.split('/');
-                      const lastPart = urlParts[urlParts.length - 1];
-                      // Remover el timestamp si existe (formato: timestamp_nombrearchivo.ext)
-                      const fileNameMatch = lastPart.match(/\d+_(.*)/);
-                      fileName = fileNameMatch ? fileNameMatch[1] : lastPart;
-                    } catch (e) {
-                      console.error('Error al extraer nombre de archivo:', e);
-                    }
-                    
-                    const extension = fileName.split('.').pop()?.toLowerCase();
-                    let icon = 'ri-file-line';
-                    let iconColor = 'text-gray-600';
-                    
-                    if (extension === 'pdf') {
-                      icon = 'ri-file-pdf-line';
-                      iconColor = 'text-red-600';
-                    } else if (['xlsx', 'xls'].includes(extension || '')) {
-                      icon = 'ri-file-excel-line';
-                      iconColor = 'text-green-600';
-                    } else if (extension === 'csv') {
-                      icon = 'ri-file-text-line';
-                      iconColor = 'text-blue-600';
-                    } else if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '')) {
-                      icon = 'ri-image-line';
-                      iconColor = 'text-orange-600';
-                    }
-                    
-                    return (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group"
-                      >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          {['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '') ? (
-                            <a href={url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
-                              <img src={url} alt={fileName} className="w-10 h-10 rounded-lg object-cover bg-gray-100" />
-                            </a>
-                          ) : (
-                            <div className={`w-10 h-10 flex items-center justify-center rounded-lg bg-gray-100 flex-shrink-0`}>
-                              <i className={`${icon} text-2xl ${iconColor}`}></i>
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{fileName}</p>
-                            <p className="text-xs text-gray-500">Documento {index + 1}</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            descargarDocumento(url, fileName);
-                          }}
-                          disabled={downloadingId === url}
-                          className="ml-3 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {downloadingId === url ? (
-                            <>
-                              <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin flex-shrink-0"></div>
-                              <span className="text-sm font-medium">Descargando...</span>
-                            </>
-                          ) : (
-                            <>
-                              <i className="ri-download-line"></i>
-                              <span className="text-sm font-medium">Descargar</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalDocumentosExpediente
+        show={showDocumentos}
+        onClose={() => setShowDocumentos(false)}
+        poTiquetera={expedienteSeleccionado?.po_tiquetera}
+        expId={expedienteSeleccionado?.exp_id}
+        documentos={documentosExpediente}
+        downloadingId={downloadingId}
+        onDescargar={descargarDocumento}
+      />
 
       {/* Modal de Detalles/Edición */}
       {showModal && selectedExpediente && (
