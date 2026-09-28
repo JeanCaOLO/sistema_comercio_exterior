@@ -346,4 +346,15 @@ Los tres checkboxes se guardan en la base de datos, se registran en el historial
 
 ---
 
+## 📎 Historial correcto al consolidar tickets (224)
+
+224. **Documentos agregados después ya no aparecen como carga inicial** — En el modal **Historial de Modificaciones**, la lista "Documentos cargados inicialmente" se reconstruía de forma frágil y podía incluir archivos que en realidad se habían agregado **después** (y atribuirlos al cargador original). Pasaba sobre todo cuando se subía un archivo a una fila que todavía estaba en **Documentación** y luego se **consolidaba** en un ticket: la fila original se borraba y el cambio quedaba huérfano. Ahora:
+- **Cada archivo agregado después se muestra en su evento real, con el usuario que lo subió** (sección "Agregados").
+- La lista de la **carga inicial** descuenta todo lo que se agregó más adelante, así nunca se mezcla.
+- Al **consolidar un ticket**, el historial de cambios ahora **viaja con el ticket** (se re-apunta al nuevo expediente), por lo que deja de perderse.
+- Se recuperan los cambios que ya habían quedado huérfanos (buscándolos por PO), para corregir el historial de los tickets ya creados.
+- Si existe el evento real de creación en la auditoría, se usa como fuente fiable del autor y de los documentos iniciales.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

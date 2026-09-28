@@ -68,8 +68,46 @@ const getTimeAgo = (dateStr: string): string => {
   return formatDate(dateStr);
 };
 
-export default function HistorialDocumentoModal({ isOpen, onClose, registroId, poTiquetera, expId, createdAt, responsableCreacion, documentosIniciales }: HistorialDocumentoModalProps) {
-  const [modificaciones, setModificaciones] = useState<ModificacionRecord[]>([]);
+// El detalle puede venir como objeto (JSONB) o como texto JSON
+const getDetalle = (mod: ModificacionRecord): Record<string, any> => {
+  const d = mod.detalle;
+  if (!d) return {};
+  if (typeof d === 'string') {
+    try {
+      return JSON.parse(d);
+    } catch {
+      return {};
+    }
+  }
+  return d as Record<string, any>;
+};
+
+// Un evento de "creación inicial" es el que registra la carga original de documentos
+const esEventoCreacion = (mod: ModificacionRecord): boolean =>
+  getDetalle(mod)?.tipo === 'creacion_inicial';
+
+// Divide "PO1 / PO2" en partes limpias
+const dividirPOs = (valor: string | null | undefined): string[] =>
+  (valor || '')
+    .split('/')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+// Limpia un valor de PO para usarlo dentro de un filtro OR de Supabase
+const limpiarParaFiltro = (valor: string): string =>
+  valor.replace(/[,()%]/g, '').trim();
+
+export default function HistorialDocumentoModal({
+  isOpen,
+  onClose,
+  registroId,
+  poTiquetera,
+  expId,
+  createdAt,
+  responsableCreacion,
+  documentosIniciales,
+}: HistorialDocumentoModalProps) {
+  const [eventos, setEventos] = useState<ModificacionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
@@ -78,17 +116,19 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
     if (isOpen) {
       cargarHistorial();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, registroId]);
 
   const cargarHistorial = async () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: queryError } = await supabase
+      // 1) Eventos asociados directamente al registro actual
+      const { data: directos, error: queryError } = await supabase
         .from('documento_modificaciones')
         .select('*')
         .eq('registro_id', registroId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
 
       if (queryError) {
         if (queryError.message?.includes('does not exist') || queryError.code === '42P01') {
@@ -96,20 +136,80 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
         } else {
           setError('No se pudo cargar el historial: ' + queryError.message);
         }
-        setModificaciones([]);
-      } else {
-        setModificaciones(data || []);
+        setEventos([]);
+        return;
       }
+
+      const mapa = new Map<string, ModificacionRecord>();
+      (directos || []).forEach((r) => mapa.set(r.id, r as ModificacionRecord));
+
+      const extras: ModificacionRecord[] = [];
+      const poPartes = dividirPOs(poTiquetera);
+
+      // 2) Recuperar eventos "huérfanos": cambios que se hicieron sobre la fila
+      //    original (todavía en Documentación) antes de consolidar el ticket.
+      //    Al consolidar, esa fila se elimina y el ticket recibe otro ID, así que
+      //    esos cambios quedan apuntando a un registro que ya no existe. Los
+      //    recuperamos por PO para no perder quién subió cada archivo.
+      if (poPartes.length > 0) {
+        const orFilter = poPartes
+          .map((p) => limpiarParaFiltro(p))
+          .filter(Boolean)
+          .map((p) => `po_tiquetera.ilike.%${p}%`)
+          .join(',');
+
+        if (orFilter) {
+          const { data: porPO } = await supabase
+            .from('documento_modificaciones')
+            .select('*')
+            .or(orFilter);
+
+          (porPO || []).forEach((r) => {
+            const rec = r as ModificacionRecord;
+            if (mapa.has(rec.id)) return;
+            // Evitar traer historial de OTROS tickets ya consolidados:
+            // solo aceptamos filas sin asignar (exp_id 'Por Asignar'/vacío) o del mismo exp_id.
+            const exp = (rec.exp_id || '').trim();
+            const delMismoTicket = !exp || exp === 'Por Asignar' || (!!expId && exp === expId);
+            if (!delMismoTicket) return;
+            // Coincidencia real de alguna PO (evita falsos positivos por substring)
+            const rowPartes = dividirPOs(rec.po_tiquetera);
+            const coincide = rowPartes.some((rp) => poPartes.includes(rp));
+            if (!coincide) return;
+            extras.push(rec);
+          });
+        }
+      }
+
+      // 3) Eventos guardados con el mismo exp_id pero otro registro_id
+      if (expId && expId.trim() && expId.trim() !== 'Por Asignar') {
+        const { data: porExp } = await supabase
+          .from('documento_modificaciones')
+          .select('*')
+          .eq('exp_id', expId);
+        (porExp || []).forEach((r) => {
+          const rec = r as ModificacionRecord;
+          if (!mapa.has(rec.id)) extras.push(rec);
+        });
+      }
+
+      // Unir, deduplicar y ordenar del más ANTIGUO al más reciente
+      const todos = [...(directos || []), ...extras]
+        .filter((r, i, arr) => arr.findIndex((x) => x.id === (r as ModificacionRecord).id) === i)
+        .map((r) => r as ModificacionRecord)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      setEventos(todos);
     } catch (err: any) {
       setError(err.message || 'Error inesperado al cargar el historial.');
-      setModificaciones([]);
+      setEventos([]);
     } finally {
       setLoading(false);
     }
   };
 
   const toggleExpand = (id: string) => {
-    setExpandedItem(prev => prev === id ? null : id);
+    setExpandedItem(prev => (prev === id ? null : id));
   };
 
   if (!isOpen) return null;
@@ -124,22 +224,51 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
     return { agregados, eliminados, anteriores, nuevos };
   };
 
+  // ── Separar el evento de creación de las modificaciones reales ──
+  const primerEvento = eventos.length > 0 ? eventos[0] : null;
+  const primerEventoEsCreacion = primerEvento
+    ? (esEventoCreacion(primerEvento) || parseDocEntries(primerEvento.documentos_anteriores).length === 0)
+    : false;
+
+  // Evento que se muestra como "creación inicial"
+  const eventoCreacion: ModificacionRecord | null = primerEventoEsCreacion ? primerEvento : null;
+  // Modificaciones reales (todo menos el evento de creación)
+  const modificaciones = eventoCreacion ? eventos.slice(1) : eventos;
+
+  // Documentos que fueron AGREGADOS en alguna modificación posterior.
+  // Cualquiera de estos NUNCA debe aparecer en la carga inicial, aunque hoy
+  // siga estando en el registro.
+  const urlsAgregadasDespues = new Set<string>();
+  modificaciones.forEach((mod) => {
+    const { agregados } = cambiosDocs(mod);
+    agregados.forEach((entry) => {
+      if (entry.url) urlsAgregadasDespues.add(entry.url);
+    });
+  });
+
+  // ── Foto de la carga inicial ──
+  // 1) Si existe el evento de creación en auditoría, ese es el estado inicial fiel.
+  // 2) Si no, partimos del estado inmediatamente anterior al primer cambio.
+  // 3) Como último recurso usamos la lista actual.
+  // En todos los casos restamos los documentos que se agregaron después.
+  const documentosCreacion: DocEntry[] = (() => {
+    let base: DocEntry[];
+    if (eventoCreacion) {
+      base = parseDocEntries(eventoCreacion.documentos_nuevos);
+    } else if (primerEvento) {
+      const anteriores = parseDocEntries(primerEvento.documentos_anteriores);
+      base = anteriores.length > 0 ? anteriores : documentosIniciales;
+    } else {
+      base = documentosIniciales;
+    }
+    return base.filter((entry) => !urlsAgregadasDespues.has(entry.url));
+  })();
+
+  const autorCreacion = eventoCreacion?.usuario || responsableCreacion || 'Sistema';
+  const fechaCreacion = eventoCreacion?.created_at || createdAt;
+
   // Total de eventos: creación inicial + modificaciones
   const totalEventos = 1 + modificaciones.length;
-
-  // Documentos REALES de la creación inicial.
-  // La lista actual del registro (documentosIniciales) incluye documentos
-  // agregados después. Para reconstruir el estado original usamos la
-  // "foto previa" (documentos_anteriores) de la modificación MÁS ANTIGUA:
-  // justo antes del primer cambio es como estaba el registro al crearse.
-  // Si no hay modificaciones registradas, el estado inicial es el actual.
-  const documentosCreacion: DocEntry[] = (() => {
-    if (modificaciones.length === 0) return documentosIniciales;
-    const masAntigua = modificaciones[modificaciones.length - 1];
-    const anteriores = parseDocEntries(masAntigua?.documentos_anteriores);
-    if (anteriores.length > 0) return anteriores;
-    return documentosIniciales;
-  })();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -198,11 +327,11 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
                             <i className="ri-file-upload-line text-xs text-teal-600"></i>
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{responsableCreacion || 'Sistema'}</p>
+                            <p className="text-sm font-semibold text-gray-900 truncate">{autorCreacion}</p>
                           </div>
                         </div>
-                        <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0" title={formatDate(createdAt)}>
-                          {getTimeAgo(createdAt)}
+                        <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0" title={formatDate(fechaCreacion)}>
+                          {getTimeAgo(fechaCreacion)}
                         </span>
                       </div>
 
@@ -280,15 +409,15 @@ export default function HistorialDocumentoModal({ isOpen, onClose, registroId, p
                 {modificaciones.map((mod, idx) => {
                   const isExpanded = expandedItem === mod.id;
                   const { agregados, eliminados } = cambiosDocs(mod);
-                  const esUltimo = idx === modificaciones.length - 1;
+                  const esReciente = idx === modificaciones.length - 1;
 
                   return (
                     <div key={mod.id} className="relative pl-12">
                       {/* Punto del timeline */}
                       <div className={`absolute left-[11px] top-1.5 w-[18px] h-[18px] rounded-full border-2 border-white flex items-center justify-center ${
-                        esUltimo ? 'bg-amber-500' : 'bg-gray-300'
+                        esReciente ? 'bg-amber-500' : 'bg-gray-300'
                       }`}>
-                        {esUltimo && (
+                        {esReciente && (
                           <div className="w-2 h-2 bg-white rounded-full"></div>
                         )}
                       </div>

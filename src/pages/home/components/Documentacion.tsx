@@ -284,7 +284,7 @@ export default function Documentacion() {
           responsable_creacion: '',
           created_at: fechaMasAntigua,
         }])
-        .select('id')
+        .select('id, exp_id')
         .single();
 
       if (insertExpError) throw new Error(`Error al crear el ticket consolidado: ${insertExpError.message}`);
@@ -320,6 +320,24 @@ export default function Documentacion() {
         fecha_fin: null,
         minutos_transcurridos: null
       }]);
+
+      // ─── PRESERVAR EL HISTORIAL DE CAMBIOS ───
+      // Los cambios que se hicieron sobre las filas originales en Documentación
+      // (subir un archivo, toggles, comentarios) quedaban apuntando a un registro
+      // que desaparece al consolidar. Los re-apuntamos al ticket nuevo para que
+      // el historial no se pierda y cada archivo siga mostrando quién lo subió.
+      try {
+        await supabase
+          .from('documento_modificaciones')
+          .update({
+            registro_id: nuevoExpId,
+            tabla_origen: 'expedientes',
+            exp_id: (nuevoExp as any)?.exp_id || null,
+          })
+          .in('registro_id', ids);
+      } catch (histErr: any) {
+        console.error('[Historial] No se pudo re-apuntar el historial al ticket consolidado:', histErr?.message || histErr);
+      }
 
       // Eliminar los documentos procesados de la tabla staging
       await supabase
