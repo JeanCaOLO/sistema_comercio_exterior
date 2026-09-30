@@ -69,7 +69,11 @@ export default function CargaDocumentosCAA() {
   }, [perfil]);
 
   useEffect(() => {
-    cargarRutasActivas().then(setRutas);
+    const cargar = () => { cargarRutasActivas().then(setRutas); };
+    cargar();
+    // Refresca el selector cuando se guardan cambios en Configuración → Rutas
+    window.addEventListener('rutasActualizadas', cargar);
+    return () => window.removeEventListener('rutasActualizadas', cargar);
   }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);

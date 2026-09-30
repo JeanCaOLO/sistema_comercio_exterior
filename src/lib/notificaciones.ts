@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getEmailsRuta } from './rutas';
+import { buscarUsuariosPorEmails } from './usuarios';
 
 export interface Notificacion {
   id: string;
@@ -151,12 +152,24 @@ export async function notificarCargaCAA({
     }
     if (emailsRuta.length === 0) return;
 
-    const { data: usuarios } = await supabase
-      .from('usuarios')
-      .select('id')
-      .in('email', emailsRuta);
+    // Match tolerante a mayúsculas/minúsculas: el correo configurado en la ruta
+    // debe corresponder a un usuario registrado para poder notificarle.
+    const usuarios = await buscarUsuariosPorEmails(emailsRuta);
 
-    if (!usuarios || usuarios.length === 0) return;
+    if (usuarios.length === 0) {
+      console.warn(
+        `[Notificaciones] Ningún usuario registrado coincide con los correos de la ruta "${ruta}". Correos configurados: ${emailsRuta.join(', ')}`
+      );
+      return;
+    }
+
+    const emailsEncontrados = new Set(usuarios.map((u) => (u.email || '').trim().toLowerCase()));
+    const emailsSinUsuario = emailsRuta.filter((e) => !emailsEncontrados.has(e.trim().toLowerCase()));
+    if (emailsSinUsuario.length > 0) {
+      console.warn(
+        `[Notificaciones] Correos de la ruta "${ruta}" sin usuario registrado (no recibirán notificación): ${emailsSinUsuario.join(', ')}`
+      );
+    }
 
     const moduloLabel = tipoModulo === 'dropship' ? 'Dropship' : 'ZF';
     const mensaje = `Nueva carga CAA en la ruta ${ruta} (${moduloLabel}): ${totalDocumentos} documento(s) para las POs ${poTiquetera}`;

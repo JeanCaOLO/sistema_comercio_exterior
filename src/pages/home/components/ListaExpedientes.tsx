@@ -148,6 +148,13 @@ export default function ListaExpedientes() {
     setRutas(activas);
   };
 
+  // Refresca el selector cuando se guardan cambios en Configuración → Rutas
+  useEffect(() => {
+    const onRutasActualizadas = () => { cargarRutasDisponibles(); };
+    window.addEventListener('rutasActualizadas', onRutasActualizadas);
+    return () => window.removeEventListener('rutasActualizadas', onRutasActualizadas);
+  }, []);
+
   const descargarDocumento = async (url: string, fileName: string) => {
     try {
       setDownloadingId(url);

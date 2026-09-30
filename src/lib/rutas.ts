@@ -8,6 +8,11 @@ import { supabase } from './supabase';
 //   - GestionExpedientes / ListaExpedientes (editar ticket)
 //   - CargaDocumentosCAA (selección de ruta por módulo)
 //   - notificaciones.ts (destinatarios por ruta)
+//
+// Además de la base de datos, mantenemos una caché en memoria.
+// Al guardar desde Configuración, la caché se actualiza al instante,
+// por lo que cualquier ruta nueva aparece de inmediato en TODOS los
+// componentes sin depender de que cada uno vuelva a consultar la base.
 // ============================================================
 
 export type ModuloRuta = 'dropship' | 'zf';
@@ -27,6 +32,14 @@ export interface RutaLogistica {
 }
 
 const CLAVE_CONFIG = 'rutas_logisticas';
+
+/** Caché en memoria. Se llena en la primera lectura y se actualiza al guardar. */
+let rutasCache: RutaLogistica[] | null = null;
+
+/** Devuelve una copia profunda para evitar mutaciones accidentales de la caché. */
+function clonarRutas(rutas: RutaLogistica[]): RutaLogistica[] {
+  return rutas.map((r) => ({ ...r, emails: [...r.emails] }));
+}
 
 // Rutas por defecto — replican el comportamiento original del sistema.
 // Se usan como respaldo si todavía no hay rutas guardadas en la base.
@@ -120,57 +133,109 @@ function normalizarRuta(ruta: any, index: number): RutaLogistica {
   };
 }
 
-// Carga todas las rutas (activas e inactivas). Si no hay nada guardado o falla
-// la consulta, devuelve las rutas por defecto para no romper el sistema.
-export async function cargarRutas(): Promise<RutaLogistica[]> {
+// Carga todas las rutas (activas e inactivas).
+// - Si `force` es false y hay caché, devuelve la caché (rápido y consistente).
+// - Si no, consulta la base. Tolerante a filas duplicadas: toma la más reciente.
+// - Si no hay nada guardado o falla la consulta, usa las rutas por defecto
+//   (Pero NUNCA pisa una caché válida con los valores por defecto ante un error).
+export async function cargarRutas(force = false): Promise<RutaLogistica[]> {
+  if (!force && rutasCache) {
+    return clonarRutas(rutasCache);
+  }
+
   try {
     const { data, error } = await supabase
       .from('configuracion_sistema')
-      .select('valor')
+      .select('valor, updated_at')
       .eq('clave', CLAVE_CONFIG)
-      .maybeSingle();
+      .order('updated_at', { ascending: false })
+      .limit(1);
 
     if (error) throw error;
 
-    if (data?.valor && Array.isArray(data.valor) && data.valor.length > 0) {
-      return data.valor.map((r: any, i: number) => normalizarRuta(r, i));
+    const fila = data && data.length > 0 ? data[0] : null;
+    // La columna `valor` es jsonb, pero por si en alguna base quedó como texto
+    // (o vino serializada), toleramos que llegue como string y la parseamos.
+    let valor: any = fila?.valor ?? null;
+    if (typeof valor === 'string') {
+      try {
+        valor = JSON.parse(valor);
+      } catch {
+        valor = null;
+      }
     }
-    return RUTAS_POR_DEFECTO;
+    if (Array.isArray(valor) && valor.length > 0) {
+      rutasCache = valor.map((r: any, i: number) => normalizarRuta(r, i));
+      return clonarRutas(rutasCache);
+    }
+
+    // Sin configuración guardada todavía → valores por defecto
+    rutasCache = clonarRutas(RUTAS_POR_DEFECTO);
+    return clonarRutas(rutasCache);
   } catch (error) {
-    console.error('[Rutas] Error al cargar rutas, usando valores por defecto:', error);
-    return RUTAS_POR_DEFECTO;
+    console.error('[Rutas] Error al cargar rutas desde la base:', error);
+    // Ante un error, conservamos la caché si existía; si no, usamos las por defecto.
+    return clonarRutas(rutasCache ?? RUTAS_POR_DEFECTO);
   }
 }
 
 // Carga solo las rutas activas (para selectores del sistema).
-export async function cargarRutasActivas(): Promise<RutaLogistica[]> {
-  const rutas = await cargarRutas();
+export async function cargarRutasActivas(force = false): Promise<RutaLogistica[]> {
+  const rutas = await cargarRutas(force);
   return rutas.filter((r) => r.activa !== false && r.key);
 }
 
 // Guarda el arreglo completo de rutas en configuracion_sistema.
+// Usa el id de la fila existente (tolerante a duplicados: actualiza la primera)
+// y actualiza la caché en memoria al terminar para que todo el sistema lo refleje.
 export async function guardarRutas(rutas: RutaLogistica[]): Promise<void> {
-  const { data: existente } = await supabase
+  const copia = clonarRutas(rutas);
+
+  const { data: filas, error: errorSelect } = await supabase
     .from('configuracion_sistema')
     .select('id')
     .eq('clave', CLAVE_CONFIG)
-    .maybeSingle();
+    .order('updated_at', { ascending: false });
 
-  if (existente) {
-    const { error } = await supabase
+  if (errorSelect) throw errorSelect;
+
+  if (filas && filas.length > 0) {
+    // `.select()` nos devuelve la fila escrita: si viene vacío significa que la
+    // base no persistió el cambio (por ejemplo permisos/RLS), y lo avisamos en
+    // vez de dar por guardado algo que nunca se escribió.
+    const { data: escritas, error } = await supabase
       .from('configuracion_sistema')
-      .update({ valor: rutas, updated_at: new Date().toISOString() })
-      .eq('clave', CLAVE_CONFIG);
+      .update({ valor: copia, updated_at: new Date().toISOString() })
+      .eq('id', filas[0].id)
+      .select('id');
     if (error) throw error;
+    if (!escritas || escritas.length === 0) {
+      throw new Error('La base de datos no permitió guardar las rutas. Revisá los permisos (RLS) de configuracion_sistema.');
+    }
   } else {
-    const { error } = await supabase
+    const { data: escritas, error } = await supabase
       .from('configuracion_sistema')
       .insert([{
         clave: CLAVE_CONFIG,
-        valor: rutas,
+        valor: copia,
         descripcion: 'Rutas logísticas configurables del sistema',
-      }]);
+      }])
+      .select('id');
     if (error) throw error;
+    if (!escritas || escritas.length === 0) {
+      throw new Error('La base de datos no permitió guardar las rutas. Revisá los permisos (RLS) de configuracion_sistema.');
+    }
+  }
+
+  // Actualiza la caché para que todos los componentes vean el cambio al instante.
+  rutasCache = copia;
+
+  // Avisa a cualquier componente montado para que refresque sus selectores
+  // sin necesidad de recargar la página.
+  try {
+    window.dispatchEvent(new CustomEvent('rutasActualizadas'));
+  } catch {
+    // En entornos sin window (SSR/pruebas) simplemente se ignora.
   }
 }
 

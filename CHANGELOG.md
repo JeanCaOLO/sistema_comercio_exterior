@@ -394,4 +394,39 @@ Las rutas se guardan en la configuración del sistema y, si todavía no hay ning
 
 ---
 
+## 🛠️ Corrección: las rutas nuevas no aparecían en el sistema (228)
+
+228. **Las rutas logísticas creadas en Configuración ahora sí se reflejan en todo el sistema** — Al crear una ruta nueva en **Configuración → Rutas**, quedaba visible en esa pestaña pero **no aparecía** en el selector de **Crear Expediente**, ni al **editar un ticket** (Gestión Dropship/ZF y Lista de Expedientes), ni en **Carga CAA**. La causa era la forma en que se leían las rutas desde la base de datos:
+- La lectura usaba una consulta que **falla si existe más de una fila** con la misma clave, y además caía en silencio a las **9 rutas por defecto** ante cualquier error, sin reintentar ni avisar.
+- Cada componente consultaba la base por su cuenta al abrirse, por lo que no siempre reflejaban el último guardado.
+
+Ahora la fuente de rutas es **más robusta y consistente**:
+- La lectura es **tolerante** (toma la configuración más reciente y nunca pisa datos válidos con los valores por defecto ante un error).
+- Se agregó una **caché en memoria** que se actualiza **al instante** al guardar en Configuración, así cualquier ruta nueva o editada aparece de inmediato en **todos** los lugares del sistema (Formulario de expediente, edición de tickets y Carga CAA).
+- Al guardar se actualiza la fila existente de forma segura, evitando duplicados.
+
+---
+
+## 📬 Verificación de correos de notificación por ruta (229)
+
+229. **Aviso cuando un correo de ruta no está registrado** — Las notificaciones de **Carga CAA** se entregan por la **campanita interna**, y para que lleguen, el correo configurado en la ruta **debe corresponder a un usuario registrado del sistema**. Antes, si el correo no existía como usuario, la notificación se perdía **en silencio** (solo quedaba un aviso en la consola) y parecía que "no llegaban". Ahora:
+- En **Configuración → Rutas**, cada correo que **no corresponde a un usuario registrado** se marca con una **etiqueta roja "No registrado"** (tanto en la tabla de rutas como dentro del formulario de la ruta).
+- Dentro del formulario de la ruta aparece un **aviso** indicando cuántos correos no están registrados y que, por eso, no recibirán la notificación en la campanita.
+- Se agregó una **nota aclaratoria** en el campo "Correos de notificación (Carga CAA)": debe ser el correo **con el que inicia sesión el usuario**.
+- La coincidencia de correos ahora es **tolerante a mayúsculas/minúsculas y espacios**, así un correo con distinto formato deja de perderse.
+- Si al cargar documentos ningún correo de la ruta coincide con un usuario, el sistema lo **registra claramente** y omite la notificación sin romper el guardado.
+
+> Nota: los correos de **"Arribo de Carga"** y de **cambios de estado** usan otro mecanismo (envío de correo real), por lo que ahí el destinatario **no** necesita ser un usuario registrado.
+
+---
+
+## 🛣️ Verificación del guardado y refresco de rutas (230)
+
+230. **Las rutas nuevas se guardan verificadas y se reflejan en vivo** — Las rutas creadas en **Configuración → Rutas** seguían sin aparecer en el resto del sistema. Se reforzó el manejo para descartar las dos causas posibles:
+- **Guardado verificado:** al guardar una ruta, ahora se confirma contra la base de datos que la fila realmente se escribió. Si la base la rechaza (por ejemplo permisos/RLS de `configuracion_sistema`), se muestra un **error claro** en el modal en lugar de dar por guardado algo que no persistió.
+- **Lectura tolerante al formato:** si el valor guardado llegara como texto (JSON serializado) en vez de arreglo, se parsea igual, evitando que el sistema caiga sin darse cuenta a las **9 rutas por defecto**.
+- **Refresco en vivo:** al guardar cambios de rutas se emite un aviso interno que hace que **Crear Expediente**, **Gestión Dropship/ZF**, **Lista de Expedientes** y **Carga CAA** vuelvan a leer la lista al instante, sin necesidad de recargar la página.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

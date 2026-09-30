@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { cargarRutas, guardarRutas, type RutaLogistica } from '../../../lib/rutas';
+import { obtenerEmailsUsuarios } from '../../../lib/usuarios';
 import MatrizPermisos from './MatrizPermisos';
 
 interface ConfiguracionProps {
@@ -55,6 +56,12 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
     emails: [] as string[],
     activa: true,
   });
+
+  // Correos de usuarios registrados (en minúsculas). Sirve para avisar cuando
+  // un correo configurado en una ruta NO corresponde a ningún usuario, ya que
+  // en ese caso la notificación interna (campanita) nunca le llega.
+  const [emailsRegistrados, setEmailsRegistrados] = useState<Set<string>>(new Set());
+  const [emailsRegistradosCargado, setEmailsRegistradosCargado] = useState(false);
 
   // Roles disponibles
   const rolesDisponibles = [
@@ -269,13 +276,34 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
   const cargarRutasConfig = async () => {
     try {
       setLoadingRutas(true);
-      const data = await cargarRutas();
+      const data = await cargarRutas(true);
       setRutasConfig(data);
+      // Cargamos los correos registrados para poder marcar los que no existen como usuario.
+      cargarEmailsRegistrados();
     } catch (error) {
       console.error('Error al cargar rutas:', error);
     } finally {
       setLoadingRutas(false);
     }
+  };
+
+  // Carga el conjunto de correos que sí corresponden a usuarios registrados.
+  const cargarEmailsRegistrados = async () => {
+    try {
+      const set = await obtenerEmailsUsuarios();
+      setEmailsRegistrados(set);
+      setEmailsRegistradosCargado(true);
+    } catch (error) {
+      console.error('Error al cargar correos registrados:', error);
+      setEmailsRegistradosCargado(false);
+    }
+  };
+
+  // Determina si un correo corresponde a un usuario registrado.
+  // Si todavía no se pudo cargar la lista, no marcamos falsos negativos.
+  const esEmailRegistrado = (email: string): boolean => {
+    if (!emailsRegistradosCargado) return true;
+    return emailsRegistrados.has(email.trim().toLowerCase());
   };
 
   const abrirNuevaRuta = () => {
@@ -284,6 +312,7 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
     setNuevoEmailRuta('');
     setRutaForm({ key: '', label: '', modulo: 'dropship', emails: [], activa: true });
     setShowRutaModal(true);
+    cargarEmailsRegistrados();
   };
 
   const abrirEditarRuta = (ruta: RutaLogistica) => {
@@ -298,6 +327,7 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
       activa: ruta.activa !== false,
     });
     setShowRutaModal(true);
+    cargarEmailsRegistrados();
   };
 
   const agregarEmailRuta = () => {
@@ -650,6 +680,11 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
 
   // Verificar si el usuario actual es administrador
   const esAdministrador = perfil?.roles?.includes('Administrador') ?? false;
+
+  // Correos del formulario de ruta que NO están registrados como usuario.
+  const emailsRutaSinRegistrar = emailsRegistradosCargado
+    ? rutaForm.emails.filter((e) => !emailsRegistrados.has(e.trim().toLowerCase()))
+    : [];
 
   if (!esAdministrador && activeTab === 'usuarios') {
     return (
@@ -1067,11 +1102,21 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
                             <td className="py-3 px-4">
                               {ruta.emails.length > 0 ? (
                                 <div className="flex flex-wrap gap-1">
-                                  {ruta.emails.map((email) => (
-                                    <span key={email} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                                      {email}
-                                    </span>
-                                  ))}
+                                  {ruta.emails.map((email) => {
+                                    const registrado = esEmailRegistrado(email);
+                                    return (
+                                      <span
+                                        key={email}
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                          registrado ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700'
+                                        }`}
+                                        title={registrado ? 'Usuario registrado' : 'Este correo no corresponde a un usuario registrado: no recibirá la notificación'}
+                                      >
+                                        {!registrado && <i className="ri-error-warning-line"></i>}
+                                        {email}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               ) : (
                                 <span className="text-xs text-gray-400">Sin correos</span>
@@ -1393,6 +1438,9 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Correos de notificación (Carga CAA)
                 </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Debe ser el correo con el que <strong>inicia sesión el usuario</strong>. Si el correo no está registrado, la notificación de la campanita no le llega.
+                </p>
                 <div className="flex gap-3">
                   <input
                     type="email"
@@ -1413,21 +1461,45 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
                 </div>
                 {rutaForm.emails.length > 0 && (
                   <div className="mt-3 space-y-2">
-                    {rutaForm.emails.map((email) => (
-                      <div key={email} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-                        <span className="text-sm text-gray-800 flex items-center gap-2">
-                          <i className="ri-mail-line text-teal-600"></i>
-                          {email}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => eliminarEmailRuta(email)}
-                          className="p-1 text-red-600 hover:bg-red-50 rounded cursor-pointer"
+                    {rutaForm.emails.map((email) => {
+                      const registrado = esEmailRegistrado(email);
+                      return (
+                        <div
+                          key={email}
+                          className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
+                            registrado ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-200'
+                          }`}
                         >
-                          <i className="ri-close-line"></i>
-                        </button>
-                      </div>
-                    ))}
+                          <span className="text-sm text-gray-800 flex items-center gap-2 min-w-0">
+                            <i className="ri-mail-line text-teal-600"></i>
+                            <span className="truncate">{email}</span>
+                            {!registrado && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 whitespace-nowrap flex-shrink-0">
+                                <i className="ri-error-warning-line"></i>
+                                No registrado
+                              </span>
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => eliminarEmailRuta(email)}
+                            className="p-1 text-red-600 hover:bg-red-50 rounded cursor-pointer flex-shrink-0"
+                          >
+                            <i className="ri-close-line"></i>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {emailsRutaSinRegistrar.length > 0 && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                    <i className="ri-error-warning-line text-amber-600 mt-0.5 flex-shrink-0"></i>
+                    <p className="text-xs text-amber-800">
+                      {emailsRutaSinRegistrar.length === 1
+                        ? 'El correo marcado como "No registrado" no corresponde a ningún usuario del sistema, así que no recibirá la notificación en la campanita. Verifica que sea el correo con el que inicia sesión el usuario.'
+                        : `${emailsRutaSinRegistrar.length} correos no corresponden a usuarios del sistema y no recibirán notificaciones en la campanita. Verifica que sean los correos con los que inician sesión.`}
+                    </p>
                   </div>
                 )}
               </div>
