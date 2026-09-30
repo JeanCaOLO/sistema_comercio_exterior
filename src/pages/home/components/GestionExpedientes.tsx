@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { cargarRutasActivas, type RutaLogistica } from '../../../lib/rutas';
 import { crearNotificacion, notificarComentario } from '../../../lib/notificaciones';
 import { formatearFecha } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -188,6 +189,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
   const [solicitantes, setSolicitantes] = useState<string[]>([]);
   const [responsables, setResponsables] = useState<string[]>([]);
   const [todasPersonas, setTodasPersonas] = useState<string[]>([]);
+  const [rutas, setRutas] = useState<RutaLogistica[]>([]);
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
@@ -247,6 +249,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     cargarExpedientes();
     cargarUsuarios();
     obtenerUsuarioActual();
+    cargarRutasDisponibles();
 
     // Safety net: si loading queda en true más de 15s, forzarlo a false
     const safetyTimer = setTimeout(() => {
@@ -292,7 +295,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
           .select('nombre')
           .eq('email', user.email)
           .single();
-        
+
         if (usuario) {
           setUsuarioActual(usuario.nombre);
         }
@@ -300,6 +303,11 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     } catch (error) {
       console.error('Error al obtener usuario actual:', error);
     }
+  };
+
+  const cargarRutasDisponibles = async () => {
+    const activas = await cargarRutasActivas();
+    setRutas(activas);
   };
 
   const filtrarExpedientes = () => {
@@ -2064,15 +2072,9 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                       onChange={(e) => handleChange('tipo_po', e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
                     >
-                      <option value="ZF - OVERSEAS">ZF - OVERSEAS LOGISTICS OPERATIONS</option>
-                      <option value="Directo CR - CONSORCIO">Directo CR - CONSORCIO FERRETERO DE SAN JOSE, S.A.</option>
-                      <option value="Directo CR - EPA CR">Directo CR - FERRETERIA EPA, S.A.</option>
-                      <option value="Directo GT - EPA GT">Directo GT - FERRETERIA EPA, S.A.</option>
-                      <option value="Directo SV - EPA SV">Directo SV - FERRETERIA EPA, C.A.</option>
-                      <option value="Directo VE - FEBECA">Directo VE - FEBECA C.A.</option>
-                      <option value="Directo VE - EPA VE">Directo VE - FERRETERIA EPA, C.A.</option>
-                      <option value="GL GT - EPA GT">GL GT - FERRETERIA EPA, S.A. (Guatemala)</option>
-                      <option value="GL SV - EPA SV">GL SV - FERRETERIA EPA, S.A. DE C.V.</option>
+                      {rutas.map((ruta) => (
+                        <option key={ruta.id} value={ruta.key}>{ruta.label}</option>
+                      ))}
                     </select>
                   ) : (
                     <p className="text-gray-900">{selectedExpediente.tipo_po}</p>

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { cargarRutasActivas, type RutaLogistica } from '../../../lib/rutas';
 import { crearNotificacion, notificarCargaCAA } from '../../../lib/notificaciones';
 import { hoyLocal } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -42,6 +43,7 @@ export default function CargaDocumentosCAA() {
   const [error, setError] = useState<string | null>(null);
   const [comentario, setComentario] = useState('');
   const [autorizado, setAutorizado] = useState<boolean>(true);
+  const [rutas, setRutas] = useState<RutaLogistica[]>([]);
 
   useEffect(() => {
     const verificarAutorizacion = async () => {
@@ -65,6 +67,10 @@ export default function CargaDocumentosCAA() {
     };
     verificarAutorizacion();
   }, [perfil]);
+
+  useEffect(() => {
+    cargarRutasActivas().then(setRutas);
+  }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -558,21 +564,11 @@ export default function CargaDocumentosCAA() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2">
-                  {[
-                    { key: 'ZF - OVERSEAS', label: 'ZF - OVERSEAS LOGISTICS OPERATIONS', modulo: 'zf' },
-                    { key: 'Directo CR - CONSORCIO', label: 'Directo CR - CONSORCIO FERRETERO DE SAN JOSE, S.A.', modulo: 'dropship' },
-                    { key: 'Directo CR - EPA CR', label: 'Directo CR - FERRETERIA EPA, S.A.', modulo: 'dropship' },
-                    { key: 'Directo GT - EPA GT', label: 'Directo GT - FERRETERIA EPA, S.A.', modulo: 'dropship' },
-                    { key: 'Directo SV - EPA SV', label: 'Directo SV - FERRETERIA EPA, C.A.', modulo: 'dropship' },
-                    { key: 'Directo VE - FEBECA', label: 'Directo VE - FEBECA C.A.', modulo: 'dropship' },
-                    { key: 'Directo VE - EPA VE', label: 'Directo VE - FERRETERIA EPA, C.A.', modulo: 'dropship' },
-                    { key: 'GL GT - EPA GT', label: 'GL GT - FERRETERIA EPA, S.A. (Guatemala)', modulo: 'dropship' },
-                    { key: 'GL SV - EPA SV', label: 'GL SV - FERRETERIA EPA, S.A. DE C.V.', modulo: 'dropship' },
-                  ]
+                  {rutas
                     .filter(ruta => ruta.modulo === tipoModulo)
                     .map(ruta => (
                       <button
-                        key={ruta.key}
+                        key={ruta.id}
                         type="button"
                         onClick={() => setTipoRuta(ruta.key)}
                         title={ruta.label}

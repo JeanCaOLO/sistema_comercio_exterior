@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { cargarRutasActivas, type RutaLogistica } from '../../../lib/rutas';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
 
 // Feriados de El Salvador
@@ -127,6 +128,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
   const [loading, setLoading] = useState(false);
   const [solicitantes, setSolicitantes] = useState<string[]>([]);
   const [responsables, setResponsables] = useState<string[]>([]);
+  const [rutas, setRutas] = useState<RutaLogistica[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
 
@@ -136,7 +138,13 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
   useEffect(() => {
     cargarUsuarios();
     obtenerUsuarioActual();
+    cargarRutasDisponibles();
   }, []);
+
+  const cargarRutasDisponibles = async () => {
+    const activas = await cargarRutasActivas();
+    setRutas(activas);
+  };
 
   // Calcular automáticamente dificultad cuando cambian las líneas OC
   useEffect(() => {
@@ -570,15 +578,9 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
                   >
                     <option value="">Seleccione tipo</option>
-                    <option value="ZF - OVERSEAS">ZF - OVERSEAS LOGISTICS OPERATIONS</option>
-                    <option value="Directo CR - CONSORCIO">Directo CR - CONSORCIO FERRETERO DE SAN JOSE, S.A.</option>
-                    <option value="Directo CR - EPA CR">Directo CR - FERRETERIA EPA, S.A.</option>
-                    <option value="Directo GT - EPA GT">Directo GT - FERRETERIA EPA, S.A.</option>
-                    <option value="Directo SV - EPA SV">Directo SV - FERRETERIA EPA, C.A.</option>
-                    <option value="Directo VE - FEBECA">Directo VE - FEBECA C.A.</option>
-                    <option value="Directo VE - EPA VE">Directo VE - FERRETERIA EPA, C.A.</option>
-                    <option value="GL GT - EPA GT">GL GT - FERRETERIA EPA, S.A. (Guatemala)</option>
-                    <option value="GL SV - EPA SV">GL SV - FERRETERIA EPA, S.A. DE C.V.</option>
+                    {rutas.map((ruta) => (
+                      <option key={ruta.id} value={ruta.key}>{ruta.label}</option>
+                    ))}
                   </select>
                 </div>
                 <div>

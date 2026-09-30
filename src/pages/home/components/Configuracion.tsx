@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
+import { cargarRutas, guardarRutas, type RutaLogistica } from '../../../lib/rutas';
 import MatrizPermisos from './MatrizPermisos';
 
 interface ConfiguracionProps {
@@ -38,6 +39,22 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
     tiempoAlta: '120'
   });
   const [savingGeneral, setSavingGeneral] = useState(false);
+
+  // Estados para el CRUD de rutas logísticas
+  const [rutasConfig, setRutasConfig] = useState<RutaLogistica[]>([]);
+  const [loadingRutas, setLoadingRutas] = useState(false);
+  const [savingRutas, setSavingRutas] = useState(false);
+  const [showRutaModal, setShowRutaModal] = useState(false);
+  const [editingRuta, setEditingRuta] = useState<RutaLogistica | null>(null);
+  const [nuevoEmailRuta, setNuevoEmailRuta] = useState('');
+  const [rutaError, setRutaError] = useState('');
+  const [rutaForm, setRutaForm] = useState({
+    key: '',
+    label: '',
+    modulo: 'dropship' as 'dropship' | 'zf',
+    emails: [] as string[],
+    activa: true,
+  });
 
   // Roles disponibles
   const rolesDisponibles = [
@@ -85,6 +102,8 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
     } else if (activeTab === 'general') {
       cargarCorreosNotificacion();
       cargarConfigGeneral();
+    } else if (activeTab === 'rutas') {
+      cargarRutasConfig();
     }
   }, [activeTab]);
 
@@ -243,6 +262,149 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
       alert('Error al guardar correos: ' + error.message);
     } finally {
       setSavingCorreos(false);
+    }
+  };
+
+  // ─── CRUD de rutas logísticas ───
+  const cargarRutasConfig = async () => {
+    try {
+      setLoadingRutas(true);
+      const data = await cargarRutas();
+      setRutasConfig(data);
+    } catch (error) {
+      console.error('Error al cargar rutas:', error);
+    } finally {
+      setLoadingRutas(false);
+    }
+  };
+
+  const abrirNuevaRuta = () => {
+    setEditingRuta(null);
+    setRutaError('');
+    setNuevoEmailRuta('');
+    setRutaForm({ key: '', label: '', modulo: 'dropship', emails: [], activa: true });
+    setShowRutaModal(true);
+  };
+
+  const abrirEditarRuta = (ruta: RutaLogistica) => {
+    setEditingRuta(ruta);
+    setRutaError('');
+    setNuevoEmailRuta('');
+    setRutaForm({
+      key: ruta.key,
+      label: ruta.label,
+      modulo: ruta.modulo,
+      emails: [...ruta.emails],
+      activa: ruta.activa !== false,
+    });
+    setShowRutaModal(true);
+  };
+
+  const agregarEmailRuta = () => {
+    const email = nuevoEmailRuta.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email) return;
+    if (!emailRegex.test(email)) {
+      setRutaError('Ingrese un correo electrónico válido');
+      return;
+    }
+    if (rutaForm.emails.includes(email)) {
+      setRutaError('Ese correo ya está en la lista');
+      return;
+    }
+    setRutaError('');
+    setRutaForm((prev) => ({ ...prev, emails: [...prev.emails, email] }));
+    setNuevoEmailRuta('');
+  };
+
+  const eliminarEmailRuta = (email: string) => {
+    setRutaForm((prev) => ({ ...prev, emails: prev.emails.filter((e) => e !== email) }));
+  };
+
+  const guardarRuta = async () => {
+    const key = rutaForm.key.trim();
+    const label = rutaForm.label.trim();
+
+    if (!key || !label) {
+      setRutaError('El nombre corto y la descripción son obligatorios');
+      return;
+    }
+
+    const duplicado = rutasConfig.some(
+      (r) => r.key.trim().toLowerCase() === key.toLowerCase() && r.id !== editingRuta?.id
+    );
+    if (duplicado) {
+      setRutaError('Ya existe una ruta con ese nombre corto');
+      return;
+    }
+
+    let nuevaLista: RutaLogistica[];
+    if (editingRuta) {
+      nuevaLista = rutasConfig.map((r) =>
+        r.id === editingRuta.id
+          ? {
+              ...r,
+              key,
+              label,
+              modulo: rutaForm.modulo,
+              emails: rutaForm.emails,
+              activa: rutaForm.activa,
+            }
+          : r
+      );
+    } else {
+      nuevaLista = [
+        ...rutasConfig,
+        {
+          id: `ruta-${crypto.randomUUID()}`,
+          key,
+          label,
+          modulo: rutaForm.modulo,
+          emails: rutaForm.emails,
+          activa: rutaForm.activa,
+        },
+      ];
+    }
+
+    try {
+      setSavingRutas(true);
+      await guardarRutas(nuevaLista);
+      setRutasConfig(nuevaLista);
+      setShowRutaModal(false);
+      setEditingRuta(null);
+    } catch (error: any) {
+      setRutaError('Error al guardar: ' + (error?.message || 'error desconocido'));
+    } finally {
+      setSavingRutas(false);
+    }
+  };
+
+  const eliminarRuta = async (ruta: RutaLogistica) => {
+    if (!confirm(`¿Eliminar la ruta "${ruta.label}"? Los expedientes existentes conservarán su valor actual.`)) return;
+    const nuevaLista = rutasConfig.filter((r) => r.id !== ruta.id);
+    try {
+      setSavingRutas(true);
+      await guardarRutas(nuevaLista);
+      setRutasConfig(nuevaLista);
+    } catch (error: any) {
+      alert('Error al eliminar la ruta: ' + (error?.message || 'error desconocido'));
+    } finally {
+      setSavingRutas(false);
+    }
+  };
+
+  const toggleActivaRuta = async (ruta: RutaLogistica) => {
+    const nuevaLista = rutasConfig.map((r) =>
+      r.id === ruta.id ? { ...r, activa: !(r.activa !== false) } : r
+    );
+    try {
+      setSavingRutas(true);
+      await guardarRutas(nuevaLista);
+      setRutasConfig(nuevaLista);
+    } catch (error: any) {
+      alert('Error al actualizar la ruta: ' + (error?.message || 'error desconocido'));
+    } finally {
+      setSavingRutas(false);
     }
   };
 
@@ -532,6 +694,17 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
             >
               <i className="ri-settings-3-line mr-2"></i>
               General
+            </button>
+            <button
+              onClick={() => setActiveTab('rutas')}
+              className={`px-6 py-3 rounded-lg font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                activeTab === 'rutas'
+                  ? 'bg-teal-50 text-teal-700'
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <i className="ri-route-line mr-2"></i>
+              Rutas
             </button>
             <button
               onClick={() => setActiveTab('datos')}
@@ -841,6 +1014,115 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
             </div>
           )}
 
+          {activeTab === 'rutas' && (
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Rutas Logísticas</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Crea, edita y desactiva las rutas disponibles en todo el sistema. Los cambios se reflejan en el formulario de expedientes, la edición de tickets y la Carga CAA.
+                  </p>
+                </div>
+                <button
+                  onClick={abrirNuevaRuta}
+                  className="px-4 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <i className="ri-add-line mr-2"></i>
+                  Nueva Ruta
+                </button>
+              </div>
+
+              {loadingRutas ? (
+                <div className="text-center py-12">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+                  <p className="mt-4 text-gray-600">Cargando rutas...</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Nombre corto</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Descripción</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Módulo</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Correos de notificación</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Estado</th>
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rutasConfig.map((ruta) => {
+                        const activa = ruta.activa !== false;
+                        return (
+                          <tr key={ruta.id} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-3 px-4 text-sm font-medium text-gray-900 whitespace-nowrap">{ruta.key}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600">{ruta.label}</td>
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                ruta.modulo === 'zf' ? 'bg-sky-100 text-sky-800' : 'bg-teal-100 text-teal-800'
+                              }`}>
+                                {ruta.modulo === 'zf' ? 'ZF' : 'Dropship'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              {ruta.emails.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {ruta.emails.map((email) => (
+                                    <span key={email} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                      {email}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">Sin correos</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <button
+                                onClick={() => toggleActivaRuta(ruta)}
+                                disabled={savingRutas}
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer disabled:opacity-50 ${
+                                  activa ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                }`}
+                              >
+                                {activa ? 'Activa' : 'Inactiva'}
+                              </button>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => abrirEditarRuta(ruta)}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded cursor-pointer"
+                                  title="Editar"
+                                >
+                                  <i className="ri-edit-line text-lg"></i>
+                                </button>
+                                <button
+                                  onClick={() => eliminarRuta(ruta)}
+                                  disabled={savingRutas}
+                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer disabled:opacity-50"
+                                  title="Eliminar"
+                                >
+                                  <i className="ri-delete-bin-line text-lg"></i>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {rutasConfig.length === 0 && (
+                    <div className="text-center py-10">
+                      <i className="ri-route-line text-4xl text-gray-300 mb-2"></i>
+                      <p className="text-sm text-gray-500">No hay rutas configuradas</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'datos' && (
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-6">Gestión de Datos</h2>
@@ -1030,6 +1312,166 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showRutaModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">
+              {editingRuta ? 'Editar Ruta Logística' : 'Nueva Ruta Logística'}
+            </h3>
+
+            {rutaError && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
+                <i className="ri-error-warning-line text-red-600"></i>
+                <p className="text-sm text-red-700">{rutaError}</p>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nombre corto <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={rutaForm.key}
+                  onChange={(e) => setRutaForm({ ...rutaForm, key: e.target.value })}
+                  placeholder="Ej: Directo CR - EPA CR"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">Es el valor que se guarda en cada expediente. Debe ser único.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Descripción <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={rutaForm.label}
+                  onChange={(e) => setRutaForm({ ...rutaForm, label: e.target.value })}
+                  placeholder="Ej: Directo CR - FERRETERIA EPA, S.A."
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">Es el texto que se muestra en los selectores del sistema.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Módulo</label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setRutaForm({ ...rutaForm, modulo: 'dropship' })}
+                    className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium transition-colors cursor-pointer ${
+                      rutaForm.modulo === 'dropship'
+                        ? 'border-teal-500 bg-teal-50 text-teal-700'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <i className="ri-ship-line mr-2"></i>
+                    Dropship
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRutaForm({ ...rutaForm, modulo: 'zf' })}
+                    className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium transition-colors cursor-pointer ${
+                      rutaForm.modulo === 'zf'
+                        ? 'border-sky-500 bg-sky-50 text-sky-700'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <i className="ri-building-line mr-2"></i>
+                    Zona Franca (ZF)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Correos de notificación (Carga CAA)
+                </label>
+                <div className="flex gap-3">
+                  <input
+                    type="email"
+                    value={nuevoEmailRuta}
+                    onChange={(e) => setNuevoEmailRuta(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), agregarEmailRuta())}
+                    placeholder="ejemplo@empresa.com"
+                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={agregarEmailRuta}
+                    className="px-5 py-2.5 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    <i className="ri-add-line mr-1"></i>
+                    Agregar
+                  </button>
+                </div>
+                {rutaForm.emails.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {rutaForm.emails.map((email) => (
+                      <div key={email} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                        <span className="text-sm text-gray-800 flex items-center gap-2">
+                          <i className="ri-mail-line text-teal-600"></i>
+                          {email}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => eliminarEmailRuta(email)}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded cursor-pointer"
+                        >
+                          <i className="ri-close-line"></i>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRutaForm({ ...rutaForm, activa: !rutaForm.activa })}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer ${
+                    rutaForm.activa ? 'bg-green-500' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                      rutaForm.activa ? 'translate-x-8' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className="text-sm text-gray-700">
+                  {rutaForm.activa ? 'Ruta activa (visible en el sistema)' : 'Ruta inactiva (oculta en los selectores)'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRutaModal(false);
+                  setEditingRuta(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={guardarRuta}
+                disabled={savingRutas}
+                className="px-6 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingRutas ? 'Guardando...' : editingRuta ? 'Actualizar' : 'Crear'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -375,4 +375,23 @@ Los tres checkboxes se guardan en la base de datos, se registran en el historial
 
 ---
 
+## 🛣️ CRUD de Rutas Logísticas en Configuración (227)
+
+227. **Las rutas logísticas ahora se administran desde Configuración** — Se agregó una nueva pestaña **"Rutas"** en **Configuración** donde se pueden **crear, editar, activar/desactivar y eliminar** las rutas logísticas del sistema. Cada ruta tiene:
+- **Nombre corto** (es el valor que se guarda en cada expediente, debe ser único).
+- **Descripción** (el texto que se muestra en los selectores).
+- **Módulo** (Dropship o ZF).
+- **Correos de notificación** (quiénes reciben el aviso al cargar documentos en Carga CAA).
+- **Estado** (activa/inactiva).
+
+Cualquier ruta nueva o modificación **se refleja en todo el sistema** de forma automática:
+- **Formulario de creación de expedientes** (Selector Ruta Logística).
+- **Edición de tickets** en Gestión Dropship, Gestión ZF y Lista de Expedientes.
+- **Carga de Documentos CAA** (solo se muestran las rutas del módulo seleccionado).
+- **Notificaciones**: los correos configurados en la ruta son los que reciben la notificación de Carga CAA.
+
+Las rutas se guardan en la configuración del sistema y, si todavía no hay ninguna guardada, se usan las 9 rutas actuales como respaldo. Las rutas **inactivas** dejan de aparecer en los selectores sin afectar a los expedientes que ya las usan.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

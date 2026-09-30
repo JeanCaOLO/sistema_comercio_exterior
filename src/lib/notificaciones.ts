@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getEmailsRuta } from './rutas';
 
 export interface Notificacion {
   id: string;
@@ -142,7 +143,12 @@ export async function notificarCargaCAA({
   totalDocumentos,
 }: NotificarCargaCAAParams): Promise<void> {
   try {
-    const emailsRuta = getEmailsRutaCAA(ruta);
+    // Primero respeta los correos configurados en la ruta (Configuración → Rutas).
+    // Si la ruta no tiene correos configurados, cae al mapa por defecto.
+    let emailsRuta = await getEmailsRuta(ruta);
+    if (emailsRuta.length === 0) {
+      emailsRuta = getEmailsRutaCAA(ruta);
+    }
     if (emailsRuta.length === 0) return;
 
     const { data: usuarios } = await supabase
