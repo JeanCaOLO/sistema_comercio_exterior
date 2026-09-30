@@ -94,3 +94,20 @@ export function nombreDeArchivo(url: string): string {
     return 'documento';
   }
 }
+
+/**
+ * Divide el campo `po_tiquetera` en POs individuales.
+ * El campo guarda varias POs unidas con " / " (y también soporta comas).
+ */
+export function parsePOs(poTiquetera: string | null | undefined): string[] {
+  if (!poTiquetera) return [];
+  return String(poTiquetera)
+    .split(/[/,]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+/** Normaliza una PO para comparación EXACTA (sin espacios sobrantes, minúsculas). */
+export function normalizarPO(po: string): string {
+  return po.trim().toLowerCase();
+}

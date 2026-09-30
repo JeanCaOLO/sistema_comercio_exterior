@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
@@ -20,26 +19,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
-    storage: window.localStorage,
-    storageKey: 'supabase.auth.token',
   },
   db: {
     schema: 'public',
-  },
-  global: {
-    headers: {
-      'x-client-info': 'supabase-js-web',
-    },
-    fetch: (url, options = {}) => {
-      return window.fetch(url, {
-        ...options,
-        mode: 'cors',
-        credentials: 'omit',
-      }).catch(error => {
-        console.error('❌ Error en fetch:', error);
-        throw new Error(`Error de conexión: ${error.message}. Verifica que el proyecto de Supabase esté activo y la URL sea correcta.`);
-      });
-    },
   },
   realtime: {
     params: {

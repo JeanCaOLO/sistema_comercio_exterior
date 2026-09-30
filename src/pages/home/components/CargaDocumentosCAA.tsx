@@ -4,6 +4,7 @@ import { crearNotificacion, notificarCargaCAA } from '../../../lib/notificacione
 import { hoyLocal } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
+import { parsePOs, normalizarPO } from '@/lib/documentos';
 import type { DocEntry } from '@/lib/documentos';
 
 const USUARIOS_CARGA_CAA = ['lchavala', 'smcdonald', 'mpaniagua'];
@@ -176,12 +177,27 @@ export default function CargaDocumentosCAA() {
     setSubmitting(true);
 
     try {
-      // ─── VALIDACIÓN: Verificar si alguna PO ya existe en documentos_caa O expedientes ───
+      // ─── VALIDACIÓN: ninguna PO puede repetirse (ni en el formulario ni ya existente) ───
+
+      // 1) Duplicados DENTRO del mismo formulario (comparación exacta, normalizada)
+      const normFormulario = posValidas.map(normalizarPO);
+      const repetidasInternas = [...new Set(
+        posValidas.filter((_, i) => normFormulario.indexOf(normFormulario[i]) !== i)
+      )];
+      if (repetidasInternas.length > 0) {
+        setError(
+          `${repetidasInternas.length > 1 ? 'Estas POs están repetidas' : 'Esta PO está repetida'} en el formulario: ${repetidasInternas.join(', ')}. Quita las repetidas para continuar.`
+        );
+        setSubmitting(false);
+        return;
+      }
+
+      // 2) Verificar si alguna PO ya existe en documentos_caa O expedientes.
+      //    Filtramos en el servidor con ILIKE (trae solo candidatas) y luego hacemos
+      //    comparación EXACTA por PO completa (no por substring).
       const posDuplicadas: string[] = [];
 
       try {
-        // Validación en el servidor: filtramos por ILIKE en vez de traer TODA la tabla
-        // al navegador. Esto evita cargar miles de filas y el doble bucle O(n²).
         const orFilter = posValidas
           .map(po => `po_tiquetera.ilike.%${po}%`)
           .join(',');
@@ -191,17 +207,26 @@ export default function CargaDocumentosCAA() {
           supabase.from('expedientes').select('po_tiquetera').or(orFilter),
         ]);
 
-        if (resCAA.error) console.error('Validación PO - Error documentos_caa:', resCAA.error);
-        if (resExp.error) console.error('Validación PO - Error expedientes:', resExp.error);
+        // Fail-closed: si la verificación falla, NO dejamos continuar
+        // (antes solo se logueaba el error y se permitía el insert → duplicados).
+        if (resCAA.error || resExp.error) {
+          console.error('Validación PO - Error documentos_caa:', resCAA.error);
+          console.error('Validación PO - Error expedientes:', resExp.error);
+          setError('No se pudo verificar si las POs ya existen. Revisa tu conexión e intenta de nuevo.');
+          setSubmitting(false);
+          return;
+        }
 
-        const encontrados = [...(resCAA.data || []), ...(resExp.data || [])];
+        // Set de POs ya existentes — cada fila puede traer varias unidas con " / "
+        const existentes = new Set<string>();
+        for (const fila of [...(resCAA.data || []), ...(resExp.data || [])]) {
+          for (const po of parsePOs(fila.po_tiquetera)) {
+            existentes.add(normalizarPO(po));
+          }
+        }
 
         for (const poVal of posValidas) {
-          const poLower = poVal.trim().toLowerCase();
-          const existe = encontrados.some(r =>
-            String(r.po_tiquetera || '').toLowerCase().includes(poLower)
-          );
-          if (existe) posDuplicadas.push(poVal);
+          if (existentes.has(normalizarPO(poVal))) posDuplicadas.push(poVal);
         }
       } catch (fetchErr: any) {
         console.error('Validación PO - Error:', fetchErr);

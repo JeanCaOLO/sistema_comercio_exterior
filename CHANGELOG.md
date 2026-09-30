@@ -2,7 +2,7 @@
 
 **Sistema de Gestión de Expedientes de Comercio Exterior**  
 *Dropship & Zona Franca (ZF)*  
-*Última actualización: 25 de septiembre de 2026*
+*Última actualización: 30 de septiembre de 2026*
 
 ---
 
@@ -354,6 +354,24 @@ Los tres checkboxes se guardan en la base de datos, se registran en el historial
 - Al **consolidar un ticket**, el historial de cambios ahora **viaja con el ticket** (se re-apunta al nuevo expediente), por lo que deja de perderse.
 - Se recuperan los cambios que ya habían quedado huérfanos (buscándolos por PO), para corregir el historial de los tickets ya creados.
 - Si existe el evento real de creación en la auditoría, se usa como fuente fiable del autor y de los documentos iniciales.
+
+---
+
+## 🔐 Corrección de sesión y conexión con Supabase (225)
+
+225. **Error "No suitable key was found to decode the JWT" (PGRST301) al cargar el perfil** — Al entrar al sistema aparecía el error de que no se podía cargar el perfil porque el token de la sesión no se podía validar. Tenía dos causas combinadas:
+- El cliente de Supabase estaba **desactualizado** frente al **nuevo formato de clave pública** (`sb_publishable_...`). Las versiones antiguas enviaban esa clave en el encabezado `Authorization` como si fuera un JWT, y el servidor la rechazaba porque no podía decodificarla. Se **actualizó `@supabase/supabase-js` a la última versión (2.117.2)**, que ya entiende el nuevo formato de claves.
+- Al quedar un **token de sesión viejo o inválido** guardado en el navegador, la app se quedaba "pegada": la sesión se veía como activa pero la consulta fallaba. Ahora, al detectar un token inválido, la app **cierra esa sesión automáticamente** y vuelve al inicio de sesión para entrar limpio, en lugar de quedar bloqueada.
+- También se **simplificó el cliente de Supabase** (se quitó una configuración manual de red y una clave de almacenamiento personalizada) para dejar el manejo de la sesión con los valores estándar y evitar estas inconsistencias.
+
+---
+
+## 🚫 Validación robusta de POs duplicadas en Carga CAA (226)
+
+226. **Ya no se pueden cargar POs repetidas** — En **Carga CAA** se podía guardar dos veces la misma PO (por ejemplo, una suelta y otra dentro de una fila con varias POs). La validación tenía dos fallas: comparaba por **coincidencia parcial** (un texto que "contuviera" la PO) en vez de por la **PO completa**, y **si la consulta a la base fallaba solo lo anotaba y dejaba continuar** el guardado. Ahora:
+- La comparación es **exacta por PO completa**, separando correctamente las POs que vienen unidas con " / ".
+- Si la verificación **no puede completarse** (error de conexión o de la base), el guardado **se bloquea** y se pide reintentar, en lugar de dejar pasar el duplicado.
+- Además se detectan POs **repetidas dentro del mismo formulario** y se avisa antes de guardar.
 
 ---
 

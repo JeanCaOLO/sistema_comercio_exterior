@@ -49,10 +49,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('usuarios')
         .select('*')
         .eq('email', userEmail)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('❌ Error al cargar perfil:', error);
+
+        // Si el token de sesión no es válido (JWT inválido/dañado), cerramos la
+        // sesión para limpiar esas credenciales y permitir un inicio de sesión limpio.
+        const esErrorDeSesion =
+          error.code === 'PGRST301' ||
+          /jwt|token|sesi[oó]n|key/i.test(`${error.message ?? ''} ${error.details ?? ''}`);
+
+        if (esErrorDeSesion) {
+          console.warn('⚠️ Sesión inválida detectada. Cerrando sesión para limpiar credenciales.');
+          await supabase.auth.signOut();
+        }
         return;
       }
 
