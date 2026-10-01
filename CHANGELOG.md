@@ -2,7 +2,7 @@
 
 **Sistema de Gestión de Expedientes de Comercio Exterior**  
 *Dropship & Zona Franca (ZF)*  
-*Última actualización: 30 de septiembre de 2026*
+*Última actualización: 1 de octubre de 2026*
 
 ---
 
@@ -426,6 +426,17 @@ Ahora la fuente de rutas es **más robusta y consistente**:
 - **Guardado verificado:** al guardar una ruta, ahora se confirma contra la base de datos que la fila realmente se escribió. Si la base la rechaza (por ejemplo permisos/RLS de `configuracion_sistema`), se muestra un **error claro** en el modal en lugar de dar por guardado algo que no persistió.
 - **Lectura tolerante al formato:** si el valor guardado llegara como texto (JSON serializado) en vez de arreglo, se parsea igual, evitando que el sistema caiga sin darse cuenta a las **9 rutas por defecto**.
 - **Refresco en vivo:** al guardar cambios de rutas se emite un aviso interno que hace que **Crear Expediente**, **Gestión Dropship/ZF**, **Lista de Expedientes** y **Carga CAA** vuelvan a leer la lista al instante, sin necesidad de recargar la página.
+
+---
+
+## 📄 Soporte para archivos Excel con macros (.xlsm) (231)
+
+231. **Ahora se pueden adjuntar archivos .xlsm (Excel con macros)** — Antes solo se aceptaban archivos Excel `.xlsx` y `.xls`, por lo que un `.xlsm` era rechazado al cargarlo. Ahora los archivos **Excel con macros (.xlsm)** se aceptan igual que el resto de Excel en todos los puntos del sistema donde se suben o editan documentos:
+- **Carga de Documentos CAA** (zona de arrastrar/soltar y selector de archivos).
+- **Repositorio de Documentación** → modal **Editar** registro (agregar documentos).
+- **Tickets / Expedientes**: **Crear Expediente** (formulario), **Gestión Dropship/ZF** y **Lista de Expedientes** (edición y carga de documentos).
+
+Además, los `.xlsm` se muestran con el **ícono de Excel** en las listas de archivos, el repositorio, el modal de documentos y la pestaña de **Facturas**, y se actualizó el mensaje de validación para indicar que se acepta `.xlsm`.
 
 ---
 

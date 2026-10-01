@@ -201,7 +201,7 @@ export default function RepositorioDocumentacion() {
   const getFileIconFromUrl = (url: string) => {
     const name = extractFileName(url).toLowerCase();
     if (name.endsWith('.pdf')) return { icon: 'ri-file-pdf-line', color: 'text-red-500', bg: 'bg-red-50' };
-    if (name.endsWith('.xlsx') || name.endsWith('.xls')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
+    if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
     if (name.endsWith('.csv')) return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
     if (name.endsWith('.doc') || name.endsWith('.docx')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
     if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.gif') || name.endsWith('.bmp')) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };

@@ -14,7 +14,7 @@ const EXTENSIONES_IMAGEN = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
 
 const obtenerIcono = (extension?: string): { icon: string; color: string } => {
   if (extension === 'pdf') return { icon: 'ri-file-pdf-line', color: 'text-red-600' };
-  if (['xlsx', 'xls'].includes(extension || '')) return { icon: 'ri-file-excel-line', color: 'text-green-600' };
+  if (['xlsx', 'xls', 'xlsm'].includes(extension || '')) return { icon: 'ri-file-excel-line', color: 'text-green-600' };
   if (extension === 'csv') return { icon: 'ri-file-text-line', color: 'text-blue-600' };
   if (EXTENSIONES_IMAGEN.includes(extension || '')) return { icon: 'ri-image-line', color: 'text-orange-600' };
   return { icon: 'ri-file-line', color: 'text-gray-600' };

@@ -92,7 +92,7 @@ export default function CargaDocumentosCAA() {
     setIsDragging(false);
     const droppedFiles = Array.from(e.dataTransfer.files).filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
+      return ['pdf', 'xlsx', 'xls', 'xlsm', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
     });
     setFiles(prev => [
       ...prev,
@@ -104,7 +104,7 @@ export default function CargaDocumentosCAA() {
     if (e.target.files) {
       const selected = Array.from(e.target.files).filter(f => {
         const ext = f.name.split('.').pop()?.toLowerCase();
-        return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
+        return ['pdf', 'xlsx', 'xls', 'xlsm', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
       });
       setFiles(prev => [
         ...prev,
@@ -137,7 +137,7 @@ export default function CargaDocumentosCAA() {
   const getFileIcon = (fileName: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase();
     if (ext === 'pdf') return { icon: 'ri-file-pdf-line', color: 'text-red-500', bg: 'bg-red-50' };
-    if (['xlsx', 'xls'].includes(ext || '')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
+    if (['xlsx', 'xls', 'xlsm'].includes(ext || '')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
     if (ext === 'csv') return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
     if (['doc', 'docx'].includes(ext || '')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
     if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '')) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };
@@ -690,7 +690,7 @@ export default function CargaDocumentosCAA() {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.png,.jpg,.jpeg,.webp,.gif,.bmp"
+                accept=".pdf,.xlsx,.xls,.xlsm,.csv,.doc,.docx,.png,.jpg,.jpeg,.webp,.gif,.bmp"
                 onChange={handleFileSelect}
                 className="hidden"
               />

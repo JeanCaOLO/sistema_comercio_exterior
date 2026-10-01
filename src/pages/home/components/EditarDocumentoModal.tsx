@@ -60,7 +60,7 @@ const extractFileName = (url: string): string => {
 const getFileIconFromUrl = (url: string) => {
   const name = extractFileName(url).toLowerCase();
   if (name.endsWith('.pdf')) return { icon: 'ri-file-pdf-line', color: 'text-red-500', bg: 'bg-red-50' };
-  if (name.endsWith('.xlsx') || name.endsWith('.xls')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
+  if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
   if (name.endsWith('.csv')) return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
   if (name.endsWith('.doc') || name.endsWith('.docx')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
   if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.gif') || name.endsWith('.bmp')) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };
@@ -70,7 +70,7 @@ const getFileIconFromUrl = (url: string) => {
 const getFileIconFromFile = (fileName: string) => {
   const name = fileName.toLowerCase();
   if (name.endsWith('.pdf')) return { icon: 'ri-file-pdf-line', color: 'text-red-500', bg: 'bg-red-50' };
-  if (name.endsWith('.xlsx') || name.endsWith('.xls')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
+  if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
   if (name.endsWith('.csv')) return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
   if (name.endsWith('.doc') || name.endsWith('.docx')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
   if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.gif') || name.endsWith('.bmp')) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };
@@ -151,7 +151,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
     setIsDragging(false);
     const droppedFiles = Array.from(e.dataTransfer.files).filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
+      return ['pdf', 'xlsx', 'xls', 'xlsm', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
     });
     setNuevosArchivos(prev => [
       ...prev,
@@ -163,7 +163,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
     if (e.target.files) {
       const selected = Array.from(e.target.files).filter(f => {
         const ext = f.name.split('.').pop()?.toLowerCase();
-        return ['pdf', 'xlsx', 'xls', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
+        return ['pdf', 'xlsx', 'xls', 'xlsm', 'csv', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext || '');
       });
       setNuevosArchivos(prev => [
         ...prev,
@@ -787,7 +787,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.png,.jpg,.jpeg,.webp,.gif,.bmp"
+                accept=".pdf,.xlsx,.xls,.xlsm,.csv,.doc,.docx,.png,.jpg,.jpeg,.webp,.gif,.bmp"
                 onChange={handleFileSelect}
                 className="hidden"
               />

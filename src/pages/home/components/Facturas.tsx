@@ -19,7 +19,7 @@ const TODAS_LAS_RUTAS = 'Todas';
 function getFileIcon(fileName: string) {
   const name = fileName.toLowerCase();
   if (name.endsWith('.pdf')) return { icon: 'ri-file-pdf-line', color: 'text-red-500', bg: 'bg-red-50' };
-  if (name.endsWith('.xlsx') || name.endsWith('.xls')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
+  if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.xlsm')) return { icon: 'ri-file-excel-line', color: 'text-green-500', bg: 'bg-green-50' };
   if (name.endsWith('.csv')) return { icon: 'ri-file-text-line', color: 'text-teal-500', bg: 'bg-teal-50' };
   if (name.endsWith('.doc') || name.endsWith('.docx')) return { icon: 'ri-file-word-line', color: 'text-sky-500', bg: 'bg-sky-50' };
   if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'].some((e) => name.endsWith(e))) return { icon: 'ri-image-line', color: 'text-orange-500', bg: 'bg-orange-50' };

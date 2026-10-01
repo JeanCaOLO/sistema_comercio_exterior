@@ -256,11 +256,11 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
       const files = Array.from(e.target.files);
       const validFiles = files.filter(file => {
         const extension = file.name.split('.').pop()?.toLowerCase();
-        return ['pdf', 'xlsx', 'xls', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '');
+        return ['pdf', 'xlsx', 'xls', 'xlsm', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '');
       });
       
       if (validFiles.length !== files.length) {
-        setErrorMessage('Solo se permiten archivos PDF, Excel (.xlsx, .xls), CSV e imágenes (PNG, JPG, JPEG, WebP, GIF, BMP)');
+        setErrorMessage('Solo se permiten archivos PDF, Excel (.xlsx, .xls, .xlsm), CSV e imágenes (PNG, JPG, JPEG, WebP, GIF, BMP)');
         setShowError(true);
         setTimeout(() => setShowError(false), 3000);
       }
@@ -827,7 +827,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                         <input
                           type="file"
                           multiple
-                          accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp,.gif,.bmp"
+                          accept=".pdf,.xlsx,.xls,.xlsm,.csv,.png,.jpg,.jpeg,.webp,.gif,.bmp"
                           onChange={handleFileChange}
                           className="hidden"
                         />
