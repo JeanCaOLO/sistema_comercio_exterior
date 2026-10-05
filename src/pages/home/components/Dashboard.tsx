@@ -8,7 +8,8 @@ import TopMotivosEspera from './TopMotivosEspera';
 import ModalDetalleMcg, { FilaCreacionMcg, FilaEtdMcg } from './ModalDetalleMcg';
 import SeccionKpisDropship from './SeccionKpisDropship';
 import SeccionKpisMcg from './SeccionKpisMcg';
-import SeccionKpisZf, { FilaZfDetalle } from './SeccionKpisZf';
+import SeccionKpisZf from './SeccionKpisZf';
+import { calcularKpisZf, type FilaZfEta, type FilaZfTransito } from '@/lib/kpisZf';
 import { supabase } from '../../../lib/supabase';
 import { formatearFechaCorta, parseFechaSegura, diasHabilesEntre } from '../../../lib/fechas';
 import { descargarExcel } from '../../../lib/exportar';
@@ -137,15 +138,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   const [kpisZF, setKpisZF] = useState<{
-    creadoAEsperaRespuesta: { dias: number; cumpleMeta: boolean };
-    detalle: FilaZfDetalle[];
+    eta: FilaZfEta[];
+    transito: FilaZfTransito[];
   }>({
-    creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-    detalle: []
+    eta: [],
+    transito: []
   });
-
-  // Meta ZF: Creación → Espera de Respuesta
-  const META_ZF_DIAS = 15;
 
   const [kpiDsPromedioNotificado, setKpiDsPromedioNotificado] = useState<number>(0);
   const [kpiZfPromedioCompletado, setKpiZfPromedioCompletado] = useState<number>(0);
@@ -703,102 +701,11 @@ export default function Dashboard() {
 
   const cargarKPIsZF = async (expZF: any[]) => {
     try {
-      if (!expZF || expZF.length === 0) {
-        setKpisZF({
-          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-          detalle: []
-        });
-        return;
-      }
-
-      const expedienteIds = expZF.map(exp => exp.id);
-
-      // Mapa: expediente_id → created_at
-      const createdMap: Record<string, string> = {};
-      expZF.forEach(exp => {
-        createdMap[exp.id] = exp.created_at;
-      });
-
-      // Mapa: expediente_id → primera fecha en que ENTRÓ a «Espera de Respuesta»
-      const fechaEsperaPorExp: Record<string, string> = {};
-
-      // ── Intento 1: tiempos de estados ──
-      // Para una fila con estado_nuevo = «Espera de Respuesta», fecha_inicio es
-      // el momento en que el ticket ENTRÓ a ese estado (fecha_fin sería la salida).
-      const { data: tiempos, error: errorTiempos } = await supabase
-        .from('expedientes_tiempos_estados')
-        .select('expediente_id, estado_nuevo, fecha_inicio')
-        .in('expediente_id', expedienteIds);
-
-      if (!errorTiempos && tiempos && tiempos.length > 0) {
-        tiempos
-          .filter((t: any) => (t.estado_nuevo || '').trim().toLowerCase() === 'espera de respuesta')
-          .forEach((t: any) => {
-            if (!t.fecha_inicio) return;
-            if (!fechaEsperaPorExp[t.expediente_id] || t.fecha_inicio < fechaEsperaPorExp[t.expediente_id]) {
-              fechaEsperaPorExp[t.expediente_id] = t.fecha_inicio;
-            }
-          });
-      }
-
-      // ── Intento 2 (fallback): historial de cambios, solo para los que falten ──
-      const faltantes = expedienteIds.filter((id: string) => !fechaEsperaPorExp[id]);
-      if (faltantes.length > 0) {
-        const { data: historial, error: errorHistorial } = await supabase
-          .from('expedientes_historial')
-          .select('expediente_id, campo_modificado, valor_nuevo, fecha_cambio')
-          .in('expediente_id', faltantes)
-          .eq('campo_modificado', 'Estado');
-
-        if (!errorHistorial && historial && historial.length > 0) {
-          historial
-            .filter((h: any) => (h.valor_nuevo || '').trim().toLowerCase() === 'espera de respuesta')
-            .forEach((h: any) => {
-              if (!fechaEsperaPorExp[h.expediente_id] || h.fecha_cambio < fechaEsperaPorExp[h.expediente_id]) {
-                fechaEsperaPorExp[h.expediente_id] = h.fecha_cambio;
-              }
-            });
-        }
-      }
-
-      // ── Detalle por expediente + promedio ──
-      const detalle: FilaZfDetalle[] = [];
-      expZF.forEach(exp => {
-        const fechaEspera = fechaEsperaPorExp[exp.id];
-        const fechaCreacion = createdMap[exp.id];
-        if (!fechaEspera || !fechaCreacion) return;
-        const dias = diasHabilesEntre(fechaCreacion, fechaEspera);
-        detalle.push({
-          id: exp.id,
-          po_tiquetera: exp.po_tiquetera,
-          exp_id: exp.exp_id || '',
-          solicitante: exp.solicitante || '',
-          fechaCreacion,
-          fechaEspera,
-          dias: Math.round(dias * 10) / 10,
-          cumpleMeta: dias < META_ZF_DIAS
-        });
-      });
-
-      let diasPromedioCreadoAEspera = 0;
-      if (detalle.length > 0) {
-        const totalDias = detalle.reduce((sum, d) => sum + d.dias, 0);
-        diasPromedioCreadoAEspera = Math.round((totalDias / detalle.length) * 10) / 10;
-      }
-
-      setKpisZF({
-        creadoAEsperaRespuesta: {
-          dias: diasPromedioCreadoAEspera,
-          cumpleMeta: detalle.length > 0 && diasPromedioCreadoAEspera < META_ZF_DIAS
-        },
-        detalle: detalle.sort((a, b) => b.dias - a.dias)
-      });
+      const resultado = await calcularKpisZf(expZF);
+      setKpisZF(resultado);
     } catch (error) {
       console.error('Error al cargar KPIs de ZF:', error);
-      setKpisZF({
-        creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-        detalle: []
-      });
+      setKpisZF({ eta: [], transito: [] });
     }
   };
 
@@ -1161,10 +1068,7 @@ export default function Dashboard() {
           volumenLineas: { mesAnterior: '0%', anoAnterior: '0%' },
           minutosPromedio: { mesAnterior: '0%', anoAnterior: '0%' }
         });
-        setKpisZF({
-          creadoAEsperaRespuesta: { dias: 0, cumpleMeta: true },
-          detalle: []
-        });
+        setKpisZF({ eta: [], transito: [] });
         setKpiDsPromedioNotificado(0);
         setKpiZfPromedioCompletado(0);
         setKpiAsignadoNotificado({ totalEvaluados: 0, promedioDias: 0 });
@@ -2093,12 +1997,7 @@ export default function Dashboard() {
       )}
 
       {/* KPIs Específicos de ZF */}
-      <SeccionKpisZf
-        dias={kpisZF.creadoAEsperaRespuesta.dias}
-        cumpleMeta={kpisZF.creadoAEsperaRespuesta.cumpleMeta}
-        detalle={kpisZF.detalle}
-        metaDias={META_ZF_DIAS}
-      />
+      <SeccionKpisZf kpis={kpisZF} />
 
       {/* =========== KPIs de Expedientes Dropship & ETD → Notificado =========== */}
       <SeccionKpisDropship

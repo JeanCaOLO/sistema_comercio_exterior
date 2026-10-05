@@ -440,4 +440,18 @@ Además, los `.xlsm` se muestran con el **ícono de Excel** en las listas de arc
 
 ---
 
+## 📊 Nuevos KPIs de Zona Franca (232)
+
+232. **Los KPIs de ZF ahora miden cumplimiento por ETA estimada y Tránsito corto** — El bloque **KPIs de Expedientes ZF** del dashboard dejó atrás el indicador *Creado → Espera de Respuesta* y ahora muestra **dos tarjetas independientes**, cada una con su **porcentaje de cumplimiento** y la **cantidad de expedientes que cumplen**:
+- **ETA estimada (< 15 días hábiles):** días hábiles entre la **fecha de asignación** (fallback: creación) y la **ETA Real** de cada expediente ZF. Solo se evalúan los expedientes que tienen ETA Real registrada.
+- **Tránsito corto (< 2 días hábiles):** días hábiles entre la **creación** y el **completado/liberación** del expediente ZF.
+
+Cada tarjeta muestra el **% de cumplimiento** con barra de progreso, el desglose de **cumplen / no cumplen / evaluados**, el **promedio de días** y un botón **"Ver detalle de POs"** que **siempre se puede abrir**, con:
+- Tabla por ticket: **PO/Tiquetera, EXP ID, Solicitante, Fecha de Asignación**, la fecha de referencia (ETA Real o Completado), los **días** y si **cumple o no la meta**.
+- Filtro rápido **Todos / Cumplen / No cumplen** y **descarga a Excel**.
+
+El semáforo de cada tarjeta se pinta en verde (≥80%), ámbar (≥50%) o rojo (<50%). Los días se cuentan como **días hábiles** (sin fines de semana ni feriados de Costa Rica), igual que el resto del dashboard. La lógica de cálculo quedó aislada en `src/lib/kpisZf.ts` para mantener el dashboard liviano.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

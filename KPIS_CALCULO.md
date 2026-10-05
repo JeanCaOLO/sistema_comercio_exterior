@@ -4,7 +4,8 @@ Documento de referencia técnica. Explica **cómo se calcula cada indicador**, t
 **Dashboard de Control** como en la sección de **Reportes**.
 
 > Toda la lógica descrita aquí vive en:
-> - Dashboard: `src/pages/home/components/Dashboard.tsx`, `SeccionKpisDropship.tsx`, `SeccionKpisMcg.tsx`, `SeccionKpisZf.tsx`, `TopMotivosEspera.tsx`
+> - Dashboard: `src/pages/home/components/Dashboard.tsx`, `SeccionKpisDropship.tsx`, `SeccionKpisMcg.tsx`, `SeccionKpisZf.tsx`, `ModalDetalleZf.tsx`, `TopMotivosEspera.tsx`
+> - KPIs ZF: `src/lib/kpisZf.ts`
 > - Reportes: `ReporteAtrasos.tsx`, `ReporteCiclo.tsx`, `ReporteRuta.tsx`
 > - Utilidades de fecha: `src/lib/fechas.ts`
 
@@ -229,30 +230,43 @@ promedio = round( suma(días) / totalEvaluados * 10 ) / 10
 
 ---
 
-## A.12 KPIs ZF — Creado → Espera de Respuesta
+## A.12 KPIs ZF — ETA estimada y Tránsito corto
 
-**Meta: menos de 15 días hábiles.**
+Los KPIs de ZF muestran, cada uno por separado, el **porcentaje de cumplimiento** y la
+**cantidad de expedientes que cumplen**. Cada tarjeta tiene un botón **Ver detalle de POs**
+(siempre disponible) que abre el desglose por ticket (PO/Tiquetera, EXP ID, solicitante,
+**fecha de asignación**, fecha de referencia, días y si cumple) con filtro *Todos / Cumplen /
+No cumplen* y descarga a Excel.
 
-- Universo: expedientes ZF.
-- **Inicio** = `created_at`.
-- **Fin** = primera vez que **ENTRÓ** a `Espera de Respuesta`. Se toma de
-  `expedientes_tiempos_estados` (filas con `estado_nuevo = 'Espera de Respuesta'`) usando
-  **`fecha_inicio`** (el momento de entrada al estado). Si falta, se usa el historial de cambios
-  (`valor_nuevo = 'Espera de Respuesta'`).
-- Se incluyen también los tickets que **siguen** en `Espera de Respuesta` (no se exige que tengan
-  fecha de salida).
-- `días = diasHabiles(created_at, fechaEspera)`.
+### A.12.1 ETA estimada  *(meta: < 15 días hábiles)*
+
+- Universo: expedientes ZF **con ETA Real registrada** (`eta_real`).
+- **Inicio** = fecha en que pasó a `Asignado` (fallback: `created_at`).
+- **Fin** = `eta_real` (ETA Real).
+- `días = diasHabiles(inicio, eta_real)`.
 
 ```txt
-días promedio = round( suma(días) / nº registros * 10 ) / 10
-cumpleMeta    = días promedio < 15
+cumple = días < 15
+% Cumplimiento = round( cumplen / totalEvaluados * 100 )
+promedio = round( suma(días) / totalEvaluados * 10 ) / 10
 ```
 
-> El botón **Ver detalle de POs** muestra el desglose por ticket (PO, EXP ID, solicitante, fecha
-> de creación, fecha de entrada a Espera de Respuesta, días y si cumple la meta), con descarga a Excel.
+### A.12.2 Tránsito corto  *(meta: < 2 días hábiles)*
 
-> Internamente también se calcula el **promedio ZF Creación → Completado** (inicio `created_at`,
-> fin llegada a `Completado`) bajo las mismas reglas de días hábiles.
+- Universo: expedientes ZF **con cierre** (llegada a `Completado` o `Liberación`).
+- **Inicio** = `created_at` (creación del expediente).
+- **Fin** = primera llegada a `Completado`/`Liberación` (de `expedientes_tiempos_estados`;
+  fallback: historial de cambios de estado).
+- `días = diasHabiles(created_at, cierre)`.
+
+```txt
+cumple = días < 2
+% Cumplimiento = round( cumplen / totalEvaluados * 100 )
+promedio = round( suma(días) / totalEvaluados * 10 ) / 10
+```
+
+> La lógica de cálculo vive en `src/lib/kpisZf.ts` (`calcularKpisZf`) y la interfaz en
+> `SeccionKpisZf.tsx` (+ `ModalDetalleZf.tsx`).
 
 ---
 
@@ -397,7 +411,8 @@ Se promedian sobre **todos** los expedientes Dropship (global y por ruta):
 | ETD → Notificado | Dropship Normal | ≤ 5 días hábiles |
 | Creación (Asignado → Liberado) | MCG | ≤ 2 días hábiles |
 | ETD → Notificado | MCG | < 2 días hábiles |
-| Creado → Espera de Respuesta | ZF | < 15 días hábiles |
+| ETA estimada (asignación → ETA Real) | ZF | < 15 días hábiles |
+| Tránsito corto (creación → cierre) | ZF | < 2 días hábiles |
 | Aging "crítico" | Todos | > 7 días |
 
 ---
