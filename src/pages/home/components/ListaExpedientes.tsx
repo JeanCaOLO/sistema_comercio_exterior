@@ -4,7 +4,7 @@ import { formatearFecha } from '../../../lib/fechas';
 import { cargarRutasActivas, type RutaLogistica } from '../../../lib/rutas';
 import { notificarComentario } from '../../../lib/notificaciones';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
-import { parseDocEntries, combinarEntradas, type DocEntry } from '@/lib/documentos';
+import { parseDocEntries, combinarEntradas, nombresFacturas, type DocEntry } from '@/lib/documentos';
 import ModalDocumentosExpediente from '@/pages/home/components/ModalDocumentosExpediente';
 
 interface Expediente {
@@ -262,7 +262,8 @@ export default function ListaExpedientes() {
         (exp.exp_id || '').toLowerCase().includes(term) ||
         (exp.solicitante || '').toLowerCase().includes(term) ||
         (exp.responsable_creacion || '').toLowerCase().includes(term) ||
-        (exp.tipo_po || '').toLowerCase().includes(term)
+        (exp.tipo_po || '').toLowerCase().includes(term) ||
+        nombresFacturas(exp.doc).some((nombre) => nombre.includes(term))
       );
       console.log('🔎 Después de búsqueda:', filtered.length);
     }
@@ -971,7 +972,7 @@ export default function ListaExpedientes() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="PO, EXP ID, Solicitante, Responsable..."
+                placeholder="PO, N° de factura, EXP ID, Solicitante, Responsable..."
                 className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
               />
               {searchTerm && (

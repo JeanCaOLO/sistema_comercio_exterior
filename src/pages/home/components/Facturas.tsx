@@ -154,7 +154,9 @@ export default function Facturas() {
     if (filtroRuta !== TODAS_LAS_RUTAS && row.ruta !== filtroRuta) return false;
     if (searchPO.trim()) {
       const term = searchPO.trim().toLowerCase();
-      if (!row.po.toLowerCase().includes(term)) return false;
+      const coincidePO = row.po.toLowerCase().includes(term);
+      const coincideFactura = row.fileName.toLowerCase().includes(term);
+      if (!coincidePO && !coincideFactura) return false;
     }
     return true;
   });
@@ -275,7 +277,7 @@ export default function Facturas() {
                   type="text"
                   value={searchPO}
                   onChange={(e) => setSearchPO(e.target.value)}
-                  placeholder="Buscar por PO..."
+                  placeholder="Buscar por PO o N° de factura..."
                   className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                 />
               </div>
@@ -324,7 +326,7 @@ export default function Facturas() {
                         <div className="flex flex-col items-center gap-2">
                           <i className="ri-file-search-line text-4xl text-gray-300"></i>
                           <p className="text-gray-500 font-medium">No se encontraron facturas con esos filtros</p>
-                          <p className="text-gray-400 text-sm">Probá ajustando el PO o la ruta</p>
+                          <p className="text-gray-400 text-sm">Probá ajustando el PO, el N° de factura o la ruta</p>
                         </div>
                       </td>
                     </tr>

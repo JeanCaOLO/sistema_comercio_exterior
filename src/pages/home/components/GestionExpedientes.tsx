@@ -5,7 +5,7 @@ import { crearNotificacion, notificarComentario } from '../../../lib/notificacio
 import { formatearFecha } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
-import { parseDocEntries, combinarEntradas, type DocEntry } from '@/lib/documentos';
+import { parseDocEntries, combinarEntradas, nombresFacturas, type DocEntry } from '@/lib/documentos';
 import ModalDocumentosExpediente from '@/pages/home/components/ModalDocumentosExpediente';
 
 interface Expediente {
@@ -175,6 +175,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   const [expedientes, setExpedientes] = useState<Expediente[]>([]);
   const [filteredExpedientes, setFilteredExpedientes] = useState<Expediente[]>([]);
+  const [facturasPorId, setFacturasPorId] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPersona, setFilterPersona] = useState('Todos');
@@ -247,6 +248,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   useEffect(() => {
     cargarExpedientes();
+    cargarFacturasBusqueda();
     cargarUsuarios();
     obtenerUsuarioActual();
     cargarRutasDisponibles();
@@ -267,7 +269,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   useEffect(() => {
     filtrarExpedientes();
-  }, [searchTerm, filterPersona, filterPrioridad, expedientes]);
+  }, [searchTerm, filterPersona, filterPrioridad, expedientes, facturasPorId]);
 
   // Nuevo efecto para recargar cuando cambia refreshTrigger
   useEffect(() => {
@@ -327,7 +329,8 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         (exp.po_tiquetera || '').toLowerCase().includes(term) ||
         (exp.exp_id || '').toLowerCase().includes(term) ||
         (exp.solicitante || '').toLowerCase().includes(term) ||
-        (exp.responsable_creacion || '').toLowerCase().includes(term)
+        (exp.responsable_creacion || '').toLowerCase().includes(term) ||
+        (facturasPorId[exp.id] || []).some((nombre) => nombre.includes(term))
       );
     }
 
@@ -417,6 +420,31 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       setExpedientes([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Carga un mapa liviano de "nombres de factura por expediente" (solo id + doc).
+  // El kanban NO trae el campo `doc` por rendimiento, así que esto habilita la
+  // búsqueda por número de factura sin cargar los documentos en cada tarjeta.
+  const cargarFacturasBusqueda = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('expedientes')
+        .select('id, doc')
+        .eq('tipo_modulo', tipoModulo);
+
+      if (error) {
+        console.error('Error al cargar facturas para búsqueda:', error);
+        return;
+      }
+
+      const mapa: Record<string, string[]> = {};
+      (data || []).forEach((d: any) => {
+        mapa[d.id] = nombresFacturas(d.doc);
+      });
+      setFacturasPorId(mapa);
+    } catch (err) {
+      console.error('Error al cargar facturas para búsqueda:', err);
     }
   };
 
@@ -744,6 +772,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         const conOKAutomatico = await aplicarOKPaisAutomatico(data);
         setExpedientes(filtrarTerminadosAntiguos(conOKAutomatico));
       }
+      await cargarFacturasBusqueda();
     } catch (err) {
       console.error('Error en recarga silenciosa:', err);
     }
@@ -1691,7 +1720,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="PO, EXP ID, Solicitante, Responsable..."
+                placeholder="PO, N° de factura, EXP ID, Solicitante, Responsable..."
                 className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
               />
               {searchTerm && (

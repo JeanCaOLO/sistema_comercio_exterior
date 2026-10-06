@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import EditarDocumentoModal from './EditarDocumentoModal';
 import HistorialDocumentoModal from './HistorialDocumentoModal';
-import { parseDocEntries, esFactura } from '@/lib/documentos';
+import { parseDocEntries, esFactura, nombresFacturas } from '@/lib/documentos';
 
 interface ExpedienteRepo {
   id: string;
@@ -136,7 +136,8 @@ export default function RepositorioDocumentacion() {
         (doc.exp_id || '').toLowerCase().includes(term) ||
         (doc.solicitante || '').toLowerCase().includes(term) ||
         (doc.responsable_creacion || '').toLowerCase().includes(term) ||
-        (doc.tipo_po || '').toLowerCase().includes(term)
+        (doc.tipo_po || '').toLowerCase().includes(term) ||
+        nombresFacturas(doc.doc).some((nombre) => nombre.includes(term))
       );
     }
 
@@ -343,7 +344,7 @@ export default function RepositorioDocumentacion() {
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Buscar por PO, EXP ID, solicitante, responsable o ruta..."
+                    placeholder="Buscar por PO, N° de factura, EXP ID, solicitante, responsable o ruta..."
                     className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-transparent text-sm"
                   />
                 </div>

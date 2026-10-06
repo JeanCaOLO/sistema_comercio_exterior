@@ -111,3 +111,14 @@ export function parsePOs(poTiquetera: string | null | undefined): string[] {
 export function normalizarPO(po: string): string {
   return po.trim().toLowerCase();
 }
+
+/**
+ * Devuelve los nombres de archivo (en minúsculas) de las entradas marcadas
+ * como factura. Se usa para permitir la búsqueda por número de factura, que
+ * vive dentro del nombre del archivo subido.
+ */
+export function nombresFacturas(doc: unknown): string[] {
+  return parseDocEntries(doc)
+    .filter(esFactura)
+    .map((entry) => nombreDeArchivo(entry.url).toLowerCase());
+}

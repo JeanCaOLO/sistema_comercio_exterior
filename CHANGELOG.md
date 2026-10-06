@@ -454,4 +454,16 @@ El semáforo de cada tarjeta se pinta en verde (≥80%), ámbar (≥50%) o rojo 
 
 ---
 
+## 🔎 Búsqueda por número de factura en todos los buscadores (233)
+
+233. **Ahora se puede buscar por número de factura en los cuatro buscadores del sistema** — Antes los buscadores solo encontraban por PO, EXP ID, solicitante, responsable o ruta. Como una factura es un **archivo marcado como factura** (no un registro con número propio), el número de factura vive dentro del **nombre del archivo**. Ahora los buscadores también miran los nombres de los archivos marcados como factura, así que escribiendo el número (por ejemplo `00123`) aparece el ticket o la factura correspondiente. Aplica a:
+- **Facturas**: busca por PO **y** por número de factura.
+- **Repositorio de Documentación**: busqueda global que ahora incluye el número de factura.
+- **Lista de Expedientes**: el buscador ahora también encuentra por número de factura.
+- **Gestión de Expedientes (Dropship y ZF)**: mismo buscador ampliado. Para que esto no afecte el rendimiento del kanban, el sistema trae un **mapa liviano de facturas por expediente** solo para el buscador, sin cargar los documentos de cada tarjeta.
+
+Se unificó la lógica en un único helper (`nombresFacturas` en `src/lib/documentos.ts`) y se actualizaron los textos de ayuda de cada caja de búsqueda para indicar que ahora se puede buscar por número de factura.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*
