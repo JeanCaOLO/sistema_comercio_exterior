@@ -251,6 +251,11 @@ cumple = días < 15
 promedio = round( suma(días) / totalEvaluados * 10 ) / 10
 ```
 
+> **Aviso de datos faltantes:** los expedientes ZF **sin ETA Real** cargada **no se evalúan**
+> (no cuentan ni como cumple ni como no cumple). La tarjeta muestra un aviso ámbar indicando
+> **cuántos expedientes ZF del período no tienen ETA Real**, para que se puedan completar. Ese
+> conteo se expone como `sinEtaReal` en `calcularKpisZf`.
+
 ### A.12.2 Tránsito corto  *(meta: < 2 días hábiles)*
 
 - Universo: expedientes ZF **con cierre** (llegada a `Completado` o `Liberación`).

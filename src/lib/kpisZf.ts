@@ -32,6 +32,9 @@ export interface FilaZfTransito {
 export interface ResultadoKpisZf {
   eta: FilaZfEta[];
   transito: FilaZfTransito[];
+  // Cantidad de expedientes ZF que NO tienen ETA Real cargada y, por lo tanto,
+  // no se evalúan en el KPI de ETA estimada (solo se informa, no afecta el cálculo).
+  sinEtaReal: number;
 }
 
 // Estados que cuentan como cierre del expediente ZF
@@ -47,7 +50,7 @@ const redondear = (valor: number): number => Math.round(valor * 10) / 10;
  */
 export async function calcularKpisZf(expZF: any[]): Promise<ResultadoKpisZf> {
   if (!expZF || expZF.length === 0) {
-    return { eta: [], transito: [] };
+    return { eta: [], transito: [], sinEtaReal: 0 };
   }
 
   const ids = expZF.map((e) => e.id);
@@ -124,7 +127,10 @@ export async function calcularKpisZf(expZF: any[]): Promise<ResultadoKpisZf> {
 
     // ── KPI 2: Tránsito corto < 2 días hábiles ──
     // Días entre la creación y el cierre (completado/liberación).
-    const fin = fechaTerminal[exp.id];
+    // Respaldo: si no hay registro en el historial de tiempos, se usa la fecha de liberación
+    // que guarda la app al pasar a Completado (cuando el estado del expediente ya es terminal).
+    const esTerminal = ESTADOS_TERMINALES_ZF.includes((exp.estado_expediente || '').trim().toLowerCase());
+    const fin = fechaTerminal[exp.id] || exp.fecha_liberacion || (esTerminal ? exp.updated_at : null);
     if (fin) {
       const dias = diasHabilesEntre(exp.created_at, fin);
       transito.push({
@@ -143,5 +149,6 @@ export async function calcularKpisZf(expZF: any[]): Promise<ResultadoKpisZf> {
   return {
     eta: eta.sort((a, b) => b.dias - a.dias),
     transito: transito.sort((a, b) => b.dias - a.dias),
+    sinEtaReal: expZF.filter((exp) => !exp.eta_real).length,
   };
 }

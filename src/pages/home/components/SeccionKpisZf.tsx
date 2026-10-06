@@ -11,6 +11,7 @@ interface SeccionKpisZfProps {
   kpis: {
     eta: FilaZfEta[];
     transito: FilaZfTransito[];
+    sinEtaReal?: number;
   };
 }
 
@@ -37,10 +38,11 @@ interface TarjetaKpiZfProps {
   subtitulo: string;
   metaTexto: string;
   resumen: Resumen;
+  aviso?: string;
   onVerDetalle: () => void;
 }
 
-function TarjetaKpiZf({ icono, titulo, subtitulo, metaTexto, resumen, onVerDetalle }: TarjetaKpiZfProps) {
+function TarjetaKpiZf({ icono, titulo, subtitulo, metaTexto, resumen, aviso, onVerDetalle }: TarjetaKpiZfProps) {
   const sinDatos = resumen.total === 0;
   const colorValor = resumen.porcentaje >= 80 ? 'text-emerald-600' : resumen.porcentaje >= 50 ? 'text-amber-600' : 'text-red-600';
   const colorBarra = resumen.porcentaje >= 80 ? 'bg-emerald-500' : resumen.porcentaje >= 50 ? 'bg-amber-500' : 'bg-red-500';
@@ -97,6 +99,13 @@ function TarjetaKpiZf({ icono, titulo, subtitulo, metaTexto, resumen, onVerDetal
         </div>
       </div>
 
+      {aviso && (
+        <div className="mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+          <i className="ri-error-warning-line text-amber-500 text-base mt-0.5 flex-shrink-0"></i>
+          <p className="text-[11px] leading-snug text-amber-800">{aviso}</p>
+        </div>
+      )}
+
       <div className="mt-auto pt-4 border-t border-gray-200 flex items-center justify-between text-xs mb-4">
         <span className="text-gray-600">Promedio</span>
         <span className={`font-semibold ${sinDatos ? 'text-gray-400' : 'text-gray-800'}`}>
@@ -120,6 +129,7 @@ export default function SeccionKpisZf({ kpis }: SeccionKpisZfProps) {
 
   const resumenEta = resumir(kpis.eta);
   const resumenTransito = resumir(kpis.transito);
+  const sinEtaReal = kpis.sinEtaReal ?? 0;
 
   const filasEta: FilaDetalleZf[] = kpis.eta.map((f) => ({
     id: f.id,
@@ -163,6 +173,11 @@ export default function SeccionKpisZf({ kpis }: SeccionKpisZfProps) {
             subtitulo="Días entre la asignación y la ETA Real"
             metaTexto={`< ${META_ZF_ETA_DIAS} días`}
             resumen={resumenEta}
+            aviso={
+              sinEtaReal > 0
+                ? `${sinEtaReal} expediente${sinEtaReal !== 1 ? 's' : ''} ZF sin ETA Real cargada: no se evalúa${sinEtaReal !== 1 ? 'n' : ''} en este indicador.`
+                : undefined
+            }
             onVerDetalle={() => setDetalleActivo('eta')}
           />
           <TarjetaKpiZf

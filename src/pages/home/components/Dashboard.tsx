@@ -140,9 +140,11 @@ export default function Dashboard() {
   const [kpisZF, setKpisZF] = useState<{
     eta: FilaZfEta[];
     transito: FilaZfTransito[];
+    sinEtaReal: number;
   }>({
     eta: [],
-    transito: []
+    transito: [],
+    sinEtaReal: 0
   });
 
   const [kpiDsPromedioNotificado, setKpiDsPromedioNotificado] = useState<number>(0);
@@ -321,6 +323,47 @@ export default function Dashboard() {
 
     if (error) throw error;
     return data || [];
+  };
+
+  // Carga los expedientes ZF que tuvieron ACTIVIDAD dentro del período:
+  //  - fueron creados en el rango, o
+  //  - tuvieron algún cambio de estado dentro del rango.
+  // Se usa para los KPIs de ZF, para que no dependan exclusivamente del registro
+  // de estado "Asignado" (que puede faltar en tickets cargados por otros flujos)
+  // y así se evalúen igual los expedientes ZF ya terminados.
+  const cargarZfDelPeriodo = async (inicioISO: string, finISO: string): Promise<any[]> => {
+    const { data: zfTodos, error } = await supabase
+      .from('expedientes')
+      .select('*')
+      .ilike('tipo_modulo', 'zf');
+
+    if (error || !zfTodos || zfTodos.length === 0) return [];
+
+    const ids = zfTodos.map((e: any) => e.id);
+    const { data: tiempos } = await supabase
+      .from('expedientes_tiempos_estados')
+      .select('expediente_id, fecha_inicio')
+      .in('expediente_id', ids);
+
+    const conActividad = new Set<string>();
+    (tiempos || []).forEach((t: any) => {
+      if (
+        t.fecha_inicio &&
+        t.fecha_inicio >= `${inicioISO}T00:00:00` &&
+        t.fecha_inicio <= `${finISO}T23:59:59`
+      ) {
+        conActividad.add(t.expediente_id);
+      }
+    });
+
+    return zfTodos.filter((exp: any) => {
+      if (conActividad.has(exp.id)) return true;
+      const creado = exp.created_at || exp.fecha_creacion_expediente;
+      if (!creado) return false;
+      // Compara solo la parte de fecha (YYYY-MM-DD)
+      const soloFecha = String(creado).substring(0, 10);
+      return soloFecha >= inicioISO && soloFecha <= finISO;
+    });
   };
 
   const obtenerRangoFechas = (periodoOverride?: string) => {
@@ -705,7 +748,7 @@ export default function Dashboard() {
       setKpisZF(resultado);
     } catch (error) {
       console.error('Error al cargar KPIs de ZF:', error);
-      setKpisZF({ eta: [], transito: [] });
+      setKpisZF({ eta: [], transito: [], sinEtaReal: 0 });
     }
   };
 
@@ -929,10 +972,10 @@ export default function Dashboard() {
           setEtdDetalle([]);
         }
 
-        // Estados ZF — comparación case-insensitive
-        const expZF = expedientes.filter(exp =>
-          (exp.tipo_modulo || '').toLowerCase() === 'zf'
-        );
+        // ZF — carga tolerante al filtro de asignación (ver cargarZfDelPeriodo).
+        // Garantiza que los expedientes ZF con actividad en el período se evalúen en los
+        // KPIs aunque no tengan un registro de estado "Asignado".
+        const expZF = await cargarZfDelPeriodo(aFechaISO(inicio), aFechaISO(fin));
         setEstadoDataZF(contarEstados(expZF));
 
         // ── KPI Dropship: Promedio días Creación → Notificado ──
@@ -1068,7 +1111,7 @@ export default function Dashboard() {
           volumenLineas: { mesAnterior: '0%', anoAnterior: '0%' },
           minutosPromedio: { mesAnterior: '0%', anoAnterior: '0%' }
         });
-        setKpisZF({ eta: [], transito: [] });
+        setKpisZF({ eta: [], transito: [], sinEtaReal: 0 });
         setKpiDsPromedioNotificado(0);
         setKpiZfPromedioCompletado(0);
         setKpiAsignadoNotificado({ totalEvaluados: 0, promedioDias: 0 });

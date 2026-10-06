@@ -466,4 +466,20 @@ Se unificó la lógica en un único helper (`nombresFacturas` en `src/lib/docume
 
 ---
 
+## 📊 Corrección: los KPIs de ZF no mostraban datos (234)
+
+234. **Los KPIs de Zona Franca ahora sí evalúan los tickets terminados** — Aunque hubiera tickets ZF en estado **Completado**, con su **ETA Real** cargada y **asignados en el período**, las tarjetas de **ETA estimada** y **Tránsito corto** aparecían vacías ("—"). La causa era el filtro de período del dashboard: solo incluía los expedientes que tenían un **registro de estado "Asignado"** dentro del rango, y varios tickets ZF no lo tenían, por lo que **nunca llegaban al cálculo** de los KPIs. Ahora:
+- Los expedientes ZF se cargan de forma **tolerante**: se incluyen si **tuvieron actividad dentro del período** (fueron creados en el rango o tuvieron algún cambio de estado en el rango), sin depender exclusivamente del registro "Asignado".
+- Se agregó un **respaldo de la fecha de cierre** para el KPI de Tránsito corto: si falta el registro en el historial de tiempos, se usa la **fecha de liberación** que la app guarda al pasar a **Completado**.
+
+Con esto, los tickets ZF terminados en el período vuelven a aparecer en el **% de cumplimiento**, en los conteos y en el botón **"Ver detalle de POs"**.
+
+---
+
+## 📊 Aviso de ETA Real faltante en los KPIs de ZF (235)
+
+235. **Los KPIs de ZF ahora avisan cuántos tickets faltan cargar la ETA Real** — El KPI **ETA estimada** de Zona Franca solo puede medir los expedientes ZF que tienen la **ETA Real** registrada; los que no la tienen quedaban **fuera del cálculo sin avisar**, por lo que la tarjeta podía verse vacía ("—") sin explicación. Ahora, cuando hay expedientes ZF del período **sin ETA Real cargada**, la tarjeta de **ETA estimada** muestra un **aviso ámbar** indicando **cuántos son** y aclarando que **no se evalúan** en ese indicador. El cálculo **no cambia**: seguir evaluando solo los tickets con ETA Real (los demás no suman a cumplen/no cumplen). El conteo se calcula en `kpisZf.ts` (`sinEtaReal`) y se muestra en `SeccionKpisZf.tsx`.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*
