@@ -1171,7 +1171,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         responsable_creacion: selectedExpediente.responsable_creacion,
         instrucciones_adicionales: selectedExpediente.instrucciones_adicionales,
         usuario_modificador: emailUsuario,
-        transito_corto: tipoModulo === 'dropship' ? (selectedExpediente.transito_corto ?? false) : false,
+        transito_corto: selectedExpediente.transito_corto ?? false,
         ok_pais: tipoModulo === 'dropship' ? (selectedExpediente.ok_pais ?? false) : false,
         bl_cargado: selectedExpediente.bl_cargado ?? false,
         aplica_tlc: selectedExpediente.aplica_tlc ?? false,
@@ -2306,37 +2306,38 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
                   </div>
                 )}
 
-                {/* Checkboxes Tránsito Corto y OK País — solo Dropship */}
+                {/* Checkbox Tránsito Corto — disponible para Dropship y ZF */}
+                <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.transito_corto ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="flex-1">
+                    <label className="block text-sm font-semibold text-gray-800 mb-1">
+                      Tránsito Corto
+                    </label>
+                    <p className="text-xs text-gray-500">Expediente de tránsito corto</p>
+                  </div>
+                  {editMode ? (
+                    <button
+                      type="button"
+                      onClick={() => handleChange('transito_corto', !selectedExpediente.transito_corto)}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        selectedExpediente.transito_corto ? 'bg-amber-500' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          selectedExpediente.transito_corto ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.transito_corto ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {selectedExpediente.transito_corto ? 'Sí' : 'No'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Checkboxes OK País, Finiquito, MCG e Incidente — solo Dropship */}
                 {selectedExpediente.tipo_modulo === 'dropship' && (
                   <>
-                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.transito_corto ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <div className="flex-1">
-                        <label className="block text-sm font-semibold text-gray-800 mb-1">
-                          Tránsito Corto
-                        </label>
-                        <p className="text-xs text-gray-500">Expediente de tránsito corto</p>
-                      </div>
-                      {editMode ? (
-                        <button
-                          type="button"
-                          onClick={() => handleChange('transito_corto', !selectedExpediente.transito_corto)}
-                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                            selectedExpediente.transito_corto ? 'bg-amber-500' : 'bg-gray-300'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              selectedExpediente.transito_corto ? 'translate-x-8' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      ) : (
-                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.transito_corto ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {selectedExpediente.transito_corto ? 'Sí' : 'No'}
-                        </span>
-                      )}
-                    </div>
-
                     <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.ok_pais ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
                       <div className="flex-1">
                         <label className="block text-sm font-semibold text-gray-800 mb-1">

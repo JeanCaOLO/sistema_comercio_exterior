@@ -113,7 +113,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
     observaciones: '',
     etd: '', // Para Dropship
     etaReal: '', // Para ZF
-    transitoCorto: false, // Para Dropship
+    transitoCorto: false, // Para Dropship y ZF
     blCargado: false,
     aplicaTLC: false,
     incidente: false,

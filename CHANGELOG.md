@@ -482,4 +482,15 @@ Con esto, los tickets ZF terminados en el período vuelven a aparecer en el **% 
 
 ---
 
+## ✅ Tránsito Corto en ZF y ajuste de los KPIs de Zona Franca (236)
+
+236. **El KPI "Tránsito corto" de ZF ahora sí depende del check marcado, y el check se puede usar en Zona Franca** — Antes el KPI de **Tránsito corto (ZF)** medía *todos* los tickets ZF terminados (creación → cierre), sin importar si estaban marcados como tránsito corto, y además el campo **"Tránsito Corto" no se podía marcar ni conservar en Zona Franca** (al editar un ticket ZF se forzaba a "No" y el interruptor ni siquiera se mostraba en el modal). Ahora:
+- **El check "Tránsito Corto" está disponible para Zona Franca** en la **creación de expedientes** y en la **edición** desde **Gestión ZF** y **Lista de Expedientes** (se muestra el interruptor ámbar para ZF y el valor se guarda sin forzarlo a falso). La tarjeta del kanban ya reflejaba el badge **TC**.
+- **El KPI "Tránsito corto" de ZF mide SOLO los POs marcados** con ese check (`transito_corto === true`), y el tiempo se calcula como **días hábiles entre la asignación (o creación) y el cierre del expediente (Completado/Liberación)**.
+- **El KPI "ETA estimada" de ZF usa exactamente los tickets del board de Gestión de ZF** del período (creados en el rango o con actividad de estado en el rango), igualando el universo de esos KPIs al de la pantalla de Zona Franca.
+
+Con esto, las dos tarjetas de KPIs de ZF responden a lo que realmente se marca y se ve en el board de Gestión de ZF. Se actualizó el documento `KPIS_CALCULO.md`.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

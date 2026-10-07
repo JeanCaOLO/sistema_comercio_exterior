@@ -335,7 +335,7 @@ export default function Dashboard() {
     const { data: zfTodos, error } = await supabase
       .from('expedientes')
       .select('*')
-      .ilike('tipo_modulo', 'zf');
+      .eq('tipo_modulo', 'zf');
 
     if (error || !zfTodos || zfTodos.length === 0) return [];
 

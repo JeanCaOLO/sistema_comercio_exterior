@@ -183,7 +183,7 @@ export default function SeccionKpisZf({ kpis }: SeccionKpisZfProps) {
           <TarjetaKpiZf
             icono="ri-speed-line"
             titulo="Tránsito corto"
-            subtitulo="Días entre la creación y el completado/liberación"
+            subtitulo="Solo POs marcadas como Tránsito Corto · días entre la asignación y el cierre"
             metaTexto={`< ${META_ZF_TRANSITO_DIAS} días`}
             resumen={resumenTransito}
             onVerDetalle={() => setDetalleActivo('transito')}
@@ -206,7 +206,7 @@ export default function SeccionKpisZf({ kpis }: SeccionKpisZfProps) {
       {detalleActivo === 'transito' && (
         <ModalDetalleZf
           titulo="Detalle Tránsito corto (ZF)"
-          subtitulo="Días hábiles entre la creación del expediente y su completado/liberación"
+          subtitulo="Días hábiles entre la asignación del expediente y su completado/liberación (solo POs marcadas como Tránsito Corto)"
           etiquetaFecha="Completado"
           metaTexto={`< ${META_ZF_TRANSITO_DIAS} días`}
           nombreArchivo="reporte-zf-transito-corto"

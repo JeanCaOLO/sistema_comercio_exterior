@@ -238,9 +238,11 @@ Los KPIs de ZF muestran, cada uno por separado, el **porcentaje de cumplimiento*
 **fecha de asignación**, fecha de referencia, días y si cumple) con filtro *Todos / Cumplen /
 No cumplen* y descarga a Excel.
 
+> **Universo de los KPIs de ZF:** los expedientes **ZF del board de Gestión de ZF** (los mismos tickets de Zona Franca) que **tuvieron actividad dentro del período** seleccionado (fueron creados en el rango o tuvieron algún cambio de estado en el rango). No dependen del registro de estado "Asignado".
+
 ### A.12.1 ETA estimada  *(meta: < 15 días hábiles)*
 
-- Universo: expedientes ZF **con ETA Real registrada** (`eta_real`).
+- Universo: expedientes ZF del período **con ETA Real registrada** (`eta_real`).
 - **Inicio** = fecha en que pasó a `Asignado` (fallback: `created_at`).
 - **Fin** = `eta_real` (ETA Real).
 - `días = diasHabiles(inicio, eta_real)`.
@@ -258,11 +260,14 @@ promedio = round( suma(días) / totalEvaluados * 10 ) / 10
 
 ### A.12.2 Tránsito corto  *(meta: < 2 días hábiles)*
 
-- Universo: expedientes ZF **con cierre** (llegada a `Completado` o `Liberación`).
-- **Inicio** = `created_at` (creación del expediente).
+- Universo: expedientes ZF del período **marcados con el check "Tránsito Corto"**
+  (`transito_corto === true`) **y con cierre** (llegada a `Completado` o `Liberación`).
+  El check "Tránsito Corto" está **disponible tanto en Dropship como en ZF** (se puede marcar al
+  crear el expediente o editarlo desde Gestión ZF / Lista de Expedientes).
+- **Inicio** = fecha en que pasó a `Asignado` (fallback: `created_at`).
 - **Fin** = primera llegada a `Completado`/`Liberación` (de `expedientes_tiempos_estados`;
-  fallback: historial de cambios de estado).
-- `días = diasHabiles(created_at, cierre)`.
+  fallback: historial de cambios de estado o `fecha_liberacion`).
+- `días = diasHabiles(asignación, cierre)`.
 
 ```txt
 cumple = días < 2

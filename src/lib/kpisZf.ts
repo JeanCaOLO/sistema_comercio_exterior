@@ -17,7 +17,7 @@ export interface FilaZfEta {
   cumpleMeta: boolean;
 }
 
-// ── Fila del detalle: Tránsito corto < 2 días hábiles (creación → completado/liberación) ──
+// ── Fila del detalle: Tránsito corto < 2 días hábiles (solo POs marcadas; asignación → cierre) ──
 export interface FilaZfTransito {
   id: string;
   po_tiquetera: string;
@@ -45,7 +45,8 @@ const redondear = (valor: number): number => Math.round(valor * 10) / 10;
 /**
  * Calcula los dos KPIs de ZF:
  *  1. ETA estimada < 15 días hábiles → días entre la asignación (o creación) y la ETA Real.
- *  2. Tránsito corto < 2 días hábiles → días entre la creación y el completado/liberación.
+ *  2. Tránsito corto < 2 días hábiles → solo los expedientes ZF MARCADOS como tránsito corto;
+ *     días entre la asignación (o creación) y el completado/liberación.
  * Devuelve el detalle por PO de cada KPI (incluyendo la fecha de asignación).
  */
 export async function calcularKpisZf(expZF: any[]): Promise<ResultadoKpisZf> {
@@ -126,23 +127,26 @@ export async function calcularKpisZf(expZF: any[]): Promise<ResultadoKpisZf> {
     }
 
     // ── KPI 2: Tránsito corto < 2 días hábiles ──
-    // Días entre la creación y el cierre (completado/liberación).
+    // Solo se evalúan los expedientes ZF MARCADOS con el check "Tránsito Corto".
+    // Días entre la asignación (o creación) y el cierre (completado/liberación).
     // Respaldo: si no hay registro en el historial de tiempos, se usa la fecha de liberación
     // que guarda la app al pasar a Completado (cuando el estado del expediente ya es terminal).
-    const esTerminal = ESTADOS_TERMINALES_ZF.includes((exp.estado_expediente || '').trim().toLowerCase());
-    const fin = fechaTerminal[exp.id] || exp.fecha_liberacion || (esTerminal ? exp.updated_at : null);
-    if (fin) {
-      const dias = diasHabilesEntre(exp.created_at, fin);
-      transito.push({
-        id: exp.id,
-        po_tiquetera: exp.po_tiquetera,
-        exp_id: exp.exp_id || '',
-        solicitante: exp.solicitante || '',
-        fechaAsignacion: fechaAsig,
-        fechaFin: fin,
-        dias: redondear(dias),
-        cumpleMeta: dias < META_ZF_TRANSITO_DIAS,
-      });
+    if (exp.transito_corto === true) {
+      const esTerminal = ESTADOS_TERMINALES_ZF.includes((exp.estado_expediente || '').trim().toLowerCase());
+      const fin = fechaTerminal[exp.id] || exp.fecha_liberacion || (esTerminal ? exp.updated_at : null);
+      if (fin) {
+        const dias = diasHabilesEntre(fechaAsig, fin);
+        transito.push({
+          id: exp.id,
+          po_tiquetera: exp.po_tiquetera,
+          exp_id: exp.exp_id || '',
+          solicitante: exp.solicitante || '',
+          fechaAsignacion: fechaAsig,
+          fechaFin: fin,
+          dias: redondear(dias),
+          cumpleMeta: dias < META_ZF_TRANSITO_DIAS,
+        });
+      }
     }
   });
 
