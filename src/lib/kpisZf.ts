@@ -1,17 +1,17 @@
 import { supabase } from './supabase';
-import { diasHabilesEntre } from './fechas';
+import { diasHabilesEntre, parseFechaSegura } from './fechas';
 
 // ── Metas de los KPIs de Zona Franca (ZF) ──
-export const META_ZF_ETA_DIAS = 15;
 export const META_ZF_TRANSITO_DIAS = 2;
 
-// ── Fila del detalle: ETA estimada < 15 días hábiles ──
+// ── Fila del detalle: ETA estimada (completado en o antes de la ETA Real) ──
 export interface FilaZfEta {
   id: string;
   po_tiquetera: string;
   exp_id: string;
   solicitante: string;
   fechaAsignacion: string;
+  fechaCompletado: string;
   fechaEta: string;
   dias: number;
   cumpleMeta: boolean;
@@ -44,7 +44,8 @@ const redondear = (valor: number): number => Math.round(valor * 10) / 10;
 
 /**
  * Calcula los dos KPIs de ZF:
- *  1. ETA estimada < 15 días hábiles → días entre la asignación (o creación) y la ETA Real.
+ *  1. ETA estimada → cumple si el expediente se completó (asignación → cierre) EN O ANTES de su ETA Real.
+ *     Solo se evalúan los expedientes que tienen ETA Real y ya están completados.
  *  2. Tránsito corto < 2 días hábiles → solo los expedientes ZF MARCADOS como tránsito corto;
  *     días entre la asignación (o creación) y el completado/liberación.
  * Devuelve el detalle por PO de cada KPI (incluyendo la fecha de asignación).
@@ -110,20 +111,27 @@ export async function calcularKpisZf(expZF: any[]): Promise<ResultadoKpisZf> {
   expZF.forEach((exp) => {
     const fechaAsig = fechaAsignado[exp.id] || exp.created_at;
 
-    // ── KPI 1: ETA estimada < 15 días hábiles ──
-    // Solo se evalúan los expedientes que tienen ETA Real registrada.
+    // ── KPI 1: ETA estimada ──
+    // Cumple si el expediente se completó (asignación → cierre) en o antes de su ETA Real.
+    // Solo se evalúan los expedientes que tienen ETA Real registrada Y ya están completados.
     if (exp.eta_real) {
-      const dias = diasHabilesEntre(fechaAsig, exp.eta_real);
-      eta.push({
-        id: exp.id,
-        po_tiquetera: exp.po_tiquetera,
-        exp_id: exp.exp_id || '',
-        solicitante: exp.solicitante || '',
-        fechaAsignacion: fechaAsig,
-        fechaEta: exp.eta_real,
-        dias: redondear(dias),
-        cumpleMeta: dias < META_ZF_ETA_DIAS,
-      });
+      const esTerminalEta = ESTADOS_TERMINALES_ZF.includes((exp.estado_expediente || '').trim().toLowerCase());
+      const finEta = fechaTerminal[exp.id] || exp.fecha_liberacion || (esTerminalEta ? exp.updated_at : null);
+      if (finEta) {
+        const dias = diasHabilesEntre(fechaAsig, finEta);
+        const cumplioAntesDeEta = parseFechaSegura(finEta) <= parseFechaSegura(exp.eta_real);
+        eta.push({
+          id: exp.id,
+          po_tiquetera: exp.po_tiquetera,
+          exp_id: exp.exp_id || '',
+          solicitante: exp.solicitante || '',
+          fechaAsignacion: fechaAsig,
+          fechaCompletado: finEta,
+          fechaEta: exp.eta_real,
+          dias: redondear(dias),
+          cumpleMeta: cumplioAntesDeEta,
+        });
+      }
     }
 
     // ── KPI 2: Tránsito corto < 2 días hábiles ──

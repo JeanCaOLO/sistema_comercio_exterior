@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  META_ZF_ETA_DIAS,
   META_ZF_TRANSITO_DIAS,
   type FilaZfEta,
   type FilaZfTransito,
@@ -137,6 +136,7 @@ export default function SeccionKpisZf({ kpis }: SeccionKpisZfProps) {
     exp_id: f.exp_id,
     solicitante: f.solicitante,
     fechaAsignacion: f.fechaAsignacion,
+    fechaCompletado: f.fechaCompletado,
     fechaReferencia: f.fechaEta,
     dias: f.dias,
     cumpleMeta: f.cumpleMeta,
@@ -170,8 +170,8 @@ export default function SeccionKpisZf({ kpis }: SeccionKpisZfProps) {
           <TarjetaKpiZf
             icono="ri-calendar-check-line"
             titulo="ETA estimada"
-            subtitulo="Días entre la asignación y la ETA Real"
-            metaTexto={`< ${META_ZF_ETA_DIAS} días`}
+            subtitulo="Se completó en o antes de la ETA Real del ticket"
+            metaTexto="Completado ≤ ETA"
             resumen={resumenEta}
             aviso={
               sinEtaReal > 0
@@ -194,9 +194,9 @@ export default function SeccionKpisZf({ kpis }: SeccionKpisZfProps) {
       {detalleActivo === 'eta' && (
         <ModalDetalleZf
           titulo="Detalle ETA estimada (ZF)"
-          subtitulo="Días hábiles entre la asignación del expediente y su ETA Real"
+          subtitulo="Cumple si el expediente se completó en o antes de su ETA Real"
           etiquetaFecha="ETA Real"
-          metaTexto={`< ${META_ZF_ETA_DIAS} días`}
+          metaTexto="Completado ≤ ETA"
           nombreArchivo="reporte-zf-eta-estimada"
           filas={filasEta}
           onClose={() => setDetalleActivo(null)}

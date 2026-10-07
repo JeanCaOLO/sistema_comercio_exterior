@@ -236,27 +236,29 @@ Los KPIs de ZF muestran, cada uno por separado, el **porcentaje de cumplimiento*
 **cantidad de expedientes que cumplen**. Cada tarjeta tiene un botón **Ver detalle de POs**
 (siempre disponible) que abre el desglose por ticket (PO/Tiquetera, EXP ID, solicitante,
 **fecha de asignación**, fecha de referencia, días y si cumple) con filtro *Todos / Cumplen /
-No cumplen* y descarga a Excel.
+No cumplen* y descarga a Excel. En el detalle de *ETA estimada* se agrega además la
+**fecha de completado** para comparar directamente contra la ETA Real.
 
 > **Universo de los KPIs de ZF:** los expedientes **ZF del board de Gestión de ZF** (los mismos tickets de Zona Franca) que **tuvieron actividad dentro del período** seleccionado (fueron creados en el rango o tuvieron algún cambio de estado en el rango). No dependen del registro de estado "Asignado".
 
-### A.12.1 ETA estimada  *(meta: < 15 días hábiles)*
+### A.12.1 ETA estimada  *(meta: completado en o antes de la ETA Real)*
 
-- Universo: expedientes ZF del período **con ETA Real registrada** (`eta_real`).
+- Universo: expedientes ZF del período **con ETA Real registrada** (`eta_real`) **y ya completados** (con fecha de cierre).
 - **Inicio** = fecha en que pasó a `Asignado` (fallback: `created_at`).
-- **Fin** = `eta_real` (ETA Real).
-- `días = diasHabiles(inicio, eta_real)`.
+- **Fecha de completado** = primera llegada a `Completado`/`Liberación` (de `expedientes_tiempos_estados`; fallback: historial de cambios de estado, `fecha_liberacion` o `updated_at`).
+- **Referencia** = `eta_real` (ETA Real).
+- `días = diasHabiles(asignación, completado)` (se muestra como duración del ticket).
 
 ```txt
-cumple = días < 15
+cumple = (fecha de completado) <= (eta_real)   // se completó en o antes de la ETA Real
 % Cumplimiento = round( cumplen / totalEvaluados * 100 )
 promedio = round( suma(días) / totalEvaluados * 10 ) / 10
 ```
 
 > **Aviso de datos faltantes:** los expedientes ZF **sin ETA Real** cargada **no se evalúan**
-> (no cuentan ni como cumple ni como no cumple). La tarjeta muestra un aviso ámbar indicando
-> **cuántos expedientes ZF del período no tienen ETA Real**, para que se puedan completar. Ese
-> conteo se expone como `sinEtaReal` en `calcularKpisZf`.
+> (no cuentan ni como cumple ni como no cumple); tampoco los que **todavía no están completados**.
+> La tarjeta muestra un aviso ámbar indicando **cuántos expedientes ZF del período no tienen ETA
+> Real**, para que se puedan completar. Ese conteo se expone como `sinEtaReal` en `calcularKpisZf`.
 
 ### A.12.2 Tránsito corto  *(meta: < 2 días hábiles)*
 
@@ -421,7 +423,7 @@ Se promedian sobre **todos** los expedientes Dropship (global y por ruta):
 | ETD → Notificado | Dropship Normal | ≤ 5 días hábiles |
 | Creación (Asignado → Liberado) | MCG | ≤ 2 días hábiles |
 | ETD → Notificado | MCG | < 2 días hábiles |
-| ETA estimada (asignación → ETA Real) | ZF | < 15 días hábiles |
+| ETA estimada (completado ≤ ETA Real) | ZF | Completar en o antes de la ETA Real |
 | Tránsito corto (creación → cierre) | ZF | < 2 días hábiles |
 | Aging "crítico" | Todos | > 7 días |
 

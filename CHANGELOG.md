@@ -2,7 +2,7 @@
 
 **Sistema de Gestión de Expedientes de Comercio Exterior**  
 *Dropship & Zona Franca (ZF)*  
-*Última actualización: 1 de octubre de 2026*
+*Última actualización: 7 de octubre de 2026*
 
 ---
 
@@ -490,6 +490,17 @@ Con esto, los tickets ZF terminados en el período vuelven a aparecer en el **% 
 - **El KPI "ETA estimada" de ZF usa exactamente los tickets del board de Gestión de ZF** del período (creados en el rango o con actividad de estado en el rango), igualando el universo de esos KPIs al de la pantalla de Zona Franca.
 
 Con esto, las dos tarjetas de KPIs de ZF responden a lo que realmente se marca y se ve en el board de Gestión de ZF. Se actualizó el documento `KPIS_CALCULO.md`.
+
+---
+
+## 🎯 Corrección del KPI ZF "ETA estimada": completado antes de la ETA Real (237)
+
+237. **El KPI "ETA estimada" de ZF ahora mide si el ticket se completó en o antes de su ETA Real** — Antes el indicador **ETA estimada** de Zona Franca medía los **días hábiles entre la asignación y la ETA Real** y marcaba cumplimiento si eran **menos de 15 días**. Ahora el criterio cambió al solicitado: el KPI cuenta como **cumple** todo ticket ZF que, **desde que se asignó hasta que se completó, lo hizo EN O ANTES de la fecha de su ETA Real**.
+- **Cumple** = fecha de completado (asignación → cierre) **≤** ETA Real del ticket.
+- **Solo se evalúan** los tickets ZF que **tienen ETA Real** y **ya están completados**; los que no la tienen o siguen abiertos **no suman** a *Cumplen* ni a *No cumplen* (se mantiene el aviso ámbar que indica cuántos faltan cargar la ETA Real).
+- En el **detalle de POs** se agregó la columna **Fecha de Completado** para comparar directamente contra la ETA Real, y se mantiene el filtro *Todos / Cumplen / No cumplen* y la descarga a Excel.
+- Los **días** que se muestran en el detalle pasaron a ser la **duración del ticket** (asignación → completado).
+- El cálculo vive en `src/lib/kpisZf.ts` (`calcularKpisZf`) y la interfaz en `SeccionKpisZf.tsx` + `ModalDetalleZf.tsx`. Se actualizó `KPIS_CALCULO.md`.
 
 ---
 
