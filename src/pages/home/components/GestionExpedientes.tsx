@@ -7,6 +7,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
 import { parseDocEntries, combinarEntradas, nombresFacturas, type DocEntry } from '@/lib/documentos';
 import ModalDocumentosExpediente from '@/pages/home/components/ModalDocumentosExpediente';
+import MultiSelectFiltro from '@/pages/home/components/MultiSelectFiltro';
 
 interface Expediente {
   id: string;
@@ -180,6 +181,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPersona, setFilterPersona] = useState('Todos');
   const [filterPrioridad, setFilterPrioridad] = useState('Todos');
+  const [filterRutas, setFilterRutas] = useState<string[]>([]);
   const [selectedExpediente, setSelectedExpediente] = useState<Expediente | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -269,7 +271,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   useEffect(() => {
     filtrarExpedientes();
-  }, [searchTerm, filterPersona, filterPrioridad, expedientes, facturasPorId]);
+  }, [searchTerm, filterPersona, filterPrioridad, filterRutas, expedientes, facturasPorId]);
 
   // Nuevo efecto para recargar cuando cambia refreshTrigger
   useEffect(() => {
@@ -350,6 +352,13 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       } else {
         filtered = filtered.filter(exp => exp.prioridad === filterPrioridad);
       }
+    }
+
+    // Filtrar por ruta logística (solo disponible en el módulo Dropship).
+    // Permite seleccionar varias rutas a la vez: se muestra el ticket si su ruta
+    // está entre las seleccionadas.
+    if (tipoModulo === 'dropship' && filterRutas.length > 0) {
+      filtered = filtered.filter(exp => filterRutas.includes(exp.tipo_po));
     }
 
     setFilteredExpedientes(filtered);
@@ -1711,7 +1720,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
       {/* Filtros */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className={`grid grid-cols-1 gap-4 ${tipoModulo === 'dropship' ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
             <div className="relative">
@@ -1760,14 +1769,26 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
               <option value="Baja">Baja</option>
             </select>
           </div>
+          {tipoModulo === 'dropship' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Ruta Logística</label>
+              <MultiSelectFiltro
+                opciones={rutas.filter(r => r.modulo === 'dropship').map(ruta => ({ value: ruta.key, label: ruta.label }))}
+                seleccionados={filterRutas}
+                onChange={setFilterRutas}
+                placeholder="Todas las rutas"
+                icono="ri-route-line"
+              />
+            </div>
+          )}
         </div>
-        {(searchTerm || filterPersona !== 'Todos' || filterPrioridad !== 'Todos') && (
+        {(searchTerm || filterPersona !== 'Todos' || filterPrioridad !== 'Todos' || filterRutas.length > 0) && (
           <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
             <p className="text-sm text-gray-600">
               Mostrando <span className="font-semibold text-teal-600">{filteredExpedientes.length}</span> expediente(s) con los filtros activos
             </p>
             <button
-              onClick={() => { setSearchTerm(''); setFilterPersona('Todos'); setFilterPrioridad('Todos'); }}
+              onClick={() => { setSearchTerm(''); setFilterPersona('Todos'); setFilterPrioridad('Todos'); setFilterRutas([]); }}
               className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1 cursor-pointer"
             >
               <i className="ri-filter-off-line"></i>

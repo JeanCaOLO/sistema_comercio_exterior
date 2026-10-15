@@ -504,4 +504,16 @@ Con esto, las dos tarjetas de KPIs de ZF responden a lo que realmente se marca y
 
 ---
 
+## 🛣️ Filtro por Ruta Logística en Gestión Dropship (238)
+
+238. **Nuevo filtro por Ruta Logística en el tablero de Gestión Dropship** — Se agregó un filtro **"Ruta Logística"** en la barra de filtros del kanban de **Gestión de Expedientes Dropship**, junto a Búsqueda, Solicitante y Prioridad. El selector lista **únicamente las rutas logísticas del módulo Dropship** (no muestra rutas de Zona Franca), tomando el listado configurable de **Configuración → Rutas**. Al elegir una ruta, el kanban **muestra solo los tickets de esa ruta** (`tipo_po`); al elegir "Todas las rutas" vuelve a mostrar todo. El filtro se integra con el contador de resultados y con el botón **"Limpiar filtros"**. Solo aparece en el módulo de Dropship.
+
+---
+
+## 🛣️ Filtro de Ruta Logística con selección múltiple (239)
+
+239. **El filtro "Ruta Logística" de Gestión Dropship ahora permite marcar varias rutas a la vez** — El filtro que se agregó en la entrada 238 solo dejaba elegir **una ruta** por vez. Ahora es un **multiselect con casillas**: se abren las rutas del módulo Dropship y se pueden **marcar/desmarcar varias** sin cerrar el panel. El botón muestra un resumen ("Todas las rutas", el nombre cuando hay una sola, o "N rutas seleccionadas" con un contador), incluye accesos rápidos **"Todas"** y **"Limpiar"**, y el kanban muestra los tickets cuya ruta esté **entre las seleccionadas**. Se integró con el contador de resultados y con el botón **"Limpiar filtros"**. Se creó el componente reutilizable `MultiSelectFiltro.tsx`.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*
