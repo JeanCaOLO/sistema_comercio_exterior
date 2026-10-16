@@ -6,6 +6,9 @@ import {
   PERMISOS_DEFAULT,
   cargarMatrizPermisos,
   guardarMatrizPermisos,
+  cargarRolesAprobacionEtd,
+  guardarRolesAprobacionEtd,
+  ROLES_APROBACION_ETD_DEFAULT,
   type MatrizPermisos as MatrizPermisosType,
 } from '@/lib/permisos';
 
@@ -16,6 +19,7 @@ interface MatrizPermisosProps {
 export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermisosProps) {
   const { perfil } = useAuth();
   const [matriz, setMatriz] = useState<MatrizPermisosType>({ ...PERMISOS_DEFAULT });
+  const [rolesAprob, setRolesAprob] = useState<string[]>([...ROLES_APROBACION_ETD_DEFAULT]);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -25,14 +29,18 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
 
   useEffect(() => {
     let activo = true;
-    cargarMatrizPermisos()
-      .then((m) => {
+    Promise.all([cargarMatrizPermisos(), cargarRolesAprobacionEtd()])
+      .then(([m, roles]) => {
         if (!activo) return;
         setMatriz(m);
+        setRolesAprob(roles);
         onPermisosActualizados?.(m);
       })
       .catch(() => {
-        if (activo) setMatriz({ ...PERMISOS_DEFAULT });
+        if (activo) {
+          setMatriz({ ...PERMISOS_DEFAULT });
+          setRolesAprob([...ROLES_APROBACION_ETD_DEFAULT]);
+        }
       })
       .finally(() => {
         if (activo) setLoading(false);
@@ -56,11 +64,21 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
     setMensaje(null);
   };
 
+  const toggleRolAprobacion = (rol: string) => {
+    if (!esAdmin || rol === 'Administrador') return;
+    setRolesAprob((prev) =>
+      prev.includes(rol) ? prev.filter((r) => r !== rol) : [...prev, rol]
+    );
+    setDirty(true);
+    setMensaje(null);
+  };
+
   const guardar = async () => {
     try {
       setSaving(true);
       setMensaje(null);
       await guardarMatrizPermisos(matriz);
+      await guardarRolesAprobacionEtd(rolesAprob);
       onPermisosActualizados?.(matriz);
       setDirty(false);
       setMensaje({ tipo: 'exito', texto: 'Permisos guardados correctamente' });
@@ -74,6 +92,7 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
   const restablecer = () => {
     if (!esAdmin) return;
     setMatriz({ ...PERMISOS_DEFAULT });
+    setRolesAprob([...ROLES_APROBACION_ETD_DEFAULT]);
     setDirty(true);
     setMensaje(null);
   };
@@ -242,6 +261,45 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Permiso global de aprobación de Cambios ETD Inicial */}
+      <div className="mt-8">
+        <h3 className="text-sm font-semibold text-gray-700 mb-1">Aprobación de Cambios ETD Inicial</h3>
+        <p className="text-sm text-gray-500 mb-3">
+          Marca los roles autorizados a aprobar o rechazar solicitudes de cambio de ETD Inicial (permiso <code>can_approve_etd_change</code>).
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {ROLES.map((rol) => {
+            const activo = rolesAprob.includes(rol.nombre);
+            const bloqueado = rol.nombre === 'Administrador' || !esAdmin;
+            return (
+              <button
+                key={rol.nombre}
+                onClick={() => toggleRolAprobacion(rol.nombre)}
+                disabled={bloqueado}
+                className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition-colors ${
+                  activo ? 'border-teal-300 bg-teal-50' : 'border-gray-200 bg-white'
+                } ${bloqueado ? 'cursor-not-allowed' : 'cursor-pointer hover:border-teal-400'}`}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${rol.color}`}>
+                    {rol.nombre}
+                  </span>
+                </span>
+                <span className={`w-8 h-8 rounded-lg flex items-center justify-center border flex-shrink-0 ${
+                  activo ? 'bg-teal-500 border-teal-500' : 'bg-gray-100 border-gray-200'
+                }`}>
+                  {activo ? (
+                    <i className="ri-check-line text-white text-sm"></i>
+                  ) : (
+                    <i className="ri-close-line text-gray-400 text-sm"></i>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Resumen por módulo */}

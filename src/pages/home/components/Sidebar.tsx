@@ -1,5 +1,3 @@
-import { useState } from 'react';
-
 interface SidebarProps {
   activeView: string;
   setActiveView: (view: string) => void;
@@ -12,7 +10,7 @@ interface SidebarProps {
 export default function Sidebar({ activeView, setActiveView, onLogout, userName, userRoles, modulosPermitidos }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Construir menú según los permisos cargados desde la matriz
+  // Menú principal del sistema
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'ri-dashboard-line' },
     { id: 'gestion-dropship', label: 'Gestión Dropship', icon: 'ri-ship-line' },
@@ -25,6 +23,29 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
     { id: 'facturas', label: 'Facturas', icon: 'ri-bill-line' },
     { id: 'configuracion', label: 'Configuración', icon: 'ri-settings-3-line' },
   ];
+
+  // Submódulos de "Gestión de Cambios ETD Inicial"
+  const etdItems = [
+    { id: 'etd-solicitar', label: 'Solicitar Cambio ETD Inicial', icon: 'ri-calendar-2-line' },
+    { id: 'etd-aprobaciones', label: 'Aprobaciones Pendientes', icon: 'ri-checkbox-multiple-line' },
+    { id: 'etd-historial', label: 'Historial de Solicitudes', icon: 'ri-history-line' },
+  ];
+
+  const etdPermitidas = etdItems.filter((item) => modulosPermitidos.includes(item.id));
+
+  const renderItem = (item: { id: string; label: string; icon: string }) => (
+    <button
+      key={item.id}
+      onClick={() => setActiveView(item.id)}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+        activeView === item.id ? 'bg-teal-50 text-teal-700' : 'text-gray-600 hover:bg-gray-50'
+      } ${isCollapsed ? 'justify-center' : ''}`}
+      title={isCollapsed ? item.label : ''}
+    >
+      <i className={`${item.icon} text-xl flex-shrink-0`}></i>
+      {!isCollapsed && <span className="font-medium text-sm">{item.label}</span>}
+    </button>
+  );
 
   return (
     <div className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 relative`}>
@@ -51,22 +72,19 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
         </div>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
-        {menuItems.filter(item => modulosPermitidos.includes(item.id)).map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setActiveView(item.id)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-              activeView === item.id
-                ? 'bg-teal-50 text-teal-700'
-                : 'text-gray-600 hover:bg-gray-50'
-            } ${isCollapsed ? 'justify-center' : ''}`}
-            title={isCollapsed ? item.label : ''}
-          >
-            <i className={`${item.icon} text-xl flex-shrink-0`}></i>
-            {!isCollapsed && <span className="font-medium text-sm">{item.label}</span>}
-          </button>
-        ))}
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        {menuItems.filter((item) => modulosPermitidos.includes(item.id)).map(renderItem)}
+
+        {etdPermitidas.length > 0 && (
+          <div className="pt-3 mt-3 border-t border-gray-100 space-y-1">
+            {!isCollapsed && (
+              <p className="px-4 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
+                Cambios ETD Inicial
+              </p>
+            )}
+            {etdPermitidas.map(renderItem)}
+          </div>
+        )}
       </nav>
 
       <div className="p-4 border-t border-gray-200">

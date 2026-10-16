@@ -516,4 +516,37 @@ Con esto, las dos tarjetas de KPIs de ZF responden a lo que realmente se marca y
 
 ---
 
+## 🔄 Nuevo Módulo: Gestión de Cambios ETD Inicial (240)
+
+240. **Módulo completo de solicitud y aprobación de cambios de ETD Inicial** — Se agregó un módulo nuevo, integrado al menú lateral (con el grupo "Cambios ETD Inicial") y visible **solo para los roles Administrador y Documentos**, con tres submódulos:
+- **Solicitar Cambio ETD Inicial:** se busca la PO por número en la API de Raga, se muestra **toda la información de la orden** en secciones de solo lectura (destacando **ETD Inicial actual** y **ETD Variable**), y se registra la solicitud con **nueva fecha propuesta**, **motivo obligatorio** (las 10 opciones exactas, con campo de texto obligatorio al elegir "Otro") y validaciones (fecha distinta a la actual, sin duplicados pendientes y confirmación previa). **Al crear la solicitud NO se toca Raga: el ETD Inicial vigente queda intacto.**
+- **Aprobaciones Pendientes:** bandeja con contador, buscador por PO, filtros por compañía/solicitante/fecha, ordenamiento por fecha y paginación. El **detalle** muestra la comparación visual (vigente vs propuesto + diferencia en días), motivo, solicitante, revisión y el **historial de eventos**. Los botones **Aprobar/Rechazar** solo aparecen para usuarios con el permiso de aprobación y **nunca para el propio solicitante** (separación de funciones).
+- **Historial de Solicitudes:** registro **inmutable** de todas las solicitudes y decisiones, con filtros por PO, compañía, estado, rango de fechas, solicitante y aprobador, y resultado de la API.
+
+**Reglas críticas implementadas:**
+- El **ETD Inicial solo se modifica vía el PUT de Raga**, y únicamente cuando un aprobador autorizado confirma. Si la API falla, la solicitud **no** se marca como aprobada.
+- Antes de aprobar se **revalida** que la solicitud siga pendiente (evita dobles aprobaciones concurrentes) y que el **ETD Inicial vigente en Raga no haya cambiado** desde la creación de la solicitud.
+- Rechazar **nunca** ejecuta el PUT y exige un **comentario obligatorio**.
+- El **ETD Variable y el resto de campos nunca se modifican.**
+- El solicitante recibe una **notificación** (campanita existente) al resolverse su solicitud.
+
+**Técnico:** la comunicación con Raga pasa por una **Edge Function segura** (`raga-olo`) que lee la configuración centralizada de ambiente (**QA / Producción**) desde variables de entorno del backend (sin URLs hardcodeadas en el frontend). Se crearon las tablas `etd_initial_change_requests` y `etd_initial_change_events` (con RLS), un índice único que impide **dos solicitudes pendientes** sobre la misma PO + compañía, y el permiso global **`can_approve_etd_change`** configurable por rol en la **Matriz de Permisos**.
+
+> Nota: el módulo quedó **listo en código**. Para operar de verdad requiere **conectar el backend** (para crear las tablas y desplegar la función) y **desplegar la Edge Function `raga-olo`**. La URL productiva de Raga queda como variable de entorno pendiente de definir.
+
+---
+
+## 🔌 Módulo de Cambios ETD Inicial operativo (241)
+
+241. **El módulo de Cambios ETD Inicial quedó funcionando de verdad** — Con **SaaS Supabase** conectado, se completó la puesta en marcha del módulo de la entrada 240:
+- Se **crearon las tablas** `etd_initial_change_requests` y `etd_initial_change_events` con sus **índices** (incluido el único que impide dos solicitudes pendientes sobre la misma PO + compañía) y sus **políticas de Row Level Security** (solo roles **Administrador** y **Documentos**).
+- Se creó la **función de permisos** `puede_gestionar_etd()` que valida en la base quién puede operar el módulo.
+- Se **desplegó la Edge Function `raga-olo`** (`https://hcmwiqxvuopbdlefsain.supabase.co/functions/v1/raga-olo`), que centraliza la configuración **QA / Producción** por variables de entorno y evita CORS. Por defecto opera contra **QA** (`https://olo.orders.raga-x.ai`) sin requerir secretos; para **Producción** solo hay que cargar `RAGA_API_BASE_URL_PROD` y `RAGA_API_ENV=production` en los Secrets de Supabase, sin tocar código.
+
+**Pendientes identificados (sin inventar nada):**
+- **URL productiva de Raga**: se define solo por variable de entorno cuando esté disponible.
+- **Contrato exacto del PUT**: la función ya apunta a `PUT /api/purchase-orders/{order_number}` enviando `{ trading_company, date_etd_initial }`; se ajustará el body si el contrato real difiere.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

@@ -15,6 +15,7 @@ import Documentacion from './components/Documentacion';
 import RepositorioDocumentacion from './components/RepositorioDocumentacion';
 import Facturas from './components/Facturas';
 import CampanitaNotificaciones from './components/CampanitaNotificaciones';
+import GestionCambiosEtd, { type SeccionEtd } from './components/GestionCambiosEtd';
 
 export default function Home() {
   const [activeView, setActiveView] = useState('');
@@ -128,6 +129,21 @@ export default function Home() {
     }
   };
 
+  // Mapea la vista activa del menú (module id) a la sección interna del módulo de Cambios ETD
+  const seccionEtdActual: SeccionEtd =
+    activeView === 'etd-aprobaciones'
+      ? 'aprobaciones'
+      : activeView === 'etd-historial'
+        ? 'historial'
+        : 'solicitar';
+
+  // Mapea la sección interna de vuelta al id del módulo del menú lateral
+  const irASeccionEtd = (seccion: SeccionEtd) => {
+    if (seccion === 'aprobaciones') setActiveView('etd-aprobaciones');
+    else if (seccion === 'historial') setActiveView('etd-historial');
+    else setActiveView('etd-solicitar');
+  };
+
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar 
@@ -181,6 +197,9 @@ export default function Home() {
               {activeView === 'documentacion' && <Documentacion />}
               {activeView === 'repositorio' && <RepositorioDocumentacion />}
               {activeView === 'facturas' && <Facturas />}
+              {(activeView === 'etd-solicitar' || activeView === 'etd-aprobaciones' || activeView === 'etd-historial') && (
+                <GestionCambiosEtd seccion={seccionEtdActual} onSeccionChange={irASeccionEtd} />
+              )}
             </>
           ) : (
             <div className="p-12 flex flex-col items-center justify-center text-center">

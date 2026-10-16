@@ -26,6 +26,9 @@ export const MODULOS: Modulo[] = [
   { id: 'repositorio', nombre: 'Repositorio Docs', icon: 'ri-archive-line' },
   { id: 'facturas', nombre: 'Facturas', icon: 'ri-bill-line' },
   { id: 'configuracion', nombre: 'Configuración', icon: 'ri-settings-3-line' },
+  { id: 'etd-solicitar', nombre: 'Solicitar Cambio ETD', icon: 'ri-calendar-2-line' },
+  { id: 'etd-aprobaciones', nombre: 'Aprobaciones ETD', icon: 'ri-checkbox-multiple-line' },
+  { id: 'etd-historial', nombre: 'Historial ETD', icon: 'ri-history-line' },
 ];
 
 export const ROLES: Rol[] = [
@@ -41,17 +44,67 @@ export const ROLES: Rol[] = [
 export const PERMISOS_DEFAULT: MatrizPermisos = {
   'Administrador': [
     'dashboard', 'gestion-dropship', 'gestion-zf', 'lista-expedientes',
-    'reportes', 'carga-caa', 'documentacion', 'repositorio', 'facturas', 'configuracion'
+    'reportes', 'carga-caa', 'documentacion', 'repositorio', 'facturas', 'configuracion',
+    'etd-solicitar', 'etd-aprobaciones', 'etd-historial'
   ],
   'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Bodega': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Documentos': ['lista-expedientes', 'carga-caa', 'repositorio', 'facturas'],
+  'Documentos': ['lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-solicitar', 'etd-historial'],
   'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Solicitante': ['carga-caa', 'documentacion', 'repositorio', 'facturas'],
 };
 
 const CLAVE_PERMISOS = 'matriz_permisos';
+const CLAVE_APROBACION_ETD = 'roles_aprobacion_etd';
+
+// Roles que, de forma predeterminada, pueden aprobar/rechazar cambios de ETD Inicial.
+export const ROLES_APROBACION_ETD_DEFAULT: string[] = ['Administrador'];
+
+// Carga desde la base de datos los roles autorizados a aprobar cambios de ETD Inicial.
+export async function cargarRolesAprobacionEtd(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from('configuracion_sistema')
+      .select('valor')
+      .eq('clave', CLAVE_APROBACION_ETD)
+      .maybeSingle();
+    if (error || !data || !Array.isArray(data.valor)) {
+      return [...ROLES_APROBACION_ETD_DEFAULT];
+    }
+    return data.valor as string[];
+  } catch (error) {
+    console.error('Error cargando roles de aprobación ETD:', error);
+    return [...ROLES_APROBACION_ETD_DEFAULT];
+  }
+}
+
+// Guarda en la base de datos los roles autorizados a aprobar cambios de ETD Inicial.
+export async function guardarRolesAprobacionEtd(roles: string[]): Promise<void> {
+  const { data: existente, error: errorSelect } = await supabase
+    .from('configuracion_sistema')
+    .select('id')
+    .eq('clave', CLAVE_APROBACION_ETD)
+    .maybeSingle();
+  if (errorSelect) throw errorSelect;
+
+  if (existente) {
+    const { error } = await supabase
+      .from('configuracion_sistema')
+      .update({ valor: roles, updated_at: new Date().toISOString() })
+      .eq('clave', CLAVE_APROBACION_ETD);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase
+      .from('configuracion_sistema')
+      .insert([{
+        clave: CLAVE_APROBACION_ETD,
+        valor: roles,
+        descripcion: 'Roles autorizados a aprobar o rechazar cambios de ETD Inicial'
+      }]);
+    if (error) throw error;
+  }
+}
 
 // Normaliza un nombre de rol para comparar sin depender de mayúsculas, espacios o separadores
 function normalizarRol(valor: string): string {

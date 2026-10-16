@@ -266,6 +266,40 @@ export async function notificarComentario({
   }
 }
 
+interface NotificarResultadoEtdParams {
+  usuarioId: string | null;
+  poTiquetera: string;
+  mensaje: string;
+  tipo: 'etd_aprobada' | 'etd_rechazada';
+  icono: string;
+}
+
+// Notifica al solicitante cuando su solicitud de cambio de ETD Inicial se resuelve.
+export async function notificarResultadoEtd({
+  usuarioId,
+  poTiquetera,
+  mensaje,
+  tipo,
+  icono,
+}: NotificarResultadoEtdParams): Promise<void> {
+  if (!usuarioId) return;
+  try {
+    const { error } = await supabase.from('notificaciones').insert([{
+      usuario_id: usuarioId,
+      mensaje,
+      tipo,
+      expediente_id: null,
+      po_tiquetera: poTiquetera,
+      usuario_genero: 'Sistema',
+      icono,
+      leida: false,
+    }]);
+    if (error) console.error('[Notificaciones] Error al insertar (ETD):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (ETD):', err.message || err);
+  }
+}
+
 export async function obtenerNotificaciones(usuarioId: string): Promise<Notificacion[]> {
   try {
     const { data, error } = await supabase
@@ -338,6 +372,10 @@ export function getIconoColor(tipo: string): string {
       return 'text-red-600 bg-red-100';
     case 'comentario_agregado':
       return 'text-blue-600 bg-blue-100';
+    case 'etd_aprobada':
+      return 'text-emerald-600 bg-emerald-100';
+    case 'etd_rechazada':
+      return 'text-red-600 bg-red-100';
     default:
       return 'text-gray-600 bg-gray-100';
   }
@@ -359,6 +397,10 @@ export function getTipoLabel(tipo: string): string {
       return 'Alerta de estancamiento';
     case 'comentario_agregado':
       return 'Comentario agregado';
+    case 'etd_aprobada':
+      return 'Cambio ETD Inicial aprobado';
+    case 'etd_rechazada':
+      return 'Cambio ETD Inicial rechazado';
     default:
       return tipo;
   }
