@@ -1,9 +1,16 @@
 import { supabase } from './supabase';
-import { buscarPurchaseOrder, actualizarEtdInicialRaga, extraerPo, normalizarFecha } from './ragaApi';
+import { buscarPurchaseOrder, actualizarEtdInicialRaga, extraerPo, normalizarFecha, type RagaEnv } from './ragaApi';
 import { notificarResultadoEtd } from './notificaciones';
 import type { EstadoEtd } from './etdMotivos';
 
 export type { EstadoEtd };
+
+// Único perfil autorizado a ver y operar el entorno QA de Raga.
+export const EMAIL_VE_QA_ETD = 'jalvarez@ologistics.com';
+
+export function puedeVerQaEtd(email?: string | null): boolean {
+  return (email || '').trim().toLowerCase() === EMAIL_VE_QA_ETD;
+}
 
 export interface SolicitudEtd {
   id: string;
@@ -23,6 +30,7 @@ export interface SolicitudEtd {
   rejection_comment: string | null;
   api_sync_status: string | null;
   api_sync_error: string | null;
+  api_env: RagaEnv | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +54,7 @@ export interface CrearSolicitudEtdParams {
   other_reason_detail?: string | null;
   requested_by: string | null;
   requested_by_name: string | null;
+  api_env?: RagaEnv;
 }
 
 // Diferencia en días entre dos fechas (b - a), redondeada.
@@ -62,30 +71,35 @@ export function diferenciaDias(desde: string | null | undefined, hasta: string |
 // LECTURA
 // ─────────────────────────────────────────────────────────────
 
-export async function listarSolicitudesEtd(): Promise<SolicitudEtd[]> {
-  const { data, error } = await supabase
+export async function listarSolicitudesEtd(opts?: { incluirQa?: boolean }): Promise<SolicitudEtd[]> {
+  let query = supabase
     .from('etd_initial_change_requests')
-    .select('*')
-    .order('requested_at', { ascending: false });
+    .select('*');
+  // El entorno QA solo es visible para el perfil autorizado.
+  if (!opts?.incluirQa) query = query.eq('api_env', 'production');
+  const { data, error } = await query.order('requested_at', { ascending: false });
   if (error) throw error;
   return (data || []) as SolicitudEtd[];
 }
 
-export async function listarSolicitudesPendientesEtd(): Promise<SolicitudEtd[]> {
-  const { data, error } = await supabase
+export async function listarSolicitudesPendientesEtd(opts?: { incluirQa?: boolean }): Promise<SolicitudEtd[]> {
+  let query = supabase
     .from('etd_initial_change_requests')
     .select('*')
-    .eq('status', 'PENDING')
-    .order('requested_at', { ascending: false });
+    .eq('status', 'PENDING');
+  if (!opts?.incluirQa) query = query.eq('api_env', 'production');
+  const { data, error } = await query.order('requested_at', { ascending: false });
   if (error) throw error;
   return (data || []) as SolicitudEtd[];
 }
 
-export async function contarSolicitudesPendientesEtd(): Promise<number> {
-  const { count, error } = await supabase
+export async function contarSolicitudesPendientesEtd(opts?: { incluirQa?: boolean }): Promise<number> {
+  let query = supabase
     .from('etd_initial_change_requests')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'PENDING');
+  if (!opts?.incluirQa) query = query.eq('api_env', 'production');
+  const { count, error } = await query;
   if (error) throw error;
   return count || 0;
 }
@@ -103,7 +117,8 @@ export async function listarEventosEtd(requestId: string): Promise<EventoEtd[]> 
 // Busca una solicitud pendiente para evitar duplicados sobre la misma PO + compañía.
 export async function obtenerSolicitudPendienteEtd(
   orderNumber: string,
-  tradingCompany: string
+  tradingCompany: string,
+  apiEnv: RagaEnv = 'production'
 ): Promise<SolicitudEtd | null> {
   const { data, error } = await supabase
     .from('etd_initial_change_requests')
@@ -111,6 +126,7 @@ export async function obtenerSolicitudPendienteEtd(
     .eq('order_number', orderNumber)
     .eq('trading_company', tradingCompany)
     .eq('status', 'PENDING')
+    .eq('api_env', apiEnv)
     .maybeSingle();
   if (error) throw error;
   return (data as SolicitudEtd) || null;
@@ -151,6 +167,7 @@ export async function crearSolicitudEtd(params: CrearSolicitudEtdParams): Promis
       status: 'PENDING',
       requested_by: params.requested_by,
       requested_by_name: params.requested_by_name,
+      api_env: params.api_env || 'production',
     }])
     .select()
     .single();
@@ -159,7 +176,7 @@ export async function crearSolicitudEtd(params: CrearSolicitudEtdParams): Promis
   await registrarEventoEtd({
     request_id: data.id,
     event_type: 'CREATED',
-    detail: `Solicitud creada. ETD Inicial propuesto: ${params.proposed_etd_initial}`,
+    detail: `Solicitud creada. ETD Inicial propuesto: ${params.proposed_etd_initial} (entorno ${params.api_env || 'production'})`,
     actor_id: params.requested_by,
     actor_name: params.requested_by_name,
   });
@@ -195,8 +212,9 @@ export async function aprobarSolicitudEtd(params: {
     return { ok: false, error: 'La solicitud ya fue procesada por otro usuario.' };
   }
 
-  // 2) Revalidar el ETD Inicial vigente contra Raga.
-  const consulta = await buscarPurchaseOrder(solicitud.order_number);
+  // 2) Revalidar el ETD Inicial vigente contra Raga (mismo entorno de la solicitud).
+  const entornoRaga: RagaEnv = solicitud.api_env === 'production' ? 'production' : 'qa';
+  const consulta = await buscarPurchaseOrder(solicitud.order_number, entornoRaga);
   if (!consulta.ok) {
     return { ok: false, error: consulta.error || 'No se pudo consultar la PO en Raga para revalidar.' };
   }
@@ -218,6 +236,8 @@ export async function aprobarSolicitudEtd(params: {
     orderNumber: solicitud.order_number,
     tradingCompany: solicitud.trading_company,
     dateEtdInitial: normalizarFecha(solicitud.proposed_etd_initial),
+    apiEnv: entornoRaga,
+    requestId: solicitud.id,
   });
   if (!put.ok) {
     await supabase
@@ -257,7 +277,7 @@ export async function aprobarSolicitudEtd(params: {
   await registrarEventoEtd({
     request_id: solicitud.id,
     event_type: 'APPROVED',
-    detail: `ETD Inicial actualizado en Raga a ${normalizarFecha(solicitud.proposed_etd_initial)}`,
+    detail: `ETD Inicial actualizado en Raga (${entornoRaga}) a ${normalizarFecha(solicitud.proposed_etd_initial)}`,
     actor_id: aprobadorId,
     actor_name: aprobadorNombre,
   });

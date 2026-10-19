@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { buscarPurchaseOrder, normalizarListaPos, normalizarFecha } from '@/lib/ragaApi';
+import { buscarPurchaseOrder, normalizarListaPos, normalizarFecha, RAGA_ENV_LABEL, type RagaEnv } from '@/lib/ragaApi';
 import { crearSolicitudEtd, obtenerSolicitudPendienteEtd } from '@/lib/etdCambios';
 import { MOTIVOS_CAMBIO_ETD, humanizarClave } from '@/lib/etdMotivos';
 import { formatearFechaCorta } from '@/lib/fechas';
@@ -7,6 +7,7 @@ import { formatearFechaCorta } from '@/lib/fechas';
 interface SolicitarCambioEtdProps {
   usuarioId: string;
   usuarioNombre: string;
+  puedeElegirEntorno?: boolean;
 }
 
 // Extrae el primer valor no vacío entre varias posibles claves.
@@ -19,6 +20,27 @@ function campo(po: Record<string, any> | null, ...claves: string[]): any {
   return null;
 }
 
+// Claves puramente técnicas que no aportan nada al usuario final (ids, auditoría, etc.).
+const CLAVES_TECNICAS = new Set([
+  'id', 'uuid', 'index', 'action_type', 'old_values', 'new_values',
+  'created_at', 'updated_at', 'deleted_at', 'order_id', 'status_id', 'kanban_status_id',
+]);
+
+function esClaveTecnica(clave: string): boolean {
+  const k = String(clave).trim().toLowerCase();
+  return CLAVES_TECNICAS.has(k) || k.endsWith('_id') || k.endsWith('_at');
+}
+
+// Convierte un texto tipo ISO (2026-10-07T12:02:49.000000Z) en algo legible.
+function formatearTextoFecha(texto: string): string | null {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(texto);
+  if (!iso) return null;
+  const [, anio, mes, dia, hora, minuto] = iso;
+  // Si la hora es 00:00 se trata como fecha pura (evita el corrimiento por zona horaria).
+  if (hora === '00' && minuto === '00') return `${dia}/${mes}/${anio}`;
+  return `${dia}/${mes}/${anio} ${hora}:${minuto}`;
+}
+
 // Convierte cualquier valor de la PO en un texto legible: nunca muestra JSON crudo.
 function renderValor(v: any): string {
   if (v === null || v === undefined || v === '') return '—';
@@ -29,15 +51,25 @@ function renderValor(v: any): string {
     if (v.every((x) => x === null || typeof x !== 'object')) {
       return v.map((x) => String(x)).join(', ');
     }
-    return v.map((x, i) => `${i + 1}. ${renderValor(x)}`).join(' · ');
+    const partes = v
+      .map((x) => renderValor(x))
+      .filter((t) => t && t !== '—');
+    if (partes.length === 0) return '—';
+    return partes.length === 1 ? partes[0] : partes.map((t, i) => `${i + 1}. ${t}`).join(' · ');
   }
   if (typeof v === 'object') {
     const partes = Object.entries(v)
-      .filter(([, val]) => val !== null && val !== undefined && val !== '')
-      .map(([k, val]) => `${humanizarClave(k)}: ${renderValor(val)}`);
+      .filter(([k, val]) => !esClaveTecnica(k) && val !== null && val !== undefined && val !== '')
+      .map(([k, val]) => {
+        const contenido = renderValor(val);
+        return contenido === '—' ? '' : `${humanizarClave(k)}: ${contenido}`;
+      })
+      .filter(Boolean);
     return partes.length > 0 ? partes.join(' · ') : '—';
   }
   const texto = String(v).trim();
+  const fecha = formatearTextoFecha(texto);
+  if (fecha) return fecha;
   // Si el valor llegó como texto con forma de JSON, lo parseamos y lo mostramos legible.
   if (/^[[{]/.test(texto)) {
     try {
@@ -47,7 +79,33 @@ function renderValor(v: any): string {
       // No era JSON válido: lo mostramos como texto plano.
     }
   }
-  return String(v);
+  return texto;
+}
+
+// Muestra un valor y, si es muy largo, permite expandirlo sin romper la tarjeta.
+function ValorCampo({ valor }: { valor: any }) {
+  const [abierto, setAbierto] = useState(false);
+  const texto = renderValor(valor);
+  const esLargo = texto.length > 120;
+  return (
+    <div>
+      <p
+        className={`mt-1 text-sm text-gray-800 break-words leading-relaxed ${
+          esLargo && !abierto ? 'line-clamp-3' : ''
+        }`}
+      >
+        {texto}
+      </p>
+      {esLargo && (
+        <button
+          onClick={() => setAbierto(!abierto)}
+          className="mt-1.5 text-xs font-medium text-teal-700 hover:text-teal-900 cursor-pointer whitespace-nowrap"
+        >
+          {abierto ? 'Ver menos' : 'Ver más'}
+        </button>
+      )}
+    </div>
+  );
 }
 
 // Extrae un mensaje de error legible de cualquier forma de error (PostgREST, Error nativo, etc.).
@@ -77,7 +135,11 @@ const CLAVES_RESALTADAS = new Set([
   'date_etd_initial', 'etd_initial', 'date_etd', 'etd',
 ]);
 
-export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: SolicitarCambioEtdProps) {
+export default function SolicitarCambioEtd({ usuarioId, usuarioNombre, puedeElegirEntorno = false }: SolicitarCambioEtdProps) {
+  // Producción es el entorno por defecto. QA queda como opción manual para pruebas
+  // (solo visible para usuarios autorizados) y no se recuerda entre sesiones.
+  const [entorno, setEntorno] = useState<RagaEnv>('production');
+  const entornoActivo: RagaEnv = puedeElegirEntorno ? entorno : 'production';
   const [poInput, setPoInput] = useState('');
   const [buscando, setBuscando] = useState(false);
   const [errorBusqueda, setErrorBusqueda] = useState('');
@@ -100,7 +162,12 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
   const etdVariable = normalizarFecha(campo(po, 'date_etd', 'etd'));
 
   const otrosCampos = po
-    ? Object.entries(po).filter(([k]) => !CLAVES_RESALTADAS.has(k))
+    ? Object.entries(po).filter(([k, v]) => {
+        if (CLAVES_RESALTADAS.has(k)) return false;
+        // Ocultamos ids, sellos de auditoría y campos sin contenido útil.
+        if (esClaveTecnica(k)) return false;
+        return renderValor(v) !== '—';
+      })
     : [];
 
   const limpiarResultado = () => {
@@ -110,6 +177,16 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
     setMotivo('');
     setOtroDetalle('');
     setErrorForm('');
+  };
+
+  const cambiarEntorno = (nuevo: RagaEnv) => {
+    if (!puedeElegirEntorno || nuevo === entornoActivo) return;
+    setEntorno(nuevo);
+    limpiarResultado();
+    setListaPos([]);
+    setIndice(0);
+    setErrorBusqueda('');
+    setExito('');
   };
 
   const buscar = async () => {
@@ -123,7 +200,7 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
     setExito('');
     limpiarResultado();
 
-    const res = await buscarPurchaseOrder(numero);
+    const res = await buscarPurchaseOrder(numero, entornoActivo);
     setBuscando(false);
     if (!res.ok) {
       setErrorBusqueda(res.error || 'No se pudo consultar la PO en Raga.');
@@ -145,7 +222,7 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
     if (!motivo) return 'Selecciona el motivo del cambio.';
     if (motivo === 'Otro' && !otroDetalle.trim()) return 'Debes especificar el motivo del cambio.';
 
-    const pendiente = await obtenerSolicitudPendienteEtd(orderNumber, tradingCompany);
+    const pendiente = await obtenerSolicitudPendienteEtd(orderNumber, tradingCompany, entornoActivo);
     if (pendiente) return 'Ya existe una solicitud pendiente de aprobación para esta PO.';
     return '';
   };
@@ -178,6 +255,7 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
         other_reason_detail: motivo === 'Otro' ? otroDetalle.trim() : null,
         requested_by: usuarioId || null,
         requested_by_name: usuarioNombre || null,
+        api_env: entornoActivo,
       });
       setConfirmando(false);
       setExito('Solicitud registrada. Queda pendiente de aprobación. El ETD Inicial vigente NO se modificó.');
@@ -195,6 +273,52 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
     <div className="space-y-6">
       {/* A. Búsqueda de PO */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
+        {puedeElegirEntorno && (
+          <div className="mb-5 pb-4 border-b border-gray-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <i className="ri-server-line text-gray-500"></i>
+                <span className="text-sm font-medium text-gray-700">Entorno de Raga</span>
+                <span
+                  className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    entornoActivo === 'production'
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-teal-100 text-teal-700'
+                  }`}
+                >
+                  {RAGA_ENV_LABEL[entornoActivo]}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-full w-fit">
+                <button
+                  onClick={() => cambiarEntorno('production')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                    entornoActivo === 'production' ? 'bg-red-600 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <i className="ri-rocket-2-line mr-1"></i>Producción
+                </button>
+                <button
+                  onClick={() => cambiarEntorno('qa')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                    entornoActivo === 'qa' ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <i className="ri-flask-line mr-1"></i>QA
+                </button>
+              </div>
+            </div>
+            {entornoActivo === 'production' && (
+              <div className="mt-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
+                <i className="ri-alert-line text-red-600 mt-0.5"></i>
+                <p className="text-xs text-red-700">
+                  Estás operando sobre <strong>Producción</strong> (next.ologistics.com). Las aprobaciones modificarán datos reales.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         <h2 className="text-lg font-semibold text-gray-900 mb-1">Buscar orden de compra</h2>
         <p className="text-sm text-gray-500 mb-4">Consulta la PO en Raga por su número para cargar su información.</p>
         <div className="flex flex-col sm:flex-row gap-3">
@@ -359,6 +483,15 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
               <div className="flex items-center gap-2">
                 <i className="ri-information-line text-teal-600 text-lg"></i>
                 <h2 className="text-lg font-semibold text-gray-900">Información de la PO</h2>
+                <span
+                  className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    entornoActivo === 'production'
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-teal-100 text-teal-700'
+                  }`}
+                >
+                  {RAGA_ENV_LABEL[entornoActivo]}
+                </span>
               </div>
               <i className={`${infoAbierta ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} text-xl text-gray-400`}></i>
             </button>
@@ -390,8 +523,8 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {otrosCampos.map(([k, v]) => (
                         <div key={k} className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-                          <p className="text-xs font-medium text-gray-500 uppercase">{humanizarClave(k)}</p>
-                          <p className="mt-1 text-sm text-gray-800 break-words">{renderValor(v)}</p>
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{humanizarClave(k)}</p>
+                          <ValorCampo valor={v} />
                         </div>
                       ))}
                     </div>
@@ -423,6 +556,12 @@ export default function SolicitarCambioEtd({ usuarioId, usuarioNombre }: Solicit
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Motivo</span>
                 <span className="font-medium text-gray-900">{motivo === 'Otro' ? otroDetalle.trim() : motivo}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Entorno</span>
+                <span className={`font-semibold ${entornoActivo === 'production' ? 'text-red-700' : 'text-teal-700'}`}>
+                  {RAGA_ENV_LABEL[entornoActivo]}
+                </span>
               </div>
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 mb-4">

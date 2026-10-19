@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cargarRolesAprobacionEtd } from '@/lib/permisos';
-import { contarSolicitudesPendientesEtd } from '@/lib/etdCambios';
+import { contarSolicitudesPendientesEtd, puedeVerQaEtd } from '@/lib/etdCambios';
 import SolicitarCambioEtd from './SolicitarCambioEtd';
 import AprobacionesEtd from './AprobacionesEtd';
 import HistorialEtd from './HistorialEtd';
@@ -22,6 +22,12 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange }: GestionC
   const usuarioNombre = perfil?.nombre || perfil?.email || '';
   const roles = perfil?.roles || [];
   const puedeAprobar = roles.some((r) => rolesAprobacion.includes(r));
+  // Solo el perfil de jalvarez puede alternar entre QA y Producción y ver registros de QA.
+  const puedeElegirEntorno = puedeVerQaEtd(perfil?.email);
+  const incluirQa = puedeElegirEntorno;
+  // Los administradores (y el perfil de jalvarez) también pueden aprobar sus propias solicitudes.
+  const esAdministrador = roles.some((r) => r.trim().toLowerCase() === 'administrador');
+  const puedeAprobarPropias = esAdministrador || puedeElegirEntorno;
 
   useEffect(() => {
     cargarRolesAprobacionEtd().then(setRolesAprobacion);
@@ -29,12 +35,12 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange }: GestionC
 
   const refrescarPendientes = useCallback(async () => {
     try {
-      const count = await contarSolicitudesPendientesEtd();
+      const count = await contarSolicitudesPendientesEtd({ incluirQa });
       setPendientes(count);
     } catch {
       setPendientes(0);
     }
-  }, []);
+  }, [incluirQa]);
 
   useEffect(() => {
     refrescarPendientes();
@@ -84,7 +90,11 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange }: GestionC
       </div>
 
       {seccion === 'solicitar' && (
-        <SolicitarCambioEtd usuarioId={usuarioId} usuarioNombre={usuarioNombre} />
+        <SolicitarCambioEtd
+          usuarioId={usuarioId}
+          usuarioNombre={usuarioNombre}
+          puedeElegirEntorno={puedeElegirEntorno}
+        />
       )}
 
       {seccion === 'aprobaciones' && (
@@ -93,6 +103,8 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange }: GestionC
             usuarioId={usuarioId}
             usuarioNombre={usuarioNombre}
             puedeAprobar={puedeAprobar}
+            puedeAprobarPropias={puedeAprobarPropias}
+            incluirQa={incluirQa}
             onRefrescarContador={refrescarPendientes}
           />
         ) : (
@@ -107,7 +119,7 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange }: GestionC
       )}
 
       {seccion === 'historial' && (
-        <HistorialEtd usuarioId={usuarioId} usuarioNombre={usuarioNombre} puedeAprobar={puedeAprobar} />
+        <HistorialEtd usuarioId={usuarioId} usuarioNombre={usuarioNombre} puedeAprobar={puedeAprobar} puedeAprobarPropias={puedeAprobarPropias} incluirQa={incluirQa} />
       )}
     </div>
   );

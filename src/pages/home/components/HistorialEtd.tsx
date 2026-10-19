@@ -3,17 +3,20 @@ import { listarSolicitudesEtd, type SolicitudEtd } from '@/lib/etdCambios';
 import { formatearFechaHora } from '@/lib/etdMotivos';
 import { formatearFechaCorta } from '@/lib/fechas';
 import EstadoEtdBadge, { SyncEtdBadge } from './EstadoEtdBadge';
+import AmbienteEtdBadge from './AmbienteEtdBadge';
 import ModalDetalleSolicitudEtd from './ModalDetalleSolicitudEtd';
 
 interface HistorialEtdProps {
   usuarioId: string;
   usuarioNombre: string;
   puedeAprobar: boolean;
+  puedeAprobarPropias?: boolean;
+  incluirQa?: boolean;
 }
 
 const POR_PAGINA = 12;
 
-export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }: HistorialEtdProps) {
+export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar, puedeAprobarPropias = false, incluirQa = false }: HistorialEtdProps) {
   const [solicitudes, setSolicitudes] = useState<SolicitudEtd[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -22,6 +25,7 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
   const [po, setPo] = useState('');
   const [compania, setCompania] = useState('');
   const [estado, setEstado] = useState('');
+  const [entorno, setEntorno] = useState('');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [solicitante, setSolicitante] = useState('');
@@ -32,14 +36,14 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
     setCargando(true);
     setError('');
     try {
-      const data = await listarSolicitudesEtd();
+      const data = await listarSolicitudesEtd({ incluirQa });
       setSolicitudes(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar el historial.');
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [incluirQa]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -54,6 +58,8 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
     if (q) lista = lista.filter((s) => s.order_number.toLowerCase().includes(q));
     if (compania) lista = lista.filter((s) => s.trading_company === compania);
     if (estado) lista = lista.filter((s) => s.status === estado);
+    if (entorno === 'production') lista = lista.filter((s) => s.api_env === 'production');
+    if (entorno === 'qa') lista = lista.filter((s) => s.api_env !== 'production');
     if (fechaInicio) lista = lista.filter((s) => s.requested_at.slice(0, 10) >= fechaInicio);
     if (fechaFin) lista = lista.filter((s) => s.requested_at.slice(0, 10) <= fechaFin);
     if (solicitante.trim()) {
@@ -66,14 +72,14 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
     }
     lista.sort((a, b) => new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime());
     return lista;
-  }, [solicitudes, po, compania, estado, fechaInicio, fechaFin, solicitante, aprobador]);
+  }, [solicitudes, po, compania, estado, entorno, fechaInicio, fechaFin, solicitante, aprobador]);
 
   const totalPaginas = Math.max(1, Math.ceil(filtradas.length / POR_PAGINA));
   const paginaActual = Math.min(pagina, totalPaginas);
   const visibles = filtradas.slice((paginaActual - 1) * POR_PAGINA, paginaActual * POR_PAGINA);
 
   const limpiarFiltros = () => {
-    setPo(''); setCompania(''); setEstado('');
+    setPo(''); setCompania(''); setEstado(''); setEntorno('');
     setFechaInicio(''); setFechaFin(''); setSolicitante(''); setAprobador(''); setPagina(1);
   };
 
@@ -119,6 +125,17 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
             <option value="APPROVED">Aprobada</option>
             <option value="REJECTED">Rechazada</option>
           </select>
+          {incluirQa && (
+            <select
+              value={entorno}
+              onChange={(e) => { setEntorno(e.target.value); setPagina(1); }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            >
+              <option value="">Todos los entornos</option>
+              <option value="production">Producción</option>
+              <option value="qa">QA</option>
+            </select>
+          )}
           <input
             value={solicitante}
             onChange={(e) => { setSolicitante(e.target.value); setPagina(1); }}
@@ -171,7 +188,7 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {['ID', 'Número PO', 'Compañía', 'ETD anterior', 'Nueva fecha', 'Motivo', 'Solicitante', 'Aprobador / Revisor', 'Fecha solicitud', 'Fecha decisión', 'Estado', 'API Raga', 'Acciones'].map((h) => (
+                  {['ID', 'Número PO', 'Entorno', 'Compañía', 'ETD anterior', 'Nueva fecha', 'Motivo', 'Solicitante', 'Aprobador / Revisor', 'Fecha solicitud', 'Fecha decisión', 'Estado', 'API Raga', 'Acciones'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -180,7 +197,10 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
                 {visibles.map((s) => (
                   <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap font-mono">{s.id.slice(0, 8).toUpperCase()}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{s.order_number}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">
+                      {s.order_number}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap"><AmbienteEtdBadge env={s.api_env} /></td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{s.trading_company}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{s.previous_etd_initial ? formatearFechaCorta(s.previous_etd_initial) : '—'}</td>
                     <td className="px-4 py-3 text-sm font-semibold text-teal-700 whitespace-nowrap">{formatearFechaCorta(s.proposed_etd_initial)}</td>
@@ -204,7 +224,7 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
                 ))}
                 {visibles.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="px-6 py-14 text-center text-gray-400">
+                    <td colSpan={14} className="px-6 py-14 text-center text-gray-400">
                       <i className="ri-history-line text-4xl mb-2"></i>
                       <p className="text-sm">No hay solicitudes registradas con los filtros aplicados.</p>
                     </td>
@@ -246,6 +266,7 @@ export default function HistorialEtd({ usuarioId, usuarioNombre, puedeAprobar }:
         <ModalDetalleSolicitudEtd
           solicitud={seleccionada}
           puedeAprobar={puedeAprobar && seleccionada.status === 'PENDING'}
+          puedeAprobarPropias={puedeAprobarPropias}
           usuarioId={usuarioId}
           usuarioNombre={usuarioNombre}
           onClose={() => setSeleccionada(null)}

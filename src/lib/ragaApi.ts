@@ -8,11 +8,18 @@ import { supabase } from './supabase';
 // entorno del backend.
 // ============================================================
 
+export type RagaEnv = 'qa' | 'production';
+
 export interface RagaResult<T> {
   ok: boolean;
   data?: T;
   error?: string;
 }
+
+export const RAGA_ENV_LABEL: Record<RagaEnv, string> = {
+  qa: 'QA',
+  production: 'Producción',
+};
 
 async function invocarRaga<T>(body: Record<string, unknown>): Promise<RagaResult<T>> {
   try {
@@ -34,8 +41,8 @@ async function invocarRaga<T>(body: Record<string, unknown>): Promise<RagaResult
 }
 
 // Consulta una orden de compra por número en Raga.
-export function buscarPurchaseOrder(orderNumber: string) {
-  return invocarRaga<unknown>({ action: 'get-purchase-order', order_number: orderNumber });
+export function buscarPurchaseOrder(orderNumber: string, apiEnv: RagaEnv = 'production') {
+  return invocarRaga<unknown>({ action: 'get-purchase-order', order_number: orderNumber, api_env: apiEnv });
 }
 
 // Actualiza el ETD Inicial de una PO en Raga. SOLO debe ejecutarse tras una aprobación autorizada.
@@ -43,12 +50,16 @@ export function actualizarEtdInicialRaga(params: {
   orderNumber: string;
   tradingCompany: string;
   dateEtdInitial: string;
+  apiEnv?: RagaEnv;
+  requestId?: string;
 }) {
   return invocarRaga<unknown>({
     action: 'update-etd-initial',
     order_number: params.orderNumber,
     trading_company: params.tradingCompany,
     date_etd_initial: params.dateEtdInitial,
+    api_env: params.apiEnv || 'production',
+    request_id: params.requestId || null,
   });
 }
 

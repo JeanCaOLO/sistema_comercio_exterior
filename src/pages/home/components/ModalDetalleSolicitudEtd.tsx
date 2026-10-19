@@ -10,10 +10,12 @@ import {
 import { formatearFechaHora } from '@/lib/etdMotivos';
 import { formatearFechaCorta } from '@/lib/fechas';
 import EstadoEtdBadge, { SyncEtdBadge } from './EstadoEtdBadge';
+import AmbienteEtdBadge from './AmbienteEtdBadge';
 
 interface ModalDetalleSolicitudEtdProps {
   solicitud: SolicitudEtd;
   puedeAprobar: boolean;
+  puedeAprobarPropias?: boolean;
   usuarioId: string;
   usuarioNombre: string;
   onClose: () => void;
@@ -23,6 +25,7 @@ interface ModalDetalleSolicitudEtdProps {
 export default function ModalDetalleSolicitudEtd({
   solicitud,
   puedeAprobar,
+  puedeAprobarPropias = false,
   usuarioId,
   usuarioNombre,
   onClose,
@@ -42,7 +45,8 @@ export default function ModalDetalleSolicitudEtd({
   }, [solicitud.id]);
 
   const esPropia = solicitud.requested_by && solicitud.requested_by === usuarioId;
-  const puedeResolver = puedeAprobar && solicitud.status === 'PENDING' && !esPropia;
+  const bloqueadaPorSerPropia = Boolean(esPropia) && !puedeAprobarPropias;
+  const puedeResolver = puedeAprobar && solicitud.status === 'PENDING' && !bloqueadaPorSerPropia;
   const diferencia = diferenciaDias(solicitud.previous_etd_initial, solicitud.proposed_etd_initial);
 
   const confirmarAprobacion = async () => {
@@ -98,7 +102,10 @@ export default function ModalDetalleSolicitudEtd({
       <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Detalle de solicitud</h2>
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              Detalle de solicitud
+              <AmbienteEtdBadge env={solicitud.api_env} />
+            </h2>
             <p className="text-sm text-gray-500 mt-0.5">ID: {solicitud.id.slice(0, 8).toUpperCase()}</p>
           </div>
           <button
@@ -149,6 +156,10 @@ export default function ModalDetalleSolicitudEtd({
               <Campo etiqueta="Número de PO" valor={solicitud.order_number} />
               <Campo etiqueta="Compañía" valor={solicitud.trading_company} />
               <Campo etiqueta="Estado" valor={<EstadoEtdBadge estado={solicitud.status} />} />
+              <Campo
+                etiqueta="Entorno Raga"
+                valor={<AmbienteEtdBadge env={solicitud.api_env} />}
+              />
               <Campo etiqueta="Motivo del cambio" valor={solicitud.change_reason} />
               <Campo
                 etiqueta="Explicación adicional"
@@ -191,7 +202,7 @@ export default function ModalDetalleSolicitudEtd({
             )}
           </div>
 
-          {esPropia && solicitud.status === 'PENDING' && (
+          {bloqueadaPorSerPropia && solicitud.status === 'PENDING' && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
               <i className="ri-shield-user-line mr-2"></i>
               No puedes aprobar ni rechazar tu propia solicitud (separación de funciones).
@@ -235,7 +246,8 @@ export default function ModalDetalleSolicitudEtd({
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="text-sm text-gray-700">
                   ¿Confirmas aprobar el cambio? Se actualizará el ETD Inicial en <strong>Raga</strong> a{' '}
-                  <strong>{formatearFechaCorta(solicitud.proposed_etd_initial)}</strong>. Esta acción no se puede deshacer.
+                  <strong>{formatearFechaCorta(solicitud.proposed_etd_initial)}</strong> en el entorno{' '}
+                  <strong>{solicitud.api_env === 'production' ? 'Producción' : 'QA'}</strong>. Esta acción no se puede deshacer.
                 </p>
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <button

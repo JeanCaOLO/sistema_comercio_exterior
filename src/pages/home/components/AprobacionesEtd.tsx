@@ -3,18 +3,21 @@ import { listarSolicitudesPendientesEtd, type SolicitudEtd } from '@/lib/etdCamb
 import { formatearFechaHora } from '@/lib/etdMotivos';
 import { formatearFechaCorta } from '@/lib/fechas';
 import EstadoEtdBadge from './EstadoEtdBadge';
+import AmbienteEtdBadge from './AmbienteEtdBadge';
 import ModalDetalleSolicitudEtd from './ModalDetalleSolicitudEtd';
 
 interface AprobacionesEtdProps {
   usuarioId: string;
   usuarioNombre: string;
   puedeAprobar: boolean;
+  puedeAprobarPropias?: boolean;
+  incluirQa?: boolean;
   onRefrescarContador?: () => void;
 }
 
 const POR_PAGINA = 10;
 
-export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar, onRefrescarContador }: AprobacionesEtdProps) {
+export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar, puedeAprobarPropias = false, incluirQa = false, onRefrescarContador }: AprobacionesEtdProps) {
   const [solicitudes, setSolicitudes] = useState<SolicitudEtd[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -23,6 +26,7 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
   const [busqueda, setBusqueda] = useState('');
   const [compania, setCompania] = useState('');
   const [solicitante, setSolicitante] = useState('');
+  const [entorno, setEntorno] = useState('');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [orden, setOrden] = useState<'reciente' | 'antigua'>('reciente');
@@ -32,14 +36,14 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
     setCargando(true);
     setError('');
     try {
-      const data = await listarSolicitudesPendientesEtd();
+      const data = await listarSolicitudesPendientesEtd({ incluirQa });
       setSolicitudes(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudieron cargar las solicitudes.');
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [incluirQa]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -53,6 +57,8 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
     const q = busqueda.trim().toLowerCase();
     if (q) lista = lista.filter((s) => s.order_number.toLowerCase().includes(q));
     if (compania) lista = lista.filter((s) => s.trading_company === compania);
+    if (entorno === 'production') lista = lista.filter((s) => s.api_env === 'production');
+    if (entorno === 'qa') lista = lista.filter((s) => s.api_env !== 'production');
     if (solicitante.trim()) {
       const sol = solicitante.trim().toLowerCase();
       lista = lista.filter((s) => (s.requested_by_name || '').toLowerCase().includes(sol));
@@ -65,16 +71,19 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
       return orden === 'reciente' ? db - da : da - db;
     });
     return lista;
-  }, [solicitudes, busqueda, compania, solicitante, fechaInicio, fechaFin, orden]);
+  }, [solicitudes, busqueda, compania, entorno, solicitante, fechaInicio, fechaFin, orden]);
 
   const totalPaginas = Math.max(1, Math.ceil(filtradas.length / POR_PAGINA));
   const paginaActual = Math.min(pagina, totalPaginas);
   const visibles = filtradas.slice((paginaActual - 1) * POR_PAGINA, paginaActual * POR_PAGINA);
 
   const limpiarFiltros = () => {
-    setBusqueda(''); setCompania(''); setSolicitante('');
+    setBusqueda(''); setCompania(''); setSolicitante(''); setEntorno('');
     setFechaInicio(''); setFechaFin(''); setOrden('reciente'); setPagina(1);
   };
+
+  const totalProduccion = solicitudes.filter((s) => s.api_env === 'production').length;
+  const totalQa = solicitudes.length - totalProduccion;
 
   const trasResolver = () => {
     setSeleccionada(null);
@@ -90,9 +99,24 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
           <p className="text-sm text-gray-500 mt-1">Solicitudes de cambio de ETD Inicial a la espera de resolución.</p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-center">
-            <p className="text-2xl font-bold text-amber-700">{solicitudes.length}</p>
-            <p className="text-xs text-amber-700">Pendientes</p>
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-2">
+            <div className="flex items-baseline gap-2">
+              <p className="text-2xl font-bold text-gray-900">{solicitudes.length}</p>
+              <p className="text-xs text-gray-500">Pendientes</p>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>Prod {totalProduccion}
+              </span>
+              {incluirQa && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>QA {totalQa}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
           <button
             onClick={cargar}
@@ -105,7 +129,7 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
 
       {/* Filtros */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
           <input
             value={busqueda}
             onChange={(e) => { setBusqueda(e.target.value); setPagina(1); }}
@@ -126,6 +150,22 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
             placeholder="Solicitante"
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
           />
+          {incluirQa ? (
+            <select
+              value={entorno}
+              onChange={(e) => { setEntorno(e.target.value); setPagina(1); }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            >
+              <option value="">Todos los entornos</option>
+              <option value="production">Producción</option>
+              <option value="qa">QA</option>
+            </select>
+          ) : (
+            <div className="px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-600 flex items-center gap-2" title="Solo se muestran solicitudes del entorno productivo">
+              <i className="ri-shield-check-line text-teal-600"></i>
+              Solo Producción
+            </div>
+          )}
           <input
             type="date"
             value={fechaInicio}
@@ -178,7 +218,7 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {['ID', 'Número PO', 'Compañía', 'ETD Inicial actual', 'ETD solicitado', 'Motivo', 'Solicitante', 'Fecha solicitud', 'Estado', 'Acciones'].map((h) => (
+                  {['ID', 'Número PO', 'Entorno', 'Compañía', 'ETD Inicial actual', 'ETD solicitado', 'Motivo', 'Solicitante', 'Fecha solicitud', 'Estado', 'Acciones'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -187,7 +227,10 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
                 {visibles.map((s) => (
                   <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap font-mono">{s.id.slice(0, 8).toUpperCase()}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{s.order_number}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">
+                      {s.order_number}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap"><AmbienteEtdBadge env={s.api_env} /></td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{s.trading_company}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{s.previous_etd_initial ? formatearFechaCorta(s.previous_etd_initial) : '—'}</td>
                     <td className="px-4 py-3 text-sm font-semibold text-teal-700 whitespace-nowrap">{formatearFechaCorta(s.proposed_etd_initial)}</td>
@@ -208,7 +251,7 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
                 ))}
                 {visibles.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-6 py-14 text-center text-gray-400">
+                    <td colSpan={11} className="px-6 py-14 text-center text-gray-400">
                       <i className="ri-checkbox-circle-line text-4xl mb-2"></i>
                       <p className="text-sm">No hay solicitudes pendientes con los filtros aplicados.</p>
                     </td>
@@ -250,6 +293,7 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
         <ModalDetalleSolicitudEtd
           solicitud={seleccionada}
           puedeAprobar={puedeAprobar}
+          puedeAprobarPropias={puedeAprobarPropias}
           usuarioId={usuarioId}
           usuarioNombre={usuarioNombre}
           onClose={() => setSeleccionada(null)}

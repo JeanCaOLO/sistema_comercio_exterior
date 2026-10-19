@@ -9,6 +9,7 @@ import ModalDetalleMcg, { FilaCreacionMcg, FilaEtdMcg } from './ModalDetalleMcg'
 import SeccionKpisDropship from './SeccionKpisDropship';
 import SeccionKpisMcg from './SeccionKpisMcg';
 import SeccionKpisZf from './SeccionKpisZf';
+import ResumenPendientesEtd from './ResumenPendientesEtd';
 import { calcularKpisZf, type FilaZfEta, type FilaZfTransito } from '@/lib/kpisZf';
 import { supabase } from '../../../lib/supabase';
 import { formatearFechaCorta, parseFechaSegura, diasHabilesEntre } from '../../../lib/fechas';
@@ -1557,6 +1558,9 @@ export default function Dashboard() {
           color="bg-amber-500"
         />
       </div>
+
+      {/* =========== RESUMEN SOLICITUDES ETD PENDIENTES (SOLO PRODUCCIÓN) =========== */}
+      <ResumenPendientesEtd />
 
       {/* =========== KPI DURACIÓN MÍNIMA 2 DÍAS =========== */}
       <div className={`rounded-xl p-6 mb-8 border-2 ${
