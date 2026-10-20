@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { getEmailsRuta } from './rutas';
 import { buscarUsuariosPorEmails } from './usuarios';
+import { formatearFechaCorta } from './fechas';
 
 export interface Notificacion {
   id: string;
@@ -300,6 +301,110 @@ export async function notificarResultadoEtd({
   }
 }
 
+// ============================================================
+// NUEVA SOLICITUD DE CAMBIO DE ETD INICIAL
+// Solo los administradores reciben este aviso (nada de otros perfiles).
+// ============================================================
+
+// Devuelve los usuarios con rol de administrador, ya sea por la columna
+// usuarios.rol o por la asignación de roles (usuario_roles → roles).
+async function obtenerAdministradores(): Promise<{ id: string; nombre: string }[]> {
+  const acumulados: { id: string; nombre: string }[] = [];
+
+  // 1) Rol declarado directamente en el usuario
+  const { data: porColumna, error: errorColumna } = await supabase
+    .from('usuarios')
+    .select('id, nombre, rol')
+    .ilike('rol', '%admin%');
+  if (!errorColumna && porColumna) {
+    acumulados.push(...porColumna.map((u: any) => ({ id: u.id, nombre: u.nombre })));
+  }
+
+  // 2) Rol asignado por la tabla de roles
+  const { data: rolesAdmin, error: errorRoles } = await supabase
+    .from('roles')
+    .select('id')
+    .ilike('nombre', '%admin%');
+  if (!errorRoles && rolesAdmin && rolesAdmin.length > 0) {
+    const { data: asignaciones } = await supabase
+      .from('usuario_roles')
+      .select('usuario_id')
+      .in('rol_id', rolesAdmin.map((r: any) => r.id));
+    const ids = [...new Set((asignaciones || []).map((a: any) => a.usuario_id).filter(Boolean))];
+    if (ids.length > 0) {
+      const { data: usuarios } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('id', ids);
+      acumulados.push(...(usuarios || []).map((u: any) => ({ id: u.id, nombre: u.nombre })));
+    }
+  }
+
+  return Array.from(new Map(acumulados.map((u) => [u.id, u])).values());
+}
+
+interface NotificarNuevaSolicitudEtdParams {
+  orderNumber: string;
+  tradingCompany: string;
+  solicitanteNombre: string;
+  solicitanteId?: string | null;
+  propuestoEtd: string;
+  apiEnv: 'production' | 'qa';
+}
+
+// Avisa únicamente a los administradores que existe una nueva solicitud
+// de cambio de ETD Inicial pendiente de aprobación.
+export async function notificarNuevaSolicitudEtd({
+  orderNumber,
+  tradingCompany,
+  solicitanteNombre,
+  solicitanteId,
+  propuestoEtd,
+  apiEnv,
+}: NotificarNuevaSolicitudEtdParams): Promise<void> {
+  try {
+    let destinatarios = await obtenerAdministradores();
+
+    // Las solicitudes de QA son exclusivas del perfil autorizado: no se
+    // avisa a los demás administradores para no mezclar entornos.
+    if (apiEnv === 'qa') {
+      const { data: autorizados } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('email', ['jalvarez@ologistics.com']);
+      destinatarios = (autorizados || []).map((u: any) => ({ id: u.id, nombre: u.nombre }));
+    }
+
+    // El solicitante ya sabe que la creó: no se auto-notifica.
+    const finales = destinatarios.filter((u) => u.id !== solicitanteId);
+    if (finales.length === 0) return;
+
+    const etdTexto = propuestoEtd ? formatearFechaCorta(propuestoEtd) : propuestoEtd;
+    const prefijo = apiEnv === 'qa' ? '[QA] ' : '';
+    const mensaje =
+      `${prefijo}Nueva solicitud de cambio de ETD Inicial para la PO ${orderNumber}` +
+      `${tradingCompany ? ` (${tradingCompany})` : ''}. ` +
+      `Nuevo ETD propuesto: ${etdTexto || '—'}. ` +
+      `Solicitado por: ${solicitanteNombre || 'Usuario'}. Requiere aprobación.`;
+
+    const notificaciones = finales.map((u) => ({
+      usuario_id: u.id,
+      mensaje,
+      tipo: 'etd_solicitud_pendiente',
+      expediente_id: null,
+      po_tiquetera: orderNumber,
+      usuario_genero: 'Sistema',
+      icono: 'ri-calendar-check-line',
+      leida: false,
+    }));
+
+    const { error } = await supabase.from('notificaciones').insert(notificaciones);
+    if (error) console.error('[Notificaciones] Error al insertar (nueva solicitud ETD):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (nueva solicitud ETD):', err.message || err);
+  }
+}
+
 export async function obtenerNotificaciones(usuarioId: string): Promise<Notificacion[]> {
   try {
     const { data, error } = await supabase
@@ -376,6 +481,8 @@ export function getIconoColor(tipo: string): string {
       return 'text-emerald-600 bg-emerald-100';
     case 'etd_rechazada':
       return 'text-red-600 bg-red-100';
+    case 'etd_solicitud_pendiente':
+      return 'text-amber-600 bg-amber-100';
     default:
       return 'text-gray-600 bg-gray-100';
   }
@@ -401,6 +508,8 @@ export function getTipoLabel(tipo: string): string {
       return 'Cambio ETD Inicial aprobado';
     case 'etd_rechazada':
       return 'Cambio ETD Inicial rechazado';
+    case 'etd_solicitud_pendiente':
+      return 'Nueva solicitud ETD Inicial';
     default:
       return tipo;
   }

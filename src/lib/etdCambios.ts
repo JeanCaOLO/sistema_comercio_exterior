@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { buscarPurchaseOrder, actualizarEtdInicialRaga, extraerPo, normalizarFecha, type RagaEnv } from './ragaApi';
-import { notificarResultadoEtd } from './notificaciones';
+import { notificarResultadoEtd, notificarNuevaSolicitudEtd } from './notificaciones';
 import type { EstadoEtd } from './etdMotivos';
 
 export type { EstadoEtd };
@@ -179,6 +179,17 @@ export async function crearSolicitudEtd(params: CrearSolicitudEtdParams): Promis
     detail: `Solicitud creada. ETD Inicial propuesto: ${params.proposed_etd_initial} (entorno ${params.api_env || 'production'})`,
     actor_id: params.requested_by,
     actor_name: params.requested_by_name,
+  });
+
+  // Aviso en la campanita: únicamente los administradores reciben la notificación
+  // de que existe una nueva solicitud pendiente de aprobación.
+  await notificarNuevaSolicitudEtd({
+    orderNumber: params.order_number,
+    tradingCompany: params.trading_company,
+    solicitanteNombre: params.requested_by_name || '',
+    solicitanteId: params.requested_by,
+    propuestoEtd: params.proposed_etd_initial,
+    apiEnv: params.api_env === 'qa' ? 'qa' : 'production',
   });
 
   return data as SolicitudEtd;
