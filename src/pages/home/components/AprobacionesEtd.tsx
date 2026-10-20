@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listarSolicitudesPendientesEtd, type SolicitudEtd } from '@/lib/etdCambios';
+import { listarSolicitudesPendientesEtd, obtenerSolicitudEtdPorId, type SolicitudEtd } from '@/lib/etdCambios';
 import { formatearFechaHora } from '@/lib/etdMotivos';
 import { formatearFechaCorta } from '@/lib/fechas';
 import EstadoEtdBadge from './EstadoEtdBadge';
@@ -13,11 +13,14 @@ interface AprobacionesEtdProps {
   puedeAprobarPropias?: boolean;
   incluirQa?: boolean;
   onRefrescarContador?: () => void;
+  // Solicitud a abrir automáticamente (viene de una notificación).
+  solicitudObjetivoId?: string | null;
+  onObjetivoConsumido?: () => void;
 }
 
 const POR_PAGINA = 10;
 
-export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar, puedeAprobarPropias = false, incluirQa = false, onRefrescarContador }: AprobacionesEtdProps) {
+export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar, puedeAprobarPropias = false, incluirQa = false, onRefrescarContador, solicitudObjetivoId = null, onObjetivoConsumido }: AprobacionesEtdProps) {
   const [solicitudes, setSolicitudes] = useState<SolicitudEtd[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -46,6 +49,33 @@ export default function AprobacionesEtd({ usuarioId, usuarioNombre, puedeAprobar
   }, [incluirQa]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  // Abre automáticamente la solicitud indicada (clic en una notificación de ETD).
+  useEffect(() => {
+    if (!solicitudObjetivoId || cargando) return;
+
+    const enLista = solicitudes.find((s) => s.id === solicitudObjetivoId);
+    if (enLista) {
+      setSeleccionada(enLista);
+      onObjetivoConsumido?.();
+      return;
+    }
+
+    let activo = true;
+    obtenerSolicitudEtdPorId(solicitudObjetivoId)
+      .then((solicitud) => {
+        if (!activo) return;
+        if (solicitud) setSeleccionada(solicitud);
+        onObjetivoConsumido?.();
+      })
+      .catch(() => {
+        if (activo) onObjetivoConsumido?.();
+      });
+
+    return () => {
+      activo = false;
+    };
+  }, [solicitudObjetivoId, cargando, solicitudes, onObjetivoConsumido]);
 
   const companias = useMemo(
     () => Array.from(new Set(solicitudes.map((s) => s.trading_company).filter(Boolean))).sort(),

@@ -104,6 +104,17 @@ export async function contarSolicitudesPendientesEtd(opts?: { incluirQa?: boolea
   return count || 0;
 }
 
+// Trae una solicitud por su ID (se usa al abrir una notificación concreta).
+export async function obtenerSolicitudEtdPorId(id: string): Promise<SolicitudEtd | null> {
+  const { data, error } = await supabase
+    .from('etd_initial_change_requests')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as SolicitudEtd) || null;
+}
+
 export async function listarEventosEtd(requestId: string): Promise<EventoEtd[]> {
   const { data, error } = await supabase
     .from('etd_initial_change_events')
@@ -190,6 +201,7 @@ export async function crearSolicitudEtd(params: CrearSolicitudEtdParams): Promis
     solicitanteId: params.requested_by,
     propuestoEtd: params.proposed_etd_initial,
     apiEnv: params.api_env === 'qa' ? 'qa' : 'production',
+    solicitudId: data.id,
   });
 
   return data as SolicitudEtd;

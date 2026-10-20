@@ -16,6 +16,7 @@ import RepositorioDocumentacion from './components/RepositorioDocumentacion';
 import Facturas from './components/Facturas';
 import CampanitaNotificaciones from './components/CampanitaNotificaciones';
 import GestionCambiosEtd, { type SeccionEtd } from './components/GestionCambiosEtd';
+import { verificarSolicitudesEtdAtrasadas } from '@/lib/notificaciones';
 
 export default function Home() {
   const [activeView, setActiveView] = useState('');
@@ -24,6 +25,7 @@ export default function Home() {
   const [tipoModuloActual, setTipoModuloActual] = useState<'dropship' | 'zf'>('dropship');
   const [usuarioId, setUsuarioId] = useState('');
   const [matrizPermisos, setMatrizPermisos] = useState<Record<string, string[]>>(PERMISOS_DEFAULT);
+  const [solicitudEtdObjetivo, setSolicitudEtdObjetivo] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, perfil, loading, signOut } = useAuth();
 
@@ -89,14 +91,34 @@ export default function Home() {
       if (view) setActiveView(view);
     };
 
+    // Al hacer clic en una notificación de ETD se abre esa solicitud
+    // directamente en el módulo de Aprobaciones Pendientes.
+    const handleAbrirSolicitudEtd = (event: any) => {
+      const id = event.detail?.id;
+      setActiveView('etd-aprobaciones');
+      setSolicitudEtdObjetivo(typeof id === 'string' && id ? id : null);
+    };
+
     window.addEventListener('openFormularioExpediente', handleOpenFormulario);
     window.addEventListener('navigateTo', handleNavigateTo);
+    window.addEventListener('abrirSolicitudEtd', handleAbrirSolicitudEtd);
 
     return () => {
       window.removeEventListener('openFormularioExpediente', handleOpenFormulario);
       window.removeEventListener('navigateTo', handleNavigateTo);
+      window.removeEventListener('abrirSolicitudEtd', handleAbrirSolicitudEtd);
     };
   }, []);
+
+  // Recordatorio automático: solicitudes de ETD Inicial con más de 2 días sin aprobar.
+  useEffect(() => {
+    if (!usuarioId) return;
+    verificarSolicitudesEtdAtrasadas();
+    const interval = setInterval(() => {
+      verificarSolicitudesEtdAtrasadas();
+    }, 15 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [usuarioId]);
 
   const handleLogout = async () => {
     try {
@@ -198,7 +220,12 @@ export default function Home() {
               {activeView === 'repositorio' && <RepositorioDocumentacion />}
               {activeView === 'facturas' && <Facturas />}
               {(activeView === 'etd-solicitar' || activeView === 'etd-aprobaciones' || activeView === 'etd-historial') && (
-                <GestionCambiosEtd seccion={seccionEtdActual} onSeccionChange={irASeccionEtd} />
+                <GestionCambiosEtd
+                  seccion={seccionEtdActual}
+                  onSeccionChange={irASeccionEtd}
+                  solicitudObjetivoId={solicitudEtdObjetivo}
+                  onObjetivoConsumido={() => setSolicitudEtdObjetivo(null)}
+                />
               )}
             </>
           ) : (

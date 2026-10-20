@@ -11,9 +11,12 @@ export type SeccionEtd = 'solicitar' | 'aprobaciones' | 'historial';
 interface GestionCambiosEtdProps {
   seccion: SeccionEtd;
   onSeccionChange: (seccion: SeccionEtd) => void;
+  // ID de la solicitud que debe abrirse automáticamente (al venir de una notificación).
+  solicitudObjetivoId?: string | null;
+  onObjetivoConsumido?: () => void;
 }
 
-export default function GestionCambiosEtd({ seccion, onSeccionChange }: GestionCambiosEtdProps) {
+export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudObjetivoId = null, onObjetivoConsumido }: GestionCambiosEtdProps) {
   const { perfil } = useAuth();
   const [rolesAprobacion, setRolesAprobacion] = useState<string[]>([]);
   const [pendientes, setPendientes] = useState(0);
@@ -106,6 +109,8 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange }: GestionC
             puedeAprobarPropias={puedeAprobarPropias}
             incluirQa={incluirQa}
             onRefrescarContador={refrescarPendientes}
+            solicitudObjetivoId={solicitudObjetivoId}
+            onObjetivoConsumido={onObjetivoConsumido}
           />
         ) : (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-8 text-center">

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNotificaciones } from '@/hooks/useNotificaciones';
-import { getIconoColor, getTipoLabel, timeAgo } from '@/lib/notificaciones';
+import { getIconoColor, getTipoLabel, timeAgo, esNotificacionEtd, type Notificacion } from '@/lib/notificaciones';
 import ToastNotificaciones from './ToastNotificacion';
 
 interface CampanitaNotificacionesProps {
@@ -41,8 +41,17 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [abierto]);
 
-  const handleMarcarLeida = async (id: string) => {
-    await marcarLeida(id);
+  // Al hacer clic en una notificación de ETD Inicial se abre la solicitud
+  // directamente en el módulo de Aprobaciones Pendientes.
+  const abrirNotificacion = async (notif: Notificacion) => {
+    if (!notif.leida) await marcarLeida(notif.id);
+
+    if (esNotificacionEtd(notif.tipo) && notif.expediente_id) {
+      window.dispatchEvent(
+        new CustomEvent('abrirSolicitudEtd', { detail: { id: notif.expediente_id } })
+      );
+      setAbierto(false);
+    }
   };
 
   return (
@@ -112,7 +121,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
                   {notificaciones.map((notif) => (
                     <div
                       key={notif.id}
-                      onClick={() => handleMarcarLeida(notif.id)}
+                      onClick={() => abrirNotificacion(notif)}
                       className={`px-5 py-3.5 cursor-pointer transition-colors hover:bg-gray-50 ${
                         !notif.leida ? 'bg-teal-50/60' : ''
                       }`}
@@ -136,15 +145,22 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
                           <p className="text-sm text-gray-800 leading-snug">{notif.mensaje}</p>
                           <div className="flex items-center justify-between mt-1.5">
                             <span className="text-xs text-gray-400">{timeAgo(notif.created_at)}</span>
-                            {notif.po_tiquetera && (
-                              <span
-                                className="text-[11px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full truncate max-w-[160px]"
-                                title={notif.po_tiquetera}
-                              >
-                                {notif.po_tiquetera.length > 20
-                                  ? notif.po_tiquetera.substring(0, 20) + '...'
-                                  : notif.po_tiquetera}
+                            {esNotificacionEtd(notif.tipo) && notif.expediente_id ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                Ver solicitud
+                                <i className="ri-arrow-right-s-line"></i>
                               </span>
+                            ) : (
+                              notif.po_tiquetera && (
+                                <span
+                                  className="text-[11px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full truncate max-w-[160px]"
+                                  title={notif.po_tiquetera}
+                                >
+                                  {notif.po_tiquetera.length > 20
+                                    ? notif.po_tiquetera.substring(0, 20) + '...'
+                                    : notif.po_tiquetera}
+                                </span>
+                              )
                             )}
                           </div>
                         </div>
@@ -159,7 +175,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
       </div>
 
       {/* Toasts flotantes en la esquina inferior derecha */}
-      <ToastNotificaciones toasts={toasts} onCerrar={cerrarToast} />
+      <ToastNotificaciones toasts={toasts} onCerrar={cerrarToast} onAbrir={abrirNotificacion} />
     </>
   );
 }

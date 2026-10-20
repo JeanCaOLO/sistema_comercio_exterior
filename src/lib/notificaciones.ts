@@ -350,6 +350,7 @@ interface NotificarNuevaSolicitudEtdParams {
   solicitanteId?: string | null;
   propuestoEtd: string;
   apiEnv: 'production' | 'qa';
+  solicitudId?: string | null;
 }
 
 // Avisa únicamente a los administradores que existe una nueva solicitud
@@ -361,6 +362,7 @@ export async function notificarNuevaSolicitudEtd({
   solicitanteId,
   propuestoEtd,
   apiEnv,
+  solicitudId,
 }: NotificarNuevaSolicitudEtdParams): Promise<void> {
   try {
     let destinatarios = await obtenerAdministradores();
@@ -391,7 +393,8 @@ export async function notificarNuevaSolicitudEtd({
       usuario_id: u.id,
       mensaje,
       tipo: 'etd_solicitud_pendiente',
-      expediente_id: null,
+      // Se guarda el ID de la solicitud para poder abrirla directo desde la campanita.
+      expediente_id: solicitudId ?? null,
       po_tiquetera: orderNumber,
       usuario_genero: 'Sistema',
       icono: 'ri-calendar-check-line',
@@ -403,6 +406,131 @@ export async function notificarNuevaSolicitudEtd({
   } catch (err: any) {
     console.error('[Notificaciones] Error (nueva solicitud ETD):', err.message || err);
   }
+}
+
+// ============================================================
+// RECORDATORIO AUTOMÁTICO DE SOLICITUDES ETD ATRASADAS
+// Si una solicitud sigue PENDING más de 2 días, se recuerda a
+// los administradores (QA solo al perfil autorizado). Máximo
+// un recordatorio por solicitud cada 24 horas.
+// ============================================================
+
+export const DIAS_UMBRAL_ETD_ATRASADA = 2;
+const HORAS_ENTRE_RECORDATORIOS_ETD = 24;
+
+interface SolicitudEtdAtrasada {
+  id: string;
+  order_number: string;
+  trading_company: string | null;
+  requested_at: string;
+  proposed_etd_initial: string | null;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  api_env: string | null;
+}
+
+// Revisa las solicitudes pendientes y avisa a los administradores
+// cuando llevan más de 2 días sin resolverse.
+export async function verificarSolicitudesEtdAtrasadas(): Promise<void> {
+  try {
+    const { data: pendientes, error } = await supabase
+      .from('etd_initial_change_requests')
+      .select('id, order_number, trading_company, requested_at, proposed_etd_initial, requested_by, requested_by_name, api_env')
+      .eq('status', 'PENDING');
+
+    if (error) throw error;
+    const lista = (pendientes || []) as SolicitudEtdAtrasada[];
+    if (lista.length === 0) return;
+
+    const ahora = Date.now();
+    const atrasadas = lista.filter((s) => {
+      const fecha = new Date(s.requested_at).getTime();
+      if (Number.isNaN(fecha)) return false;
+      return ahora - fecha > DIAS_UMBRAL_ETD_ATRASADA * 24 * 60 * 60 * 1000;
+    });
+    if (atrasadas.length === 0) return;
+
+    const ids = atrasadas.map((s) => s.id);
+
+    // Recordatorios ya enviados (se evita duplicar dentro de las últimas 24 h).
+    const { data: previos } = await supabase
+      .from('notificaciones')
+      .select('expediente_id, created_at')
+      .eq('tipo', 'etd_recordatorio')
+      .in('expediente_id', ids);
+
+    const limite = ahora - HORAS_ENTRE_RECORDATORIOS_ETD * 60 * 60 * 1000;
+    const recientementeAvisadas = new Set(
+      (previos || [])
+        .filter((n: any) => n.expediente_id && new Date(n.created_at).getTime() >= limite)
+        .map((n: any) => n.expediente_id)
+    );
+
+    const administradores = await obtenerAdministradores();
+    const destinatariosQa = new Map<string, { id: string; nombre: string }>();
+    if (atrasadas.some((s) => s.api_env && s.api_env !== 'production')) {
+      const { data: autorizados } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('email', ['jalvarez@ologistics.com']);
+      (autorizados || []).forEach((u: any) => destinatariosQa.set(u.id, { id: u.id, nombre: u.nombre }));
+    }
+
+    const nuevas: Record<string, unknown>[] = [];
+
+    atrasadas.forEach((s) => {
+      if (recientementeAvisadas.has(s.id)) return;
+
+      const esQa = Boolean(s.api_env && s.api_env !== 'production');
+      const base = esQa
+        ? Array.from(destinatariosQa.values())
+        : administradores;
+
+      const destinatarios = base.filter((u) => u.id !== s.requested_by);
+      if (destinatarios.length === 0) return;
+
+      const fechaSolicitud = new Date(s.requested_at).getTime();
+      const dias = Math.floor((ahora - fechaSolicitud) / (24 * 60 * 60 * 1000));
+      const prefijo = esQa ? '[QA] ' : '';
+      const etdTexto = s.proposed_etd_initial ? formatearFechaCorta(s.proposed_etd_initial) : '—';
+      const mensaje =
+        `${prefijo}Recordatorio: la solicitud de cambio de ETD Inicial para la PO ${s.order_number}` +
+        `${s.trading_company ? ` (${s.trading_company})` : ''} lleva ${dias} días sin aprobarse. ` +
+        `Nuevo ETD propuesto: ${etdTexto}. Solicitado por: ${s.requested_by_name || 'Usuario'}.`;
+
+      destinatarios.forEach((u) => {
+        nuevas.push({
+          usuario_id: u.id,
+          mensaje,
+          tipo: 'etd_recordatorio',
+          expediente_id: s.id,
+          po_tiquetera: s.order_number,
+          usuario_genero: 'Sistema',
+          icono: 'ri-alarm-warning-line',
+          leida: false,
+        });
+      });
+    });
+
+    if (nuevas.length === 0) return;
+
+    const { error: errorInsert } = await supabase.from('notificaciones').insert(nuevas);
+    if (errorInsert) console.error('[Notificaciones] Error al insertar recordatorios ETD:', errorInsert.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error verificando solicitudes ETD atrasadas:', err.message || err);
+  }
+}
+
+// Tipos de notificación que apuntan a una solicitud de cambio de ETD Inicial.
+const TIPOS_NOTIFICACION_ETD = [
+  'etd_solicitud_pendiente',
+  'etd_recordatorio',
+  'etd_aprobada',
+  'etd_rechazada',
+];
+
+export function esNotificacionEtd(tipo: string): boolean {
+  return TIPOS_NOTIFICACION_ETD.includes(tipo);
 }
 
 export async function obtenerNotificaciones(usuarioId: string): Promise<Notificacion[]> {
@@ -483,6 +611,8 @@ export function getIconoColor(tipo: string): string {
       return 'text-red-600 bg-red-100';
     case 'etd_solicitud_pendiente':
       return 'text-amber-600 bg-amber-100';
+    case 'etd_recordatorio':
+      return 'text-orange-600 bg-orange-100';
     default:
       return 'text-gray-600 bg-gray-100';
   }
@@ -510,6 +640,8 @@ export function getTipoLabel(tipo: string): string {
       return 'Cambio ETD Inicial rechazado';
     case 'etd_solicitud_pendiente':
       return 'Nueva solicitud ETD Inicial';
+    case 'etd_recordatorio':
+      return 'Recordatorio ETD Inicial';
     default:
       return tipo;
   }

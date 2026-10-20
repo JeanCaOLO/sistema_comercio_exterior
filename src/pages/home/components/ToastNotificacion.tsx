@@ -5,6 +5,7 @@ import {
   timeAgo,
 } from '@/lib/notificaciones';
 import type { ToastItem } from '@/hooks/useNotificaciones';
+import type { Notificacion } from '@/lib/notificaciones';
 
 function estilosPorCantidad(cantidad: number) {
   if (cantidad >= 4) {
@@ -48,15 +49,17 @@ interface TarjetaToastProps {
   item: ToastItem;
   cantidad: number;
   onCerrar: (clave: string) => void;
+  onAbrir?: (notificacion: Notificacion) => void;
 }
 
-function TarjetaToast({ item, cantidad, onCerrar }: TarjetaToastProps) {
+function TarjetaToast({ item, cantidad, onCerrar, onAbrir }: TarjetaToastProps) {
   const { clave, notificacion } = item;
   const estilos = estilosPorCantidad(cantidad);
 
   return (
     <div
-      className={`pointer-events-auto max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-700/70 rounded-xl overflow-hidden animate-toast-in ${estilos.contenedor}`}
+      onClick={() => onAbrir?.(notificacion)}
+      className={`pointer-events-auto max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-700/70 rounded-xl overflow-hidden animate-toast-in cursor-pointer hover:border-zinc-500/80 transition-colors ${estilos.contenedor}`}
     >
       <div className={`flex items-start ${estilos.gap} ${estilos.padding}`}>
         <div
@@ -81,7 +84,10 @@ function TarjetaToast({ item, cantidad, onCerrar }: TarjetaToastProps) {
 
         <button
           type="button"
-          onClick={() => onCerrar(clave)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCerrar(clave);
+          }}
           className="w-8 h-8 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer flex-shrink-0"
           aria-label="Cerrar notificación"
         >
@@ -95,9 +101,10 @@ function TarjetaToast({ item, cantidad, onCerrar }: TarjetaToastProps) {
 interface ToastNotificacionesProps {
   toasts: ToastItem[];
   onCerrar: (clave: string) => void;
+  onAbrir?: (notificacion: Notificacion) => void;
 }
 
-export default function ToastNotificaciones({ toasts, onCerrar }: ToastNotificacionesProps) {
+export default function ToastNotificaciones({ toasts, onCerrar, onAbrir }: ToastNotificacionesProps) {
   const [expandido, setExpandido] = useState(false);
 
   const hayMuchos = toasts.length > MAX_VISIBLES;
@@ -120,6 +127,7 @@ export default function ToastNotificaciones({ toasts, onCerrar }: ToastNotificac
             item={item}
             cantidad={visibles.length}
             onCerrar={onCerrar}
+            onAbrir={onAbrir}
           />
         ))}
       </div>
