@@ -81,7 +81,7 @@ export default function SeccionKpisMcg({
         icono="ri-file-add-line"
         tono="indigo"
         titulo="KPIs MCG · Creación de Expediente"
-        meta={<>Asignado → liberación · Meta: ≤ {metaCreacionDias} días hábiles (MCG)</>}
+        meta={<>Carga de factura → liberación · Meta: ≤ {metaCreacionDias} días hábiles (MCG)</>}
         badge={badgeCreacion}
         accion={{
           texto: 'Ver detalle de POs',

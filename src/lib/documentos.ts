@@ -10,6 +10,7 @@ export interface DocEntry {
 }
 
 export const TIPO_FACTURA = 'factura';
+export const TIPO_PACKING_LIST = 'packing_list';
 
 const esUrlValida = (valor: unknown): valor is string =>
   typeof valor === 'string' && valor.trim() !== '';
@@ -60,6 +61,11 @@ export function parseDocEntries(doc: unknown): DocEntry[] {
 /** ¿Esta entrada está marcada como factura? */
 export function esFactura(entry: DocEntry): boolean {
   return entry.tipo === TIPO_FACTURA;
+}
+
+/** ¿Esta entrada está marcada como packing list? */
+export function esPackingList(entry: DocEntry): boolean {
+  return entry.tipo === TIPO_PACKING_LIST;
 }
 
 /**

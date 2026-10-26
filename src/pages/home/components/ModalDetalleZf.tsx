@@ -10,6 +10,7 @@ export interface FilaDetalleZf {
   fechaAsignacion: string;
   fechaCompletado?: string;
   fechaReferencia: string;
+  fechaExtra?: string;
   dias: number;
   cumpleMeta: boolean;
 }
@@ -18,6 +19,8 @@ interface ModalDetalleZfProps {
   titulo: string;
   subtitulo: string;
   etiquetaFecha: string;
+  etiquetaAsignacion?: string;
+  etiquetaExtra?: string;
   metaTexto: string;
   nombreArchivo: string;
   filas: FilaDetalleZf[];
@@ -28,6 +31,8 @@ export default function ModalDetalleZf({
   titulo,
   subtitulo,
   etiquetaFecha,
+  etiquetaAsignacion = 'Fecha de Asignación',
+  etiquetaExtra,
   metaTexto,
   nombreArchivo,
   filas,
@@ -45,13 +50,15 @@ export default function ModalDetalleZf({
   );
 
   const mostrarCompletado = filas.some((f) => !!f.fechaCompletado);
+  const mostrarExtra = !!etiquetaExtra && filas.some((f) => !!f.fechaExtra);
 
   const descargar = () => {
     const rows = filas.map((f) => ({
       'PO/Tiquetera': f.po_tiquetera,
       'EXP ID': f.exp_id || '-',
       'Solicitante': f.solicitante || '—',
-      'Fecha de Asignación': formatearFechaCorta(f.fechaAsignacion),
+      [etiquetaAsignacion]: formatearFechaCorta(f.fechaAsignacion),
+      ...(mostrarExtra ? { [etiquetaExtra as string]: formatearFechaCorta(f.fechaExtra || '') } : {}),
       ...(mostrarCompletado ? { 'Fecha de Completado': formatearFechaCorta(f.fechaCompletado || '') } : {}),
       [etiquetaFecha]: formatearFechaCorta(f.fechaReferencia),
       'Días': f.dias,
@@ -144,7 +151,10 @@ export default function ModalDetalleZf({
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">PO / Tiquetera</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">EXP ID</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Solicitante</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Fecha de Asignación</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{etiquetaAsignacion}</th>
+                {mostrarExtra && (
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">{etiquetaExtra}</th>
+                )}
                 {mostrarCompletado && (
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Fecha de Completado</th>
                 )}
@@ -160,6 +170,9 @@ export default function ModalDetalleZf({
                   <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.exp_id || '-'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{exp.solicitante || '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatearFechaCorta(exp.fechaAsignacion)}</td>
+                  {mostrarExtra && (
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatearFechaCorta(exp.fechaExtra || '')}</td>
+                  )}
                   {mostrarCompletado && (
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatearFechaCorta(exp.fechaCompletado || '')}</td>
                   )}
@@ -184,7 +197,7 @@ export default function ModalDetalleZf({
               ))}
               {filtradas.length === 0 && (
                 <tr>
-                  <td colSpan={mostrarCompletado ? 8 : 7} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={7 + (mostrarCompletado ? 1 : 0) + (mostrarExtra ? 1 : 0)} className="px-6 py-12 text-center text-gray-400">
                     <i className="ri-inbox-line text-4xl mb-2"></i>
                     <p className="text-sm">
                       {total === 0

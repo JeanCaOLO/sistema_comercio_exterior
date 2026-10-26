@@ -1,4 +1,4 @@
-import { type DocEntry, esFactura, nombreDeArchivo } from '@/lib/documentos';
+import { type DocEntry, esFactura, esPackingList, nombreDeArchivo } from '@/lib/documentos';
 
 interface ModalDocumentosExpedienteProps {
   show: boolean;
@@ -63,6 +63,7 @@ export default function ModalDocumentosExpediente({
                 const esImagen = EXTENSIONES_IMAGEN.includes(extension || '');
                 const { icon, color } = obtenerIcono(extension);
                 const esFacturaDoc = esFactura(entry);
+                const esPackingListDoc = esPackingList(entry);
 
                 return (
                   <div
@@ -94,6 +95,12 @@ export default function ModalDocumentosExpediente({
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 text-[10px] font-semibold whitespace-nowrap flex-shrink-0">
                               <i className="ri-receipt-line"></i>
                               Factura
+                            </span>
+                          )}
+                          {esPackingListDoc && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold whitespace-nowrap flex-shrink-0">
+                              <i className="ri-file-list-3-line"></i>
+                              Packing List
                             </span>
                           )}
                         </div>

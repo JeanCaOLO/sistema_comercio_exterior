@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { PERMISOS_DEFAULT, cargarMatrizPermisos, obtenerModulosPermitidos } from '@/lib/permisos';
+import { ITEM_CONFIGURACION, ITEMS_NAVEGACION, grupoDeVista } from '@/lib/navegacion';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import GestionExpedientes from './components/GestionExpedientes';
@@ -153,18 +154,27 @@ export default function Home() {
 
   // Mapea la vista activa del menú (module id) a la sección interna del módulo de Cambios ETD
   const seccionEtdActual: SeccionEtd =
-    activeView === 'etd-aprobaciones'
-      ? 'aprobaciones'
-      : activeView === 'etd-historial'
-        ? 'historial'
-        : 'solicitar';
+    activeView === 'etd-dashboard'
+      ? 'dashboard'
+      : activeView === 'etd-aprobaciones'
+        ? 'aprobaciones'
+        : activeView === 'etd-historial'
+          ? 'historial'
+          : 'solicitar';
 
   // Mapea la sección interna de vuelta al id del módulo del menú lateral
   const irASeccionEtd = (seccion: SeccionEtd) => {
-    if (seccion === 'aprobaciones') setActiveView('etd-aprobaciones');
+    if (seccion === 'dashboard') setActiveView('etd-dashboard');
+    else if (seccion === 'aprobaciones') setActiveView('etd-aprobaciones');
     else if (seccion === 'historial') setActiveView('etd-historial');
     else setActiveView('etd-solicitar');
   };
+
+  // Contexto de navegación para la barra superior (solo visual)
+  const grupoActual = grupoDeVista(activeView);
+  const itemActual = activeView === ITEM_CONFIGURACION.id
+    ? ITEM_CONFIGURACION
+    : ITEMS_NAVEGACION.find((item) => item.id === activeView);
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -178,8 +188,22 @@ export default function Home() {
       />
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Barra superior con campanita */}
-        <div className="flex items-center justify-end px-6 py-3 bg-white border-b border-gray-100 flex-shrink-0">
+        {/* Barra superior con módulo actual y campanita */}
+        <div className="flex items-center justify-between gap-4 px-6 py-3 bg-white border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2 text-sm min-w-0">
+            <span className="w-5 h-5 flex items-center justify-center flex-shrink-0 text-teal-600">
+              <i className="ri-layout-grid-line"></i>
+            </span>
+            {grupoActual && (
+              <>
+                <span className="text-gray-400 whitespace-nowrap">{grupoActual.nombre}</span>
+                <i className="ri-arrow-right-s-line text-gray-300"></i>
+              </>
+            )}
+            <span className="font-medium text-gray-800 whitespace-nowrap truncate">
+              {itemActual?.label || 'Panel'}
+            </span>
+          </div>
           {usuarioId && (
             <CampanitaNotificaciones usuarioId={usuarioId} usuarioNombre={userName} usuarioEmail={user.email || ''} />
           )}
@@ -219,7 +243,7 @@ export default function Home() {
               {activeView === 'documentacion' && <Documentacion />}
               {activeView === 'repositorio' && <RepositorioDocumentacion />}
               {activeView === 'facturas' && <Facturas />}
-              {(activeView === 'etd-solicitar' || activeView === 'etd-aprobaciones' || activeView === 'etd-historial') && (
+              {(activeView === 'etd-dashboard' || activeView === 'etd-solicitar' || activeView === 'etd-aprobaciones' || activeView === 'etd-historial') && (
                 <GestionCambiosEtd
                   seccion={seccionEtdActual}
                   onSeccionChange={irASeccionEtd}

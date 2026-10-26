@@ -5,8 +5,9 @@ import { contarSolicitudesPendientesEtd, puedeVerQaEtd } from '@/lib/etdCambios'
 import SolicitarCambioEtd from './SolicitarCambioEtd';
 import AprobacionesEtd from './AprobacionesEtd';
 import HistorialEtd from './HistorialEtd';
+import DashboardCambiosEtd from './DashboardCambiosEtd';
 
-export type SeccionEtd = 'solicitar' | 'aprobaciones' | 'historial';
+export type SeccionEtd = 'dashboard' | 'solicitar' | 'aprobaciones' | 'historial';
 
 interface GestionCambiosEtdProps {
   seccion: SeccionEtd;
@@ -50,6 +51,7 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudO
   }, [refrescarPendientes]);
 
   const tabs: { id: SeccionEtd; label: string; icono: string; visible: boolean }[] = [
+    { id: 'dashboard', label: 'Dashboard', icono: 'ri-dashboard-3-line', visible: true },
     { id: 'solicitar', label: 'Solicitar Cambio ETD Inicial', icono: 'ri-calendar-2-line', visible: true },
     { id: 'aprobaciones', label: 'Aprobaciones Pendientes', icono: 'ri-checkbox-multiple-line', visible: puedeAprobar },
     { id: 'historial', label: 'Historial de Solicitudes', icono: 'ri-history-line', visible: true },
@@ -91,6 +93,17 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudO
           </button>
         ))}
       </div>
+
+      {seccion === 'dashboard' && (
+        <DashboardCambiosEtd
+          usuarioId={usuarioId}
+          usuarioNombre={usuarioNombre}
+          puedeAprobar={puedeAprobar}
+          puedeAprobarPropias={puedeAprobarPropias}
+          incluirQa={incluirQa}
+          onIrA={onSeccionChange}
+        />
+      )}
 
       {seccion === 'solicitar' && (
         <SolicitarCambioEtd

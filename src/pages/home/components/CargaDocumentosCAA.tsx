@@ -14,6 +14,7 @@ interface ArchivoSeleccionado {
   id: string;
   file: File;
   esFactura: boolean;
+  esPackingList: boolean;
 }
 
 interface POItem {
@@ -33,6 +34,8 @@ export default function CargaDocumentosCAA() {
   const [tipoModulo, setTipoModulo] = useState<'dropship' | 'zf' | null>(null);
   const [tipoRuta, setTipoRuta] = useState<string>('');
   const [blCargado, setBlCargado] = useState(false);
+  const [numeroBl, setNumeroBl] = useState('');
+  const [numeroContenedor, setNumeroContenedor] = useState('');
   const [tcCargado, setTcCargado] = useState(false);
   const [aplicaTLC, setAplicaTLC] = useState(false);
   const [files, setFiles] = useState<ArchivoSeleccionado[]>([]);
@@ -96,7 +99,7 @@ export default function CargaDocumentosCAA() {
     });
     setFiles(prev => [
       ...prev,
-      ...droppedFiles.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false })),
+      ...droppedFiles.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false, esPackingList: false })),
     ]);
   }, []);
 
@@ -108,7 +111,7 @@ export default function CargaDocumentosCAA() {
       });
       setFiles(prev => [
         ...prev,
-        ...selected.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false })),
+        ...selected.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false, esPackingList: false })),
       ]);
     }
   };
@@ -119,6 +122,10 @@ export default function CargaDocumentosCAA() {
 
   const toggleFactura = (id: string) => {
     setFiles(prev => prev.map(f => (f.id === id ? { ...f, esFactura: !f.esFactura } : f)));
+  };
+
+  const togglePackingList = (id: string) => {
+    setFiles(prev => prev.map(f => (f.id === id ? { ...f, esPackingList: !f.esPackingList } : f)));
   };
 
   const addPO = () => {
@@ -289,7 +296,8 @@ export default function CargaDocumentosCAA() {
 
           const url = urlData?.publicUrl || '';
           if (!url) return null;
-          return { url, tipo: item.esFactura ? 'factura' : null } as DocEntry;
+          const tipo = item.esFactura ? 'factura' : item.esPackingList ? 'packing_list' : null;
+          return { url, tipo } as DocEntry;
         })
       )).filter((e): e is DocEntry => e !== null);
 
@@ -316,6 +324,9 @@ export default function CargaDocumentosCAA() {
           doc: entradasDocumentos,
           lineas_oc: 0,
           bl_cargado: blCargado,
+          packing_list_cargado: files.some(f => f.esPackingList),
+          numero_bl: numeroBl.trim() || null,
+          numero_contenedor: numeroContenedor.trim() || null,
           tc_cargado: tcCargado,
           aplica_tlc: aplicaTLC,
           fecha_creacion_expediente: hoy,
@@ -345,6 +356,9 @@ export default function CargaDocumentosCAA() {
             modulo: tipoModulo,
             ruta: tipoRuta,
             bl_cargado: blCargado,
+            numero_bl: numeroBl.trim() || null,
+            numero_contenedor: numeroContenedor.trim() || null,
+            packing_list_cargado: files.some(f => f.esPackingList),
             tc_cargado: tcCargado,
             aplica_tlc: aplicaTLC,
             total_documentos: entradasDocumentos.length,
@@ -384,6 +398,8 @@ export default function CargaDocumentosCAA() {
       setTipoModulo(null);
       setTipoRuta('');
       setBlCargado(false);
+      setNumeroBl('');
+      setNumeroContenedor('');
       setTcCargado(false);
       setAplicaTLC(false);
       setComentario('');
@@ -621,6 +637,32 @@ export default function CargaDocumentosCAA() {
               </div>
             </div>
 
+            {/* Números de BL y Contenedor — solo lectura: los alimenta el sistema de carga */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                  N° de BL <span className="font-normal text-gray-400">(automático)</span>
+                </label>
+                <div className="flex items-center gap-2 w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+                  <i className="ri-lock-line text-gray-400 text-sm"></i>
+                  <span className="text-sm text-gray-500 font-mono">{numeroBl || 'Pendiente de sincronizar'}</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                  N° de Contenedor <span className="font-normal text-gray-400">(automático)</span>
+                </label>
+                <div className="flex items-center gap-2 w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+                  <i className="ri-lock-line text-gray-400 text-sm"></i>
+                  <span className="text-sm text-gray-500 font-mono">{numeroContenedor || 'Pendiente de sincronizar'}</span>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 flex items-center gap-1.5 mb-4">
+              <i className="ri-information-line"></i>
+              El N° de BL y el N° de contenedor llegan desde el sistema de carga. Aquí solo se consultan.
+            </p>
+
             {/* Checkbox TC - Tránsito Corto */}
             <div className="flex items-center gap-3 mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
               <button
@@ -704,6 +746,9 @@ export default function CargaDocumentosCAA() {
                   {files.some(f => f.esFactura) && (
                     <span className="ml-2 text-amber-600">· {files.filter(f => f.esFactura).length} marcado(s) como factura</span>
                   )}
+                  {files.some(f => f.esPackingList) && (
+                    <span className="ml-2 text-teal-600">· {files.filter(f => f.esPackingList).length} marcado(s) como packing list</span>
+                  )}
                 </p>
                 {files.map((item, index) => {
                   const { icon, color, bg } = getFileIcon(item.file.name);
@@ -733,6 +778,19 @@ export default function CargaDocumentosCAA() {
                       >
                         <i className={item.esFactura ? 'ri-checkbox-circle-fill' : 'ri-bill-line'}></i>
                         Es factura
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => togglePackingList(item.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap ${
+                          item.esPackingList
+                            ? 'bg-teal-600 text-white hover:bg-teal-700'
+                            : 'bg-white border border-gray-300 text-gray-600 hover:border-teal-400 hover:text-teal-700'
+                        }`}
+                        title={item.esPackingList ? 'Quitar marca de packing list' : 'Marcar como packing list'}
+                      >
+                        <i className={item.esPackingList ? 'ri-checkbox-circle-fill' : 'ri-file-list-3-line'}></i>
+                        Packing list
                       </button>
                       <button
                         type="button"
@@ -872,6 +930,12 @@ export default function CargaDocumentosCAA() {
                   {blCargado ? 'Sí' : 'No'}
                 </div>
                 <p className="text-xs text-gray-500">BL</p>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <div className={`text-lg font-bold mb-1 ${files.some(f => f.esPackingList) ? 'text-teal-600' : 'text-gray-400'}`}>
+                  {files.some(f => f.esPackingList) ? 'Sí' : 'No'}
+                </div>
+                <p className="text-xs text-gray-500">Packing List</p>
               </div>
               <div className="text-center p-4 bg-gray-50 rounded-xl">
                 <div className={`text-lg font-bold mb-1 ${tcCargado ? 'text-amber-600' : 'text-gray-400'}`}>

@@ -1,9 +1,18 @@
 import { supabase } from './supabase';
+import {
+  GRUPOS_NAVEGACION,
+  ITEM_CONFIGURACION,
+  type GrupoId,
+} from './navegacion';
 
 export interface Modulo {
   id: string;
   nombre: string;
   icon: string;
+  /** Módulo grande al que pertenece (solo agrupación visual) */
+  grupo: GrupoId;
+  /** Nombre visible del módulo grande */
+  grupoNombre: string;
 }
 
 export interface Rol {
@@ -15,21 +24,42 @@ export interface Rol {
 // Matriz de permisos: rol -> lista de IDs de módulos a los que puede acceder
 export type MatrizPermisos = Record<string, string[]>;
 
+// Los módulos se derivan de la estructura de navegación para que el menú y la
+// Matriz de Permisos siempre hablen del mismo catálogo (mismos ids internos).
 export const MODULOS: Modulo[] = [
-  { id: 'dashboard', nombre: 'Dashboard', icon: 'ri-dashboard-line' },
-  { id: 'gestion-dropship', nombre: 'Gestión Dropship', icon: 'ri-ship-line' },
-  { id: 'gestion-zf', nombre: 'Gestión ZF', icon: 'ri-building-line' },
-  { id: 'lista-expedientes', nombre: 'Lista de Expedientes', icon: 'ri-file-list-3-line' },
-  { id: 'reportes', nombre: 'Reportes', icon: 'ri-bar-chart-box-line' },
-  { id: 'carga-caa', nombre: 'Carga CAA', icon: 'ri-file-upload-line' },
-  { id: 'documentacion', nombre: 'Documentación', icon: 'ri-folder-open-line' },
-  { id: 'repositorio', nombre: 'Repositorio Docs', icon: 'ri-archive-line' },
-  { id: 'facturas', nombre: 'Facturas', icon: 'ri-bill-line' },
-  { id: 'configuracion', nombre: 'Configuración', icon: 'ri-settings-3-line' },
-  { id: 'etd-solicitar', nombre: 'Solicitar Cambio ETD', icon: 'ri-calendar-2-line' },
-  { id: 'etd-aprobaciones', nombre: 'Aprobaciones ETD', icon: 'ri-checkbox-multiple-line' },
-  { id: 'etd-historial', nombre: 'Historial ETD', icon: 'ri-history-line' },
+  ...GRUPOS_NAVEGACION.flatMap((grupo) =>
+    grupo.secciones.flatMap((seccion) =>
+      seccion.items.map((item) => ({
+        id: item.id,
+        nombre: item.label,
+        icon: item.icon,
+        grupo: grupo.id,
+        grupoNombre: grupo.nombre,
+      }))
+    )
+  ),
+  {
+    id: ITEM_CONFIGURACION.id,
+    nombre: ITEM_CONFIGURACION.label,
+    icon: ITEM_CONFIGURACION.icon,
+    grupo: 'sistema',
+    grupoNombre: 'Sistema',
+  },
 ];
+
+// Agrupa los módulos por módulo grande, respetando el orden del menú.
+export function gruposDeModulos(): { id: string; nombre: string; modulos: Modulo[] }[] {
+  const orden = [
+    ...GRUPOS_NAVEGACION.map((grupo) => ({ id: grupo.id as string, nombre: grupo.nombre })),
+    { id: 'sistema', nombre: 'Sistema' },
+  ];
+  return orden
+    .map((entrada) => ({
+      ...entrada,
+      modulos: MODULOS.filter((modulo) => modulo.grupo === entrada.id),
+    }))
+    .filter((entrada) => entrada.modulos.length > 0);
+}
 
 export const ROLES: Rol[] = [
   { nombre: 'Administrador', descripcion: 'Acceso completo al sistema', color: 'bg-purple-100 text-purple-800' },
@@ -45,12 +75,12 @@ export const PERMISOS_DEFAULT: MatrizPermisos = {
   'Administrador': [
     'dashboard', 'gestion-dropship', 'gestion-zf', 'lista-expedientes',
     'reportes', 'carga-caa', 'documentacion', 'repositorio', 'facturas', 'configuracion',
-    'etd-solicitar', 'etd-aprobaciones', 'etd-historial'
+    'etd-solicitar', 'etd-aprobaciones', 'etd-historial', 'etd-dashboard'
   ],
   'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Bodega': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Documentos': ['lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-solicitar', 'etd-historial'],
+  'Documentos': ['lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial'],
   'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Solicitante': ['carga-caa', 'documentacion', 'repositorio', 'facturas'],
 };

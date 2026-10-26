@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { parseFechaSegura, formatearFechaCorta } from '@/lib/fechas';
+import { consultarPorIds } from '@/lib/consultas';
 import FiltroFechas from './FiltroFechas';
 
 interface FilaCiclo {
@@ -59,25 +60,25 @@ export default function ReporteCiclo() {
       const ids = activos.map(e => e.id);
 
       const [resAsig, resTerm, resHist] = await Promise.all([
-        supabase.from('expedientes_tiempos_estados').select('expediente_id, fecha_inicio').in('expediente_id', ids).eq('estado_nuevo', 'Asignado'),
-        supabase.from('expedientes_tiempos_estados').select('expediente_id, estado_nuevo, fecha_inicio').in('expediente_id', ids).in('estado_nuevo', ['Notificado', 'Completado', 'Liberación']),
-        supabase.from('expedientes_historial').select('expediente_id, fecha_cambio, valor_nuevo').in('expediente_id', ids).eq('campo_modificado', 'Estado').in('valor_nuevo', ['Notificado', 'Completado', 'Liberación'])
+        consultarPorIds<any>('expedientes_tiempos_estados', 'expediente_id, fecha_inicio', 'expediente_id', ids, (c: any) => c.eq('estado_nuevo', 'Asignado')),
+        consultarPorIds<any>('expedientes_tiempos_estados', 'expediente_id, estado_nuevo, fecha_inicio', 'expediente_id', ids, (c: any) => c.in('estado_nuevo', ['Notificado', 'Completado', 'Liberación'])),
+        consultarPorIds<any>('expedientes_historial', 'expediente_id, fecha_cambio, valor_nuevo', 'expediente_id', ids, (c: any) => c.eq('campo_modificado', 'Estado').in('valor_nuevo', ['Notificado', 'Completado', 'Liberación']))
       ]);
 
       const fechaAsignado: Record<string, string> = {};
-      (resAsig.data || []).forEach((t: any) => {
+      resAsig.forEach((t: any) => {
         if (!fechaAsignado[t.expediente_id] || t.fecha_inicio < fechaAsignado[t.expediente_id]) {
           fechaAsignado[t.expediente_id] = t.fecha_inicio;
         }
       });
 
       const fechaTerm: Record<string, string> = {};
-      (resTerm.data || []).forEach((t: any) => {
+      resTerm.forEach((t: any) => {
         if (!fechaTerm[t.expediente_id] || t.fecha_inicio < fechaTerm[t.expediente_id]) {
           fechaTerm[t.expediente_id] = t.fecha_inicio;
         }
       });
-      (resHist.data || []).forEach((h: any) => {
+      resHist.forEach((h: any) => {
         if (!fechaTerm[h.expediente_id] || h.fecha_cambio < fechaTerm[h.expediente_id]) {
           fechaTerm[h.expediente_id] = h.fecha_cambio;
         }

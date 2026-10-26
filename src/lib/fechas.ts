@@ -23,6 +23,18 @@ export const formatearFechaCorta = (fecha: string): string => {
   return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+// Suma (o resta) días naturales a una fecha y devuelve 'YYYY-MM-DD' sin
+// corrimientos de zona horaria.
+export const sumarDias = (fecha: string, dias: number): string => {
+  const base = parseFechaSegura(fecha);
+  if (Number.isNaN(base.getTime())) return '';
+  const resultado = new Date(base.getFullYear(), base.getMonth(), base.getDate() + dias);
+  const año = resultado.getFullYear();
+  const mes = String(resultado.getMonth() + 1).padStart(2, '0');
+  const dia = String(resultado.getDate()).padStart(2, '0');
+  return `${año}-${mes}-${dia}`;
+};
+
 export const hoyLocal = (): string => {
   const hoy = new Date();
   const año = hoy.getFullYear();

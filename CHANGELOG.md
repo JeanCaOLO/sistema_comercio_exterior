@@ -2,7 +2,7 @@
 
 **Sistema de Gestión de Expedientes de Comercio Exterior**  
 *Dropship & Zona Franca (ZF)*  
-*Última actualización: 7 de octubre de 2026*
+*Última actualización: 26 de octubre de 2026*
 
 ---
 
@@ -546,6 +546,33 @@ Con esto, las dos tarjetas de KPIs de ZF responden a lo que realmente se marca y
 **Pendientes identificados (sin inventar nada):**
 - **URL productiva de Raga**: se define solo por variable de entorno cuando esté disponible.
 - **Contrato exacto del PUT**: la función ya apunta a `PUT /api/purchase-orders/{order_number}` enviando `{ trading_company, date_etd_initial }`; se ajustará el body si el contrato real difiere.
+
+---
+
+---
+
+## ⏱️ Los KPIs de creación arrancan en la carga de la factura (242)
+
+242. **La medición de creación de expediente ya no parte de "Asignado"** — Los dos indicadores relacionados a la **creación** del expediente ahora miden desde que se **cargan los documentos (la factura)**, no desde que alguien asigna el ticket:
+- **Indicador de Duración Mínima de Expedientes** (Dropship, meta < 3 días hábiles): mide **carga de factura → liberación**. Si el ticket sigue en curso, cierra contra hoy.
+- **KPI MCG · Creación de Expediente** (meta ≤ 2 días hábiles): mide **carga de factura → liberación**.
+
+La fecha de inicio es el `created_at` del expediente, que en los tickets consolidados guarda la fecha del **documento más antiguo cargado** (respaldo: fecha de creación del expediente). Los reportes de detalle y el Excel ahora muestran la columna **"Carga de Factura"** en lugar de "Asignado", y la regla quedó aislada en `src/lib/kpisCreacion.ts` (documentada en `KPIS_CALCULO.md`).
+
+**No se modificaron** los demás indicadores: Asignado → Notificado, ETD → Notificado, Liberado → Notificado País, ETA − 15 días y todos los de ZF siguen midiendo igual.
+
+---
+
+## 🧩 Dashboard dividido en secciones y Lista con días de factura (243–244)
+
+243. **Dashboard de Control modularizado** — El archivo del dashboard pasó de ~2.000 líneas a un orquestador liviano. La lógica y las pantallas se repartieron en el mismo patrón usado en **Gestión** y **Lista de Expedientes**:
+- **Datos y cálculos:** servicios de carga por período (con lotes de IDs), tiempos entre estados, KPIs de Dropship, MCG y ZF, y un hook dueño del estado.
+- **Piezas visuales:** barra de filtros de período, sección de expedientes generales, sección **Dropship** (con la tarjeta de Duración Mínima y la de Asignado → Notificado), sección **Zona Franca**, y sección de **Análisis General** con sus tarjetas de estados y tiempos promedio.
+- **Reportes de Excel** extraídos a su propio módulo.
+
+El comportamiento quedó idéntico: filtros por fecha de asignación, comparativos vs mes/año anterior, alertas de cumplimiento, MCG separado de los KPIs generales y todos los modales de detalle.
+
+244. **Nueva columna "Días s/ Factura" en la Lista de Expedientes** — Se agregó una columna que muestra los **días hábiles transcurridos desde la carga de la factura** de cada ticket, con la misma regla de los KPIs de creación: si el expediente ya cerró, el reloj se **detiene en la liberación**; si sigue abierto, **cuenta hasta hoy** y se marca como *en curso*. El color del valor ayuda a leerlo rápido: verde bajo 3 días, ámbar entre 3 y 5, rojo sobre 5. Al pasar el mouse se ve la **fecha exacta** en que se cargó la factura.
 
 ---
 

@@ -1,198 +1,80 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase';
-import { cargarRutasActivas, type RutaLogistica } from '../../../lib/rutas';
-import { crearNotificacion, notificarComentario } from '../../../lib/notificaciones';
-import { formatearFecha } from '../../../lib/fechas';
-import { useAuth } from '../../../contexts/AuthContext';
+import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { crearNotificacion, notificarComentario } from '@/lib/notificaciones';
+import { useAuth } from '@/contexts/AuthContext';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
-import { parseDocEntries, combinarEntradas, nombresFacturas, type DocEntry } from '@/lib/documentos';
+import { parseDocEntries, type DocEntry } from '@/lib/documentos';
 import ModalDocumentosExpediente from '@/pages/home/components/ModalDocumentosExpediente';
-import MultiSelectFiltro from '@/pages/home/components/MultiSelectFiltro';
-
-interface Expediente {
-  id: string;
-  po_tiquetera: string;
-  tipo_po: string;
-  solicitante: string;
-  cargador_documentos: string;
-  fecha_solicitud: string;
-  prioridad: string;
-  prioridad_urgente: boolean;
-  motivo_urgencia: string | null;
-  dificultad: string;
-  tiempo_minutos: number;
-  dias_entrega: number;
-  fecha_requerimiento: string;
-  exp_id: string;
-  doc: string | string[] | null;
-  lineas_oc: number;
-  fecha_creacion_expediente: string;
-  estado_expediente: string;
-  motivo_revision: string | null;
-  responsable_creacion: string;
-  instrucciones_adicionales: string | null;
-  created_at: string;
-  fecha_apertura?: string;
-  fecha_liberacion?: string;
-  tiempo_real_minutos?: number;
-  dias_entrega_real?: number;
-  transito_corto?: boolean;
-  ok_pais?: boolean;
-  bl_cargado?: boolean;
-  etd?: string;
-  eta_real?: string;
-  aplica_tlc?: boolean;
-  tipo_modulo?: 'dropship' | 'zf';
-  incidente?: boolean;
-  comentario_incidente?: string | null;
-  finiquito?: boolean;
-  mcg?: boolean;
-  fecha_notificado?: string;
-  fecha_ok_pais?: string;
-  fecha_visto_listo?: string;
-}
-
-// Estados según el tipo de módulo
-const ESTADOS_DROPSHIP = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Liberación', 'Recepción de Carga', 'Facturación', 'Notificado', 'Visto Listo'];
-const ESTADOS_ZF = ['No Asignado', 'Asignado', 'En Proceso', 'Espera de Respuesta', 'Completado'];
-
-// Valida una transición de estado en Dropship.
-// Reglas:
-//   1. Avance: solo se permite pasar al estado inmediatamente siguiente (no brincar estados).
-//   2. Retroceso: no permitido, salvo estas excepciones:
-//      - Hacia "Espera de Respuesta" (desde cualquier estado posterior).
-//      - De "Espera de Respuesta" a "En Proceso".
-// Devuelve null si la transición es válida, o un mensaje de error si no.
-const validarTransicionDropship = (estadoAnterior: string, estadoNuevo: string): string | null => {
-  const idxAnterior = ESTADOS_DROPSHIP.indexOf(estadoAnterior);
-  const idxNuevo = ESTADOS_DROPSHIP.indexOf(estadoNuevo);
-
-  // Estados desconocidos o sin cambio: no validar
-  if (idxAnterior === -1 || idxNuevo === -1 || idxAnterior === idxNuevo) return null;
-
-  // Avance: solo un estado a la vez, sin brincar
-  if (idxNuevo > idxAnterior) {
-    if (idxNuevo === idxAnterior + 1) return null;
-    return `No se puede brincar estados. De "${estadoAnterior}" debes pasar primero por "${ESTADOS_DROPSHIP[idxAnterior + 1]}".`;
-  }
-
-  // Retroceso: solo excepciones permitidas
-  const excepcionHaciaEspera = estadoNuevo === 'Espera de Respuesta';
-  const excepcionDeEsperaAProceso = estadoAnterior === 'Espera de Respuesta' && estadoNuevo === 'En Proceso';
-  if (excepcionHaciaEspera || excepcionDeEsperaAProceso) return null;
-
-  return 'No se puede mover el ticket a una columna anterior. Solo se permite retroceder a "Espera de Respuesta" o de "Espera de Respuesta" a "En Proceso".';
-};
-
-// Tiempo para ocultar tickets terminados del kanban (10 días en ms)
-const DIEZ_DIAS_MS = 10 * 24 * 60 * 60 * 1000;
-
-// Columnas que se traen en la carga inicial del kanban. Se excluye `doc` porque
-// puede ser un campo grande (array de URLs) y se carga bajo demanda al abrir el
-// detalle, los documentos o al validar la asignación.
-const COLUMNAS_EXPEDIENTE = 'id, po_tiquetera, tipo_po, solicitante, cargador_documentos, fecha_solicitud, prioridad, prioridad_urgente, motivo_urgencia, dificultad, tiempo_minutos, dias_entrega, fecha_requerimiento, exp_id, lineas_oc, fecha_creacion_expediente, estado_expediente, motivo_revision, responsable_creacion, instrucciones_adicionales, created_at, fecha_liberacion, tiempo_real_minutos, dias_entrega_real, transito_corto, ok_pais, bl_cargado, etd, eta_real, aplica_tlc, tipo_modulo, incidente, comentario_incidente, finiquito, mcg, fecha_notificado, fecha_ok_pais, fecha_visto_listo, updated_at';
-
-const filtrarTerminadosAntiguos = (lista: Expediente[]): Expediente[] => {
-  const ahora = new Date();
-  return lista.filter(exp => {
-    const esTerminalDropship = exp.tipo_modulo === 'dropship' && exp.estado_expediente === 'Visto Listo';
-    const esTerminalZF = exp.tipo_modulo === 'zf' && exp.estado_expediente === 'Completado';
-    if (esTerminalDropship || esTerminalZF) {
-      const refDate = exp.fecha_liberacion
-        ? new Date(exp.fecha_liberacion)
-        : new Date((exp as any).updated_at || exp.created_at);
-      return (ahora.getTime() - refDate.getTime()) < DIEZ_DIAS_MS;
-    }
-    return true;
-  });
-};
-
-// Regla automática: marcar OK País a los 10 días naturales desde "Notificado"
-// si aún no se ha marcado manualmente. Solo aplica a Dropship en estados
-// "Notificado" o "Visto Listo".
-const aplicarOKPaisAutomatico = async (lista: Expediente[]): Promise<Expediente[]> => {
-  const ahora = new Date();
-  const pendientes = lista.filter(exp =>
-    exp.tipo_modulo === 'dropship' &&
-    (exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo') &&
-    exp.ok_pais !== true
-  );
-
-  for (const exp of pendientes) {
-    const refStr = exp.fecha_notificado || exp.fecha_liberacion || (exp as any).updated_at || exp.created_at;
-    if (!refStr) continue;
-    const refDate = new Date(refStr);
-    if (Number.isNaN(refDate.getTime())) continue;
-    if (ahora.getTime() - refDate.getTime() < DIEZ_DIAS_MS) continue;
-
-    const nowIso = new Date().toISOString();
-    const { error } = await supabase
-      .from('expedientes')
-      .update({ ok_pais: true, fecha_ok_pais: nowIso })
-      .eq('id', exp.id);
-
-    if (error) {
-      console.error('Error al marcar OK País automático:', error);
-      continue;
-    }
-
-    exp.ok_pais = true;
-    exp.fecha_ok_pais = nowIso;
-
-    await supabase.from('expedientes_historial').insert([{
-      expediente_id: exp.id,
-      campo_modificado: 'OK País',
-      valor_anterior: 'Pendiente',
-      valor_nuevo: 'OK (automático - 10 días naturales)',
-      usuario: 'Sistema',
-      fecha_cambio: nowIso
-    }]);
-
-    crearNotificacion({
-      poTiquetera: exp.po_tiquetera,
-      solicitante: exp.solicitante || '',
-      responsable: exp.responsable_creacion || '',
-      usuarioGenero: 'Sistema',
-      tipo: 'documento_modificado',
-      mensaje: `OK País marcado automáticamente para ${exp.po_tiquetera} (10 días naturales transcurridos)`,
-      icono: 'ri-check-double-line',
-      expedienteId: exp.id,
-    });
-  }
-
-  return lista;
-};
+import CargandoTablero from './gestion/CargandoTablero';
+import FiltrosGestion from './gestion/FiltrosGestion';
+import TableroKanban from './gestion/TableroKanban';
+import ModalHistorialExpediente from './gestion/ModalHistorialExpediente';
+import ModalDetalleExpediente from './gestion/ModalDetalleExpediente';
+import ModalConfirmarDevolver from './gestion/ModalConfirmarDevolver';
+import { useExpedientesKanban } from './gestion/useExpedientesKanban';
+import {
+  ESTADOS_DROPSHIP,
+  ESTADOS_ZF,
+  type Expediente,
+  type TipoModulo,
+} from './gestion/types';
+import {
+  calcularDiasHabilesReales,
+  calcularTiempoReal,
+  validarTransicionDropship,
+} from './gestion/utils';
+import {
+  cargarDocExpediente,
+  combinarDocumentosConNuevas,
+  devolverTicketADocumentacion,
+  enviarCorreoCambioEstado,
+  obtenerGruposOriginales,
+  registrarTiempoEstado,
+  subirArchivosExpediente,
+} from './gestion/servicios';
 
 interface GestionExpedientesProps {
   onNuevoExpediente?: () => void;
   refreshTrigger?: number;
-  tipoModulo?: 'dropship' | 'zf';
+  tipoModulo?: TipoModulo;
 }
 
-export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, tipoModulo = 'dropship' }: GestionExpedientesProps) {
+export default function GestionExpedientes({
+  refreshTrigger,
+  tipoModulo = 'dropship',
+}: GestionExpedientesProps) {
   const { perfil } = useAuth();
   const esAdmin = perfil?.roles?.includes('Administrador') ?? false;
   const { corregir } = useAutocorrector();
 
-  const [expedientes, setExpedientes] = useState<Expediente[]>([]);
-  const [filteredExpedientes, setFilteredExpedientes] = useState<Expediente[]>([]);
-  const [facturasPorId, setFacturasPorId] = useState<Record<string, string[]>>({});
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterPersona, setFilterPersona] = useState('Todos');
-  const [filterPrioridad, setFilterPrioridad] = useState('Todos');
-  const [filterRutas, setFilterRutas] = useState<string[]>([]);
+  const {
+    expedientes,
+    setExpedientes,
+    loading,
+    searchTerm,
+    setSearchTerm,
+    filterPersona,
+    setFilterPersona,
+    filterPrioridad,
+    setFilterPrioridad,
+    filterRutas,
+    setFilterRutas,
+    filteredExpedientes,
+    todasPersonas,
+    responsables,
+    rutas,
+    recargaSilenciosa,
+    fechaInicioTicket,
+    calcularTiempoTranscurrido,
+    getExpedientesPorEstado,
+    limpiarFiltros,
+  } = useExpedientesKanban({ tipoModulo, refreshTrigger });
+
+  // ── Estado de interfaz ──
   const [selectedExpediente, setSelectedExpediente] = useState<Expediente | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [isAsignarMode, setIsAsignarMode] = useState(false);
-  const [showDevolverConfirm, setShowDevolverConfirm] = useState(false);
-  const [devolverGrupos, setDevolverGrupos] = useState<any[]>([]);
-  const [devolverCargandoInfo, setDevolverCargandoInfo] = useState(false);
-  const [solicitantes, setSolicitantes] = useState<string[]>([]);
-  const [responsables, setResponsables] = useState<string[]>([]);
-  const [todasPersonas, setTodasPersonas] = useState<string[]>([]);
-  const [rutas, setRutas] = useState<RutaLogistica[]>([]);
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
@@ -203,18 +85,34 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
   const [historialData, setHistorialData] = useState<any[]>([]);
   const [expedienteSeleccionado, setExpedienteSeleccionado] = useState<any>(null);
   const [cargadorNoAutorizado, setCargadorNoAutorizado] = useState(false);
+
   const [showDocumentos, setShowDocumentos] = useState(false);
   const [documentosExpediente, setDocumentosExpediente] = useState<DocEntry[]>([]);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [usuarioActual, setUsuarioActual] = useState<string>('Sistema');
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  const tituloModulo = tipoModulo === 'dropship' ? 'Gestión de Expedientes Dropship' : 'Gestión de Expedientes ZF';
+  const [showDevolverConfirm, setShowDevolverConfirm] = useState(false);
+  const [devolverGrupos, setDevolverGrupos] = useState<any[]>([]);
+  const [devolverCargandoInfo, setDevolverCargandoInfo] = useState(false);
+
+  const tituloModulo =
+    tipoModulo === 'dropship' ? 'Gestión de Expedientes Dropship' : 'Gestión de Expedientes ZF';
   const ESTADOS = tipoModulo === 'dropship' ? ESTADOS_DROPSHIP : ESTADOS_ZF;
 
+  const mostrarError = (mensaje: string, duracion = 5000) => {
+    setErrorMessage(mensaje);
+    setShowError(true);
+    setTimeout(() => setShowError(false), duracion);
+  };
+
+  const mostrarExito = (duracion = 3000) => {
+    setShowSuccess(true);
+    setTimeout(() => setShowSuccess(false), duracion);
+  };
+
+  // ── Documentos ──
   const descargarDocumento = async (url: string, fileName: string) => {
     try {
       setDownloadingId(url);
@@ -238,438 +136,20 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     }
   };
 
-  const cargarDocExpediente = async (expedienteId: string): Promise<string | string[] | null> => {
-    const { data, error } = await supabase
-      .from('expedientes')
-      .select('doc')
-      .eq('id', expedienteId)
-      .maybeSingle();
-    if (error || !data) return null;
-    return data.doc ?? null;
-  };
-
-  useEffect(() => {
-    cargarExpedientes();
-    cargarFacturasBusqueda();
-    cargarUsuarios();
-    obtenerUsuarioActual();
-    cargarRutasDisponibles();
-
-    // Safety net: si loading queda en true más de 15s, forzarlo a false
-    const safetyTimer = setTimeout(() => {
-      setLoading(prev => {
-        if (prev) {
-          console.warn('⚠️ Safety net: loading forzado a false después de 15s');
-          return false;
-        }
-        return prev;
-      });
-    }, 15000);
-
-    return () => clearTimeout(safetyTimer);
-  }, []);
-
-  useEffect(() => {
-    filtrarExpedientes();
-  }, [searchTerm, filterPersona, filterPrioridad, filterRutas, expedientes, facturasPorId]);
-
-  // Nuevo efecto para recargar cuando cambia refreshTrigger
-  useEffect(() => {
-    if (refreshTrigger && refreshTrigger > 0) {
-      cargarExpedientes();
-    }
-  }, [refreshTrigger]);
-
-  // Actualizar el tiempo cada minuto para mostrar tiempos en tiempo real
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 60000); // Actualizar cada minuto
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const obtenerUsuarioActual = async () => {
+  const verDocumentos = async (expediente: any) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Buscar el nombre del usuario en la tabla usuarios
-        const { data: usuario } = await supabase
-          .from('usuarios')
-          .select('nombre')
-          .eq('email', user.email)
-          .single();
-
-        if (usuario) {
-          setUsuarioActual(usuario.nombre);
-        }
+      let doc = expediente.doc;
+      if (doc === undefined) {
+        doc = await cargarDocExpediente(expediente.id);
       }
+      setDocumentosExpediente(parseDocEntries(doc));
+      setExpedienteSeleccionado(expediente);
+      setShowDocumentos(true);
     } catch (error) {
-      console.error('Error al obtener usuario actual:', error);
-    }
-  };
-
-  const cargarRutasDisponibles = async () => {
-    const activas = await cargarRutasActivas();
-    setRutas(activas);
-  };
-
-  // Refresca el selector cuando se guardan cambios en Configuración → Rutas
-  useEffect(() => {
-    const onRutasActualizadas = () => { cargarRutasDisponibles(); };
-    window.addEventListener('rutasActualizadas', onRutasActualizadas);
-    return () => window.removeEventListener('rutasActualizadas', onRutasActualizadas);
-  }, []);
-
-  const filtrarExpedientes = () => {
-    let filtered = [...expedientes];
-
-    // Filtrar por búsqueda
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(exp => 
-        (exp.po_tiquetera || '').toLowerCase().includes(term) ||
-        (exp.exp_id || '').toLowerCase().includes(term) ||
-        (exp.solicitante || '').toLowerCase().includes(term) ||
-        (exp.responsable_creacion || '').toLowerCase().includes(term) ||
-        (facturasPorId[exp.id] || []).some((nombre) => nombre.includes(term))
-      );
-    }
-
-    // Filtrar por persona: en Dropship usa Solicitante, en ZF usa Responsable de Creación
-    if (filterPersona !== 'Todos') {
-      filtered = filtered.filter(exp => 
-        tipoModulo === 'dropship'
-          ? exp.solicitante === filterPersona
-          : exp.responsable_creacion === filterPersona
-      );
-    }
-
-    // Filtrar por prioridad
-    if (filterPrioridad !== 'Todos') {
-      if (filterPrioridad === 'Urgente') {
-        filtered = filtered.filter(exp => exp.prioridad_urgente);
-      } else {
-        filtered = filtered.filter(exp => exp.prioridad === filterPrioridad);
-      }
-    }
-
-    // Filtrar por ruta logística (solo disponible en el módulo Dropship).
-    // Permite seleccionar varias rutas a la vez: se muestra el ticket si su ruta
-    // está entre las seleccionadas.
-    if (tipoModulo === 'dropship' && filterRutas.length > 0) {
-      filtered = filtered.filter(exp => filterRutas.includes(exp.tipo_po));
-    }
-
-    setFilteredExpedientes(filtered);
-  };
-
-  const cargarUsuarios = async () => {
-    try {
-      // Traer todos los usuarios y filtrar activos de forma case-insensitive en el cliente
-      const { data: usuariosData, error } = await supabase
-        .from('usuarios')
-        .select('nombre, rol, email, estado')
-        .order('nombre');
-
-      if (error) {
-        console.error('Error al cargar usuarios:', error);
-        throw error;
-      }
-
-      // Filtro case-insensitive: activo, Activo, ACTIVO o sin estado son válidos
-      const usuarios = (usuariosData || []).filter(u => {
-        const estado = (u.estado || '').toLowerCase().trim();
-        return estado === '' || estado === 'activo';
-      });
-
-      if (usuarios.length > 0) {
-        const todosNombres = usuarios.map(u => u.nombre);
-        
-        console.log('✅ Usuarios cargados:', todosNombres.length);
-        
-        setSolicitantes(todosNombres);
-        setResponsables(todosNombres);
-        setTodasPersonas(todosNombres);
-      } else {
-        console.warn('⚠️ No se encontraron usuarios activos');
-        setSolicitantes([]);
-        setResponsables([]);
-        setTodasPersonas([]);
-      }
-    } catch (error) {
-      console.error('❌ Error al cargar usuarios:', error);
-      setSolicitantes([]);
-      setResponsables([]);
-      setTodasPersonas([]);
-    }
-  };
-
-  const cargarExpedientes = async () => {
-    try {
-      setLoading(true);
-      console.log('📋 Cargando expedientes...');
-      
-      const { data, error } = await supabase
-        .from('expedientes')
-        .select(COLUMNAS_EXPEDIENTE)
-        .eq('tipo_modulo', tipoModulo)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('❌ Error al cargar expedientes:', error);
-        throw error;
-      }
-      
-      console.log('✅ Expedientes cargados:', data?.length || 0);
-      const conOKAutomatico = await aplicarOKPaisAutomatico(data || []);
-      setExpedientes(filtrarTerminadosAntiguos(conOKAutomatico));
-    } catch (error) {
-      console.error('❌ Error al cargar expedientes:', error);
-      setExpedientes([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Carga un mapa liviano de "nombres de factura por expediente" (solo id + doc).
-  // El kanban NO trae el campo `doc` por rendimiento, así que esto habilita la
-  // búsqueda por número de factura sin cargar los documentos en cada tarjeta.
-  const cargarFacturasBusqueda = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('expedientes')
-        .select('id, doc')
-        .eq('tipo_modulo', tipoModulo);
-
-      if (error) {
-        console.error('Error al cargar facturas para búsqueda:', error);
-        return;
-      }
-
-      const mapa: Record<string, string[]> = {};
-      (data || []).forEach((d: any) => {
-        mapa[d.id] = nombresFacturas(d.doc);
-      });
-      setFacturasPorId(mapa);
-    } catch (err) {
-      console.error('Error al cargar facturas para búsqueda:', err);
-    }
-  };
-
-  const calcularTiempoTranscurrido = (expediente: Expediente): { minutos: number; dias: number } => {
-    // Para Dropship: 'Notificado' y 'Visto Listo' son estados finales (timer congelado)
-    const esFinalDropship = expediente.tipo_modulo === 'dropship' &&
-      (expediente.estado_expediente === 'Notificado' || expediente.estado_expediente === 'Visto Listo');
-    const esFinalZF = expediente.tipo_modulo === 'zf' && expediente.estado_expediente === 'Completado';
-    
-    // Si está en un estado final, usar el tiempo ya calculado (congelado al llegar a Notificado)
-    if ((esFinalDropship || esFinalZF) && expediente.tiempo_real_minutos && expediente.dias_entrega_real) {
-      return {
-        minutos: expediente.tiempo_real_minutos,
-        dias: expediente.dias_entrega_real
-      };
-    }
-
-    // CORRECCIÓN: Usar created_at como punto de inicio
-    // Esta es la fecha REAL en que se creó el registro en la base de datos
-    const fechaInicio = new Date(expediente.created_at);
-    
-    // Si NO está en el estado final, calcular hasta ahora
-    const fechaFin = currentTime;
-    
-    const diffMs = fechaFin.getTime() - fechaInicio.getTime();
-    const minutos = Math.max(0, Math.round(diffMs / (1000 * 60)));
-    
-    const dias = calcularDiasHabilesReales(expediente.created_at, fechaFin.toISOString());
-    
-    return { minutos, dias };
-  };
-
-  const calcularTiempoReal = (fechaInicio: string, fechaFin: string): number => {
-    const inicio = new Date(fechaInicio);
-    const fin = new Date(fechaFin);
-    const diffMs = fin.getTime() - inicio.getTime();
-    return Math.max(0, Math.round(diffMs / (1000 * 60)));
-  };
-
-  const calcularDiasHabilesReales = (fechaApertura: string, fechaLiberacion: string): number => {
-    const inicio = new Date(fechaApertura);
-    const fin = new Date(fechaLiberacion);
-    let dias = 0;
-    let fecha = new Date(inicio);
-
-    while (fecha <= fin) {
-      const diaSemana = fecha.getDay();
-      const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-      const dia = String(fecha.getDate()).padStart(2, '0');
-      const fechaStr = `${mes}-${dia}`;
-      
-      const FERIADOS = ['01-01', '04-02', '04-03', '04-11', '05-01', '07-25', '08-02', '09-15', '12-01', '12-25'];
-      
-      if (diaSemana !== 0 && diaSemana !== 6 && !FERIADOS.includes(fechaStr)) {
-        dias++;
-      }
-      
-      fecha.setDate(fecha.getDate() + 1);
-    }
-    
-    return Math.max(0, dias); // Asegurar que no sea negativo
-  };
-
-  const registrarCambioEstado = async (expedienteId: string, campo: string, valorAnterior: string, valorNuevo: string) => {
-    await supabase.from('expedientes_historial').insert([{
-      expediente_id: expedienteId,
-      campo_modificado: campo,
-      valor_anterior: valorAnterior,
-      valor_nuevo: valorNuevo,
-      usuario: usuarioActual,
-      fecha_cambio: new Date().toISOString()
-    }]);
-  };
-
-  // Registra el tiempo que estuvo en el estado anterior y abre el nuevo estado
-  const registrarTiempoEstado = async (expedienteId: string, estadoAnterior: string, estadoNuevo: string) => {
-    try {
-      const ahora = new Date().toISOString();
-
-      // Buscar si hay un registro abierto (sin fecha_fin) para el estado anterior
-      const { data: registroAbierto } = await supabase
-        .from('expedientes_tiempos_estados')
-        .select('*')
-        .eq('expediente_id', expedienteId)
-        .eq('estado_nuevo', estadoAnterior)
-        .is('fecha_fin', null)
-        .order('fecha_inicio', { ascending: false })
-        .limit(1);
-
-      if (registroAbierto && registroAbierto.length > 0) {
-        const registro = registroAbierto[0];
-        const fechaInicio = new Date(registro.fecha_inicio);
-        const fechaFin = new Date(ahora);
-        const minutosTranscurridos = Math.round((fechaFin.getTime() - fechaInicio.getTime()) / (1000 * 60));
-
-        // Cerrar el registro anterior con el tiempo transcurrido
-        await supabase
-          .from('expedientes_tiempos_estados')
-          .update({
-            fecha_fin: ahora,
-            minutos_transcurridos: minutosTranscurridos
-          })
-          .eq('id', registro.id);
-      }
-
-      // Abrir un nuevo registro para el estado nuevo
-      await supabase.from('expedientes_tiempos_estados').insert([{
-        expediente_id: expedienteId,
-        estado_anterior: estadoAnterior,
-        estado_nuevo: estadoNuevo,
-        fecha_inicio: ahora,
-        fecha_fin: null,
-        minutos_transcurridos: null
-      }]);
-    } catch (error) {
-      console.error('Error al registrar tiempo de estado:', error);
-    }
-  };
-
-  const enviarCorreoCambioEstado = async (expediente: Expediente, estadoAnterior: string, estadoNuevo: string) => {
-    try {
-      // ── DROPSHIP: notificar al responsable asignado en CUALQUIER cambio de estado ──
-      if (tipoModulo === 'dropship') {
-        const { data: usuarioResp } = await supabase
-          .from('usuarios')
-          .select('email')
-          .eq('nombre', expediente.responsable_creacion)
-          .maybeSingle();
-
-        if (usuarioResp?.email) {
-          console.log(`📧 Notificando a ${expediente.responsable_creacion} (${usuarioResp.email}) sobre cambio de estado en Dropship`);
-          const { error: emailError } = await supabase.functions.invoke('send-email', {
-            body: {
-              to: [usuarioResp.email],
-              subject: `Cambio de Estado - Expediente Dropship: ${expediente.po_tiquetera}`,
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                  <div style="background-color: #0d9488; padding: 20px; border-radius: 8px 8px 0 0;">
-                    <h2 style="color: white; margin: 0;">Cambio de Estado - Expediente Dropship</h2>
-                  </div>
-                  <div style="background-color: #f9fafb; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
-                    <p style="color: #374151; font-size: 16px;">El expediente a su cargo ha cambiado de estado:</p>
-                    <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-                      <tr style="background-color: #fff;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">PO / Tiquetera</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${expediente.po_tiquetera}</td></tr>
-                      <tr style="background-color: #f3f4f6;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">EXP ID</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${expediente.exp_id}</td></tr>
-                      <tr style="background-color: #fff;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">Estado Anterior</td><td style="padding: 10px; border: 1px solid #e5e7eb; color: #dc2626;">${estadoAnterior}</td></tr>
-                      <tr style="background-color: #f3f4f6;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">Estado Nuevo</td><td style="padding: 10px; border: 1px solid #e5e7eb; color: #16a34a; font-weight: bold;">${estadoNuevo}</td></tr>
-                      <tr style="background-color: #fff;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">Solicitante</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${expediente.solicitante}</td></tr>
-                      <tr style="background-color: #f3f4f6;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">Responsable</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${expediente.responsable_creacion}</td></tr>
-                      <tr style="background-color: #fff;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">Fecha y Hora</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${new Date().toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' })}</td></tr>
-                    </table>
-                    <p style="color: #6b7280; font-size: 12px; margin-top: 20px;">Este es un mensaje automático del Sistema de Gestión de Expedientes.</p>
-                  </div>
-                </div>
-              `
-            }
-          });
-          if (emailError) {
-            console.error('Error al enviar correo Dropship:', emailError);
-          }
-        } else {
-          console.warn(`⚠️ No se encontró email para el responsable: ${expediente.responsable_creacion}`);
-        }
-        return;
-      }
-
-      // ── ZF: notificar a correos configurados cuando pasa a "Arribo de Carga" ──
-      if (tipoModulo === 'zf' && estadoNuevo === 'Arribo de Carga') {
-        const { data: config, error } = await supabase
-          .from('configuracion_sistema')
-          .select('valor')
-          .eq('clave', 'correos_notificacion_arribo_carga')
-          .maybeSingle();
-
-        if (error) {
-          console.error('Error al obtener correos de notificación:', error);
-          return;
-        }
-
-        if (config && config.valor && Array.isArray(config.valor) && config.valor.length > 0) {
-          const correos = config.valor as string[];
-          console.log(`📧 Enviando notificación de Arribo de Carga a ${correos.length} destinatarios`);
-          
-          const { error: emailError } = await supabase.functions.invoke('send-email', {
-            body: {
-              to: correos,
-              subject: `Expediente ZF en Arribo de Carga: ${expediente.po_tiquetera}`,
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                  <div style="background-color: #0891b2; padding: 20px; border-radius: 8px 8px 0 0;">
-                    <h2 style="color: white; margin: 0;">Arribo de Carga - Expediente ZF</h2>
-                  </div>
-                  <div style="background-color: #f9fafb; padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
-                    <p style="color: #374151; font-size: 16px;">Un expediente ZF ha llegado al estado <strong style="color: #0891b2;">Arribo de Carga</strong>.</p>
-                    <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-                      <tr style="background-color: #fff;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">PO / Tiquetera</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${expediente.po_tiquetera}</td></tr>
-                      <tr style="background-color: #f3f4f6;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">EXP ID</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${expediente.exp_id}</td></tr>
-                      <tr style="background-color: #fff;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">Solicitante</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${expediente.solicitante}</td></tr>
-                      <tr style="background-color: #f3f4f6;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">Responsable</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${expediente.responsable_creacion}</td></tr>
-                      <tr style="background-color: #fff;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold; color: #6b7280;">Fecha y Hora</td><td style="padding: 10px; border: 1px solid #e5e7eb;">${new Date().toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' })}</td></tr>
-                    </table>
-                    <p style="color: #6b7280; font-size: 12px; margin-top: 20px;">Este es un mensaje automático del Sistema de Gestión de Expedientes.</p>
-                  </div>
-                </div>
-              `
-            }
-          });
-          if (emailError) {
-            console.error('Error al enviar correo ZF Arribo de Carga:', emailError);
-          }
-        } else {
-          console.log('⚠️ No hay correos configurados para notificaciones de Arribo de Carga');
-        }
-      }
-    } catch (error) {
-      console.error('Error en enviarCorreoCambioEstado:', error);
+      console.error('Error al procesar documentos:', error);
+      setDocumentosExpediente([]);
+      setExpedienteSeleccionado(expediente);
+      setShowDocumentos(true);
     }
   };
 
@@ -691,68 +171,43 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       const cargador = expediente.cargador_documentos || expediente.solicitante || '';
       if (!cargador) {
         setCargadorNoAutorizado(true);
-      } else {
-        const { data: usuarioData } = await supabase
-          .from('usuarios')
-          .select('id, email')
-          .eq('nombre', cargador)
-          .maybeSingle();
-
-        if (usuarioData?.email) {
-          const email = usuarioData.email.toLowerCase();
-          const esListaBlanca = ['lchavala', 'smcdonald', 'mpaniagua'].some(u => 
-            email.startsWith(u.toLowerCase() + '@') || email === u.toLowerCase()
-          );
-
-          // Verificar si el cargador es administrador
-          let esAdministrador = false;
-          if (usuarioData?.id) {
-            const { data: rolesData } = await supabase
-              .from('usuario_roles')
-              .select('roles!inner(nombre)')
-              .eq('usuario_id', usuarioData.id);
-            esAdministrador = (rolesData || []).some((r: any) => r.roles?.nombre === 'Administrador');
-          }
-
-          setCargadorNoAutorizado(!(esListaBlanca || esAdministrador));
-        } else {
-          setCargadorNoAutorizado(true);
-        }
+        return;
       }
+
+      const { data: usuarioData } = await supabase
+        .from('usuarios')
+        .select('id, email')
+        .eq('nombre', cargador)
+        .maybeSingle();
+
+      if (!usuarioData?.email) {
+        setCargadorNoAutorizado(true);
+        return;
+      }
+
+      const email = usuarioData.email.toLowerCase();
+      const esListaBlanca = ['lchavala', 'smcdonald', 'mpaniagua'].some(
+        (u) => email.startsWith(u.toLowerCase() + '@') || email === u.toLowerCase()
+      );
+
+      let esAdministrador = false;
+      if (usuarioData.id) {
+        const { data: rolesData } = await supabase
+          .from('usuario_roles')
+          .select('roles!inner(nombre)')
+          .eq('usuario_id', usuarioData.id);
+        esAdministrador = (rolesData || []).some(
+          (r: any) => r.roles?.nombre === 'Administrador'
+        );
+      }
+
+      setCargadorNoAutorizado(!(esListaBlanca || esAdministrador));
     } catch (error) {
       console.error('Error al cargar historial:', error);
     }
   };
 
-  const verDocumentos = async (expediente: any) => {
-    try {
-      // El campo `doc` se carga bajo demanda si no vino en la carga inicial
-      let doc = expediente.doc;
-      if (doc === undefined) {
-        doc = await cargarDocExpediente(expediente.id);
-      }
-
-      setDocumentosExpediente(parseDocEntries(doc));
-      setExpedienteSeleccionado(expediente);
-      setShowDocumentos(true);
-    } catch (error) {
-      console.error('Error al procesar documentos:', error);
-      setDocumentosExpediente([]);
-      setExpedienteSeleccionado(expediente);
-      setShowDocumentos(true);
-    }
-  };
-
-  const formatearTiempo = (minutos: number): string => {
-    if (minutos < 60) return `${minutos} min`;
-    const horas = Math.floor(minutos / 60);
-    const mins = minutos % 60;
-    if (horas < 24) return `${horas}h ${mins}m`;
-    const dias = Math.floor(horas / 24);
-    const hrs = horas % 24;
-    return `${dias}d ${hrs}h`;
-  };
-
+  // ── Modal de detalle ──
   const abrirModal = (expediente: Expediente) => {
     setSelectedExpediente(expediente);
     setShowModal(true);
@@ -768,25 +223,6 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     setUploadedFiles([]);
   };
 
-  // Recarga silenciosa: sincroniza con Supabase en background sin bloquear la UI
-  const recargaSilenciosa = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('expedientes')
-        .select(COLUMNAS_EXPEDIENTE)
-        .eq('tipo_modulo', tipoModulo)
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        const conOKAutomatico = await aplicarOKPaisAutomatico(data);
-        setExpedientes(filtrarTerminadosAntiguos(conOKAutomatico));
-      }
-      await cargarFacturasBusqueda();
-    } catch (err) {
-      console.error('Error en recarga silenciosa:', err);
-    }
-  };
-
   const handleEdit = (expediente?: Expediente) => {
     if (expediente) {
       setSelectedExpediente(expediente);
@@ -797,267 +233,37 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   const handleDelete = async (expedienteId: string) => {
     if (!confirm('¿Está seguro de eliminar este expediente?')) return;
-    
-    try {
-      const { error } = await supabase
-        .from('expedientes')
-        .delete()
-        .eq('id', expedienteId);
 
+    try {
+      const { error } = await supabase.from('expedientes').delete().eq('id', expedienteId);
       if (error) throw error;
 
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
-      cargarExpedientes();
+      mostrarExito();
+      await recargaSilenciosa();
       cerrarModal();
     } catch (error) {
       console.error('Error al eliminar expediente:', error);
-      setShowError(true);
-      setTimeout(() => setShowError(false), 3000);
-    }
-  };
-
-  // Lee la estructura original de consolidación guardada en el historial.
-  // Devuelve el arreglo de grupos (cada uno con su PO y documentos) o [] si no hay.
-  const obtenerGruposOriginales = async (expediente: Expediente): Promise<any[]> => {
-    try {
-      const { data: historialConsolidacion } = await supabase
-        .from('expedientes_historial')
-        .select('detalle')
-        .eq('expediente_id', expediente.id)
-        .eq('campo_modificado', 'Estado')
-        .eq('valor_nuevo', 'No Asignado')
-        .order('fecha_cambio', { ascending: true })
-        .limit(1);
-
-      const detalle = historialConsolidacion?.[0]?.detalle;
-      if (detalle && Array.isArray(detalle.grupos) && detalle.grupos.length > 0) {
-        return detalle.grupos;
-      }
-      return [];
-    } catch (e) {
-      console.warn('No se pudo leer la información de consolidación:', e);
-      return [];
-    }
-  };
-
-  // Cuenta cuántos documentos tiene un grupo (doc puede ser string o array)
-  const contarDocs = (doc: any): number => {
-    if (!doc) return 0;
-    if (Array.isArray(doc)) return doc.length;
-    if (typeof doc === 'string') {
-      const trimmed = doc.trim();
-      if (trimmed === '') return 0;
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) return parsed.length;
-        return 1;
-      } catch {
-        return 1;
-      }
-    }
-    return 0;
-  };
-
-  // Al abrir el modal de confirmación, carga la estructura de grupos para
-  // mostrar el aviso visual de cuántas POs se van a separar.
-  const abrirConfirmacionDevolver = async (expediente: Expediente) => {
-    setShowDevolverConfirm(true);
-    setDevolverGrupos([]);
-    setDevolverCargandoInfo(true);
-    const grupos = await obtenerGruposOriginales(expediente);
-    setDevolverGrupos(grupos);
-    setDevolverCargandoInfo(false);
-  };
-
-  const devolverADocumentacion = async (expediente: Expediente) => {
-    try {
-      setSaving(true);
-
-      // Cargar `doc` bajo demanda si no vino en la carga inicial
-      let docActual = expediente.doc;
-      if (docActual === undefined) {
-        docActual = await cargarDocExpediente(expediente.id);
-      }
-
-      const ahora = new Date().toISOString();
-
-      // Obtener usuario actual
-      const { data: { user } } = await supabase.auth.getUser();
-      let nombreUsuario = 'Sistema';
-      let emailUsuario = '';
-      if (user) {
-        emailUsuario = user.email || '';
-        const { data: usuario } = await supabase
-          .from('usuarios')
-          .select('nombre')
-          .eq('email', user.email)
-          .maybeSingle();
-        if (usuario) nombreUsuario = usuario.nombre;
-      }
-
-      // 1) Reinsertar el ticket en la bandeja de Documentación (documentos_caa)
-      // Si el ticket se consolidó desde varias POs separadas, lo separamos tal cual vino:
-      // una fila por cada agrupación original, con sus documentos correspondientes.
-      let gruposOriginales: any[] = [];
-      try {
-        const { data: historialConsolidacion } = await supabase
-          .from('expedientes_historial')
-          .select('detalle')
-          .eq('expediente_id', expediente.id)
-          .eq('campo_modificado', 'Estado')
-          .eq('valor_nuevo', 'No Asignado')
-          .order('fecha_cambio', { ascending: true })
-          .limit(1);
-
-        const detalle = historialConsolidacion?.[0]?.detalle;
-        if (detalle && Array.isArray(detalle.grupos) && detalle.grupos.length > 0) {
-          gruposOriginales = detalle.grupos;
-        }
-      } catch (e) {
-        console.warn('No se pudo leer la información de consolidación:', e);
-      }
-
-      if (gruposOriginales.length > 0) {
-        // Separar en filas individuales, una por cada PO/agrupación original
-        const filas = gruposOriginales.map((g: any) => ({
-          po_tiquetera: g.po_tiquetera ?? expediente.po_tiquetera,
-          tipo_po: g.tipo_po ?? expediente.tipo_po,
-          solicitante: g.solicitante ?? expediente.solicitante,
-          fecha_solicitud: g.fecha_solicitud ?? expediente.fecha_solicitud,
-          prioridad: g.prioridad ?? expediente.prioridad,
-          prioridad_urgente: g.prioridad_urgente ?? expediente.prioridad_urgente,
-          motivo_urgencia: g.motivo_urgencia ?? expediente.motivo_urgencia,
-          dificultad: g.dificultad ?? expediente.dificultad,
-          tiempo_minutos: g.tiempo_minutos ?? expediente.tiempo_minutos,
-          dias_entrega: g.dias_entrega ?? expediente.dias_entrega,
-          fecha_requerimiento: g.fecha_requerimiento ?? expediente.fecha_requerimiento,
-          exp_id: g.exp_id ?? 'Por Asignar',
-          doc: g.doc ?? docActual,
-          lineas_oc: g.lineas_oc ?? expediente.lineas_oc,
-          bl_cargado: g.bl_cargado ?? false,
-          tc_cargado: g.tc_cargado ?? expediente.transito_corto,
-          aplica_tlc: g.aplica_tlc ?? expediente.aplica_tlc,
-          fecha_creacion_expediente: g.fecha_creacion_expediente ?? expediente.fecha_creacion_expediente,
-          estado_expediente: 'Documentación',
-          responsable_creacion: g.responsable_creacion ?? expediente.responsable_creacion,
-          instrucciones_adicionales: g.instrucciones_adicionales ?? expediente.instrucciones_adicionales,
-          tipo_modulo: expediente.tipo_modulo,
-          created_at: g.created_at ?? expediente.created_at ?? ahora
-        }));
-
-        const { error: insertError } = await supabase
-          .from('documentos_caa')
-          .insert(filas);
-
-        if (insertError) throw new Error(`Error al devolver a Documentación: ${insertError.message}`);
-      } else {
-        // Comportamiento original: una sola fila (datos antiguos sin estructura de grupos)
-        const { error: insertError } = await supabase
-          .from('documentos_caa')
-          .insert([{
-            po_tiquetera: expediente.po_tiquetera,
-            tipo_po: expediente.tipo_po,
-            solicitante: expediente.solicitante,
-            fecha_solicitud: expediente.fecha_solicitud,
-            prioridad: expediente.prioridad,
-            prioridad_urgente: expediente.prioridad_urgente,
-            motivo_urgencia: expediente.motivo_urgencia,
-            dificultad: expediente.dificultad,
-            tiempo_minutos: expediente.tiempo_minutos,
-            dias_entrega: expediente.dias_entrega,
-            fecha_requerimiento: expediente.fecha_requerimiento,
-            exp_id: expediente.exp_id,
-            doc: docActual,
-            lineas_oc: expediente.lineas_oc,
-            bl_cargado: expediente.bl_cargado,
-            tc_cargado: expediente.transito_corto,
-            aplica_tlc: expediente.aplica_tlc,
-            fecha_creacion_expediente: expediente.fecha_creacion_expediente,
-            estado_expediente: 'Documentación',
-            responsable_creacion: expediente.responsable_creacion,
-            instrucciones_adicionales: expediente.instrucciones_adicionales,
-            tipo_modulo: expediente.tipo_modulo,
-            created_at: expediente.created_at || ahora
-          }]);
-
-        if (insertError) throw new Error(`Error al devolver a Documentación: ${insertError.message}`);
-      }
-
-      // 2) Quitar el ticket del kanban (expedientes)
-      const { error: deleteError } = await supabase
-        .from('expedientes')
-        .delete()
-        .eq('id', expediente.id);
-
-      if (deleteError) throw new Error(`Error al quitar el ticket del kanban: ${deleteError.message}`);
-
-      // 3) Registrar historial
-      await supabase.from('expedientes_historial').insert([{
-        expediente_id: expediente.id,
-        campo_modificado: 'Estado',
-        valor_anterior: 'No Asignado',
-        valor_nuevo: 'Documentación',
-        usuario: nombreUsuario,
-        usuario_email: emailUsuario,
-        fecha_cambio: ahora
-      }]);
-
-      // 4) Notificación
-      const totalFilasDevueltas = gruposOriginales.length > 0 ? gruposOriginales.length : 1;
-      crearNotificacion({
-        poTiquetera: expediente.po_tiquetera,
-        solicitante: expediente.solicitante || '',
-        responsable: expediente.responsable_creacion || '',
-        usuarioGenero: nombreUsuario,
-        tipo: 'documento_modificado',
-        mensaje: gruposOriginales.length > 1
-          ? `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación, separado en ${totalFilasDevueltas} POs con sus documentos`
-          : `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación`,
-        icono: 'ri-arrow-go-back-line',
-        expedienteId: expediente.id
-      });
-
-      // 5) Actualizar estado local al instante
-      setExpedientes(prev => prev.filter(e => e.id !== expediente.id));
-
-      setShowDevolverConfirm(false);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
-      cerrarModal();
-    } catch (error: any) {
-      console.error('Error al devolver a Documentación:', error);
-      setErrorMessage(error.message || 'Error al devolver el ticket a Documentación.');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
-    } finally {
-      setSaving(false);
+      mostrarError('Error al eliminar el expediente', 3000);
     }
   };
 
   const handleChange = (field: string, value: any) => {
-    if (selectedExpediente) {
-      setSelectedExpediente({
-        ...selectedExpediente,
-        [field]: value
-      });
-    }
+    setSelectedExpediente((prev) => (prev ? { ...prev, [field]: value } : prev));
   };
 
-  // Aplica la misma regla de retroceso de Dropship al selector de Estado del modal de edición.
-  // Compara contra el estado original guardado en la base (no contra el estado ya editado en el modal).
+  // Aplica la misma regla de retroceso de Dropship al selector de Estado del modal.
+  // Compara contra el estado original guardado en la base.
   const handleEstadoChange = (nuevoEstado: string) => {
     if (!selectedExpediente) return;
 
-    const expedienteOriginal = expedientes.find(e => e.id === selectedExpediente.id);
-    const estadoAnterior = expedienteOriginal?.estado_expediente ?? selectedExpediente.estado_expediente;
+    const expedienteOriginal = expedientes.find((e) => e.id === selectedExpediente.id);
+    const estadoAnterior =
+      expedienteOriginal?.estado_expediente ?? selectedExpediente.estado_expediente;
 
     if (tipoModulo === 'dropship') {
       const errorTransicion = validarTransicionDropship(estadoAnterior, nuevoEstado);
       if (errorTransicion) {
-        setErrorMessage(errorTransicion);
-        setShowError(true);
-        setTimeout(() => setShowError(false), 5000);
+        mostrarError(errorTransicion);
         return;
       }
     }
@@ -1065,92 +271,52 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     handleChange('estado_expediente', nuevoEstado);
   };
 
+  // ── Archivos ──
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const files = Array.from(e.target.files);
-      const validFiles = files.filter(file => {
-        const extension = file.name.split('.').pop()?.toLowerCase();
-        return ['pdf', 'xlsx', 'xls', 'xlsm', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(extension || '');
-      });
-      
-      if (validFiles.length !== files.length) {
-        setErrorMessage('Solo se permiten archivos PDF, Excel (.xlsx, .xls, .xlsm), CSV e imágenes (PNG, JPG, JPEG, WebP, GIF, BMP)');
-        setShowError(true);
-        setTimeout(() => setShowError(false), 3000);
-      }
-      
-      setUploadedFiles(prev => [...prev, ...validFiles]);
+    if (!e.target.files) return;
+
+    const files = Array.from(e.target.files);
+    const validFiles = files.filter((file) => {
+      const extension = file.name.split('.').pop()?.toLowerCase();
+      return ['pdf', 'xlsx', 'xls', 'xlsm', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(
+        extension || ''
+      );
+    });
+
+    if (validFiles.length !== files.length) {
+      mostrarError(
+        'Solo se permiten archivos PDF, Excel (.xlsx, .xls, .xlsm), CSV e imágenes (PNG, JPG, JPEG, WebP, GIF, BMP)',
+        3000
+      );
     }
+
+    setUploadedFiles((prev) => [...prev, ...validFiles]);
   };
 
   const removeFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const uploadFilesToSupabase = async (expedienteId: string): Promise<string[]> => {
-    const uploadedUrls: string[] = [];
-    
-    try {
-      // Intentar subir archivos directamente sin verificar/crear bucket
-      // El bucket debe existir previamente en Supabase
-      for (const file of uploadedFiles) {
-        const fileName = `${expedienteId}/${Date.now()}_${file.name}`;
-        console.log('📤 Subiendo archivo:', fileName);
-        
-        const { data, error } = await supabase.storage
-          .from('expedientes-documentos')
-          .upload(fileName, file, {
-            cacheControl: '3600',
-            upsert: false
-          });
-
-        if (error) {
-          console.error('❌ Error al subir archivo:', error);
-          
-          // Si el error es porque el bucket no existe, dar instrucciones claras
-          if (error.message.includes('not found') || error.message.includes('does not exist')) {
-            throw new Error('El almacenamiento de documentos no está configurado. Por favor, cree un bucket llamado "expedientes-documentos" en Supabase Storage con acceso público.');
-          }
-          
-          throw new Error(`Error al subir ${file.name}: ${error.message}`);
-        }
-
-        // Obtener URL pública
-        const { data: urlData } = supabase.storage
-          .from('expedientes-documentos')
-          .getPublicUrl(fileName);
-
-        if (urlData?.publicUrl) {
-          uploadedUrls.push(urlData.publicUrl);
-          console.log('✅ Archivo subido:', urlData.publicUrl);
-        }
-      }
-    } catch (error: any) {
-      console.error('❌ Error en uploadFilesToSupabase:', error);
-      throw error;
-    }
-    
-    return uploadedUrls;
-  };
-
+  // ── Guardar cambios ──
   const guardarCambios = async () => {
     if (!selectedExpediente) return;
 
     setSaving(true);
     setUploadingFiles(uploadedFiles.length > 0);
-    
+
     try {
-      const expedienteOriginal = expedientes.find(e => e.id === selectedExpediente.id);
-      
+      const expedienteOriginal = expedientes.find((e) => e.id === selectedExpediente.id);
       if (!expedienteOriginal) {
         throw new Error('Expediente original no encontrado');
       }
 
       // Obtener usuario actual
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       let nombreUsuario = 'Sistema';
       let emailUsuario = '';
-      
+
       if (user) {
         emailUsuario = user.email || '';
         const { data: usuario } = await supabase
@@ -1158,10 +324,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
           .select('nombre')
           .eq('email', user.email)
           .single();
-        
-        if (usuario) {
-          nombreUsuario = usuario.nombre;
-        }
+        if (usuario) nombreUsuario = usuario.nombre;
       }
 
       const updates: any = {
@@ -1169,69 +332,73 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         tipo_po: selectedExpediente.tipo_po,
         prioridad: selectedExpediente.prioridad,
         prioridad_urgente: selectedExpediente.prioridad_urgente,
-        motivo_urgencia: selectedExpediente.prioridad_urgente ? selectedExpediente.motivo_urgencia : null,
+        motivo_urgencia: selectedExpediente.prioridad_urgente
+          ? selectedExpediente.motivo_urgencia
+          : null,
         dificultad: selectedExpediente.dificultad,
         tiempo_minutos: selectedExpediente.tiempo_minutos,
         dias_entrega: selectedExpediente.dias_entrega,
         exp_id: selectedExpediente.exp_id,
         lineas_oc: selectedExpediente.lineas_oc,
         estado_expediente: selectedExpediente.estado_expediente,
-        motivo_revision: selectedExpediente.estado_expediente === 'En Revisión' ? selectedExpediente.motivo_revision : null,
+        motivo_revision:
+          selectedExpediente.estado_expediente === 'En Revisión'
+            ? selectedExpediente.motivo_revision
+            : null,
         responsable_creacion: selectedExpediente.responsable_creacion,
         instrucciones_adicionales: selectedExpediente.instrucciones_adicionales,
         usuario_modificador: emailUsuario,
         transito_corto: selectedExpediente.transito_corto ?? false,
-        ok_pais: tipoModulo === 'dropship' ? (selectedExpediente.ok_pais ?? false) : false,
+        ok_pais:
+          tipoModulo === 'dropship' ? (selectedExpediente.ok_pais ?? false) : false,
         bl_cargado: selectedExpediente.bl_cargado ?? false,
+        packing_list_cargado: selectedExpediente.packing_list_cargado ?? false,
         aplica_tlc: selectedExpediente.aplica_tlc ?? false,
-        incidente: tipoModulo === 'dropship' ? (selectedExpediente.incidente ?? false) : false,
-        comentario_incidente: tipoModulo === 'dropship' && selectedExpediente.incidente ? (selectedExpediente.comentario_incidente || null) : null,
-        finiquito: tipoModulo === 'dropship' ? (selectedExpediente.finiquito ?? false) : false,
+        incidente:
+          tipoModulo === 'dropship' ? (selectedExpediente.incidente ?? false) : false,
+        comentario_incidente:
+          tipoModulo === 'dropship' && selectedExpediente.incidente
+            ? selectedExpediente.comentario_incidente || null
+            : null,
+        finiquito:
+          tipoModulo === 'dropship' ? (selectedExpediente.finiquito ?? false) : false,
         mcg: tipoModulo === 'dropship' ? (selectedExpediente.mcg ?? false) : false,
-        etd: tipoModulo === 'dropship' ? (selectedExpediente.etd || null) : null,
-        eta_real: tipoModulo === 'zf' ? (selectedExpediente.eta_real || null) : null
+        etd: tipoModulo === 'dropship' ? selectedExpediente.etd || null : null,
+        eta_real: tipoModulo === 'zf' ? selectedExpediente.eta_real || null : null,
+        recibo_delzof_fecha:
+          tipoModulo === 'zf' ? selectedExpediente.recibo_delzof_fecha || null : null,
+        recibo_delzof_numero:
+          tipoModulo === 'zf' ? selectedExpediente.recibo_delzof_numero?.trim() || null : null,
       };
 
       // Documentos: detectar si se agregaron archivos nuevos
       let docsAgregados = false;
       let countDocsNuevos = 0;
 
-      // Subir nuevos archivos si hay
       if (uploadedFiles.length > 0) {
-        console.log('📤 Subiendo', uploadedFiles.length, 'archivo(s)...');
-        
         try {
-          const nuevasUrls = await uploadFilesToSupabase(selectedExpediente.id);
-          console.log('✅ Archivos subidos exitosamente:', nuevasUrls);
-          
-          // Obtener documentos existentes (cargando `doc` bajo demanda si hace falta)
+          const nuevasUrls = await subirArchivosExpediente(
+            selectedExpediente.id,
+            uploadedFiles
+          );
+
+          // Cargar `doc` bajo demanda si no vino en la carga inicial
           let docActual = selectedExpediente.doc;
           if (docActual === undefined) {
             docActual = await cargarDocExpediente(selectedExpediente.id);
           }
 
-          // Preservar la estructura { url, tipo } y combinar con las nuevas URLs subidas
-          const entradasExistentes = parseDocEntries(docActual);
-          const nuevasEntradas: DocEntry[] = nuevasUrls.map((url) => ({ url, tipo: null }));
-          const todosLosDocs = combinarEntradas([...entradasExistentes, ...nuevasEntradas]);
-          console.log('📦 Total documentos:', todosLosDocs.length);
-
+          updates.doc = combinarDocumentosConNuevas(docActual, nuevasUrls);
           docsAgregados = true;
           countDocsNuevos = nuevasUrls.length;
-
-          updates.doc = todosLosDocs;
-        } catch (uploadError) {
+        } catch (uploadError: any) {
           console.error('❌ Error al subir archivos:', uploadError);
-          setErrorMessage('Error al subir los archivos. Por favor, intente nuevamente.');
-          setShowError(true);
-          setTimeout(() => setShowError(false), 5000);
+          mostrarError(uploadError?.message || 'Error al subir los archivos. Intente nuevamente.');
           setSaving(false);
           setUploadingFiles(false);
           return;
         }
       }
-
-      console.log('💾 Guardando cambios en la base de datos...');
 
       // Registrar cambios en historial
       const camposAComparar = [
@@ -1252,71 +419,84 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         { key: 'transito_corto', label: 'Tránsito Corto' },
         { key: 'ok_pais', label: 'OK País' },
         { key: 'bl_cargado', label: 'BL Cargado' },
+        { key: 'packing_list_cargado', label: 'Packing List Cargado' },
         { key: 'aplica_tlc', label: 'Aplica TLC' },
         { key: 'incidente', label: 'Incidente' },
         { key: 'comentario_incidente', label: 'Comentario Incidente' },
         { key: 'finiquito', label: 'Finiquito' },
         { key: 'mcg', label: 'MCG' },
         { key: 'etd', label: 'ETD' },
-        { key: 'eta_real', label: 'ETA Real' }
+        { key: 'eta_real', label: 'ETA Real' },
+        { key: 'recibo_delzof_fecha', label: 'Fecha Recibo Delzof' },
+        { key: 'recibo_delzof_numero', label: 'N° Recibo Delzof' },
       ];
 
       for (const campo of camposAComparar) {
         const valorAnterior = expedienteOriginal[campo.key as keyof Expediente];
         const valorNuevo = selectedExpediente[campo.key as keyof Expediente];
-        
+
         if (valorAnterior !== valorNuevo) {
-          await supabase.from('expedientes_historial').insert([{
-            expediente_id: selectedExpediente.id,
-            campo_modificado: campo.label,
-            valor_anterior: String(valorAnterior || ''),
-            valor_nuevo: String(valorNuevo || ''),
-            usuario: nombreUsuario,
-            usuario_email: emailUsuario,
-            fecha_cambio: new Date().toISOString()
-          }]);
+          await supabase.from('expedientes_historial').insert([
+            {
+              expediente_id: selectedExpediente.id,
+              campo_modificado: campo.label,
+              valor_anterior: String(valorAnterior || ''),
+              valor_nuevo: String(valorNuevo || ''),
+              usuario: nombreUsuario,
+              usuario_email: emailUsuario,
+              fecha_cambio: new Date().toISOString(),
+            },
+          ]);
         }
       }
 
-      // Registrar si se agregaron documentos nuevos
       if (docsAgregados && countDocsNuevos > 0) {
-        await supabase.from('expedientes_historial').insert([{
-          expediente_id: selectedExpediente.id,
-          campo_modificado: 'Documentos',
-          valor_anterior: '',
-          valor_nuevo: `Se agregaron ${countDocsNuevos} documento(s)`,
-          usuario: nombreUsuario,
-          usuario_email: emailUsuario,
-          fecha_cambio: new Date().toISOString()
-        }]);
+        await supabase.from('expedientes_historial').insert([
+          {
+            expediente_id: selectedExpediente.id,
+            campo_modificado: 'Documentos',
+            valor_anterior: '',
+            valor_nuevo: `Se agregaron ${countDocsNuevos} documento(s)`,
+            usuario: nombreUsuario,
+            usuario_email: emailUsuario,
+            fecha_cambio: new Date().toISOString(),
+          },
+        ]);
       }
 
-      // Determinar el estado final según el tipo de módulo
-      const estadoFinal = selectedExpediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
+      // Estado final según el módulo
+      const estadoFinal =
+        selectedExpediente.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
       const estadoNuevo = selectedExpediente.estado_expediente;
       const estadoAnterior = expedienteOriginal.estado_expediente;
-      
-      // Si cambia al estado final, calcular tiempos reales
+
       if (estadoNuevo === estadoFinal && estadoAnterior !== estadoFinal) {
-        const fechaInicio = selectedExpediente.created_at;
+        const fechaInicio = fechaInicioTicket(selectedExpediente);
         const fechaFinalizacion = new Date().toISOString();
-        const tiempoRealMinutos = calcularTiempoReal(fechaInicio, fechaFinalizacion);
-        const diasEntregaReal = calcularDiasHabilesReales(fechaInicio, fechaFinalizacion);
-        
+
         updates.fecha_liberacion = fechaFinalizacion;
-        updates.tiempo_real_minutos = tiempoRealMinutos;
-        updates.dias_entrega_real = diasEntregaReal;
+        updates.tiempo_real_minutos = calcularTiempoReal(fechaInicio, fechaFinalizacion);
+        updates.dias_entrega_real = calcularDiasHabilesReales(fechaInicio, fechaFinalizacion);
       }
 
-      // Dropship: actualizar fecha_liberacion y fecha_visto_listo al llegar a Visto Listo (conteo de 10 días)
-      if (selectedExpediente.tipo_modulo === 'dropship' && estadoNuevo === 'Visto Listo' && estadoAnterior !== 'Visto Listo') {
-        updates.fecha_liberacion = new Date().toISOString();
-        updates.fecha_visto_listo = new Date().toISOString();
+      const hoy = new Date().toISOString();
+
+      // Dropship: fechas de Visto Listo y Notificado
+      if (
+        selectedExpediente.tipo_modulo === 'dropship' &&
+        estadoNuevo === 'Visto Listo' &&
+        estadoAnterior !== 'Visto Listo'
+      ) {
+        updates.fecha_liberacion = hoy;
+        updates.fecha_visto_listo = hoy;
       }
 
-      // Dropship: registrar fecha al llegar a Notificado (regla OK País automático)
-      if (selectedExpediente.tipo_modulo === 'dropship' && estadoNuevo === 'Notificado' && estadoAnterior !== 'Notificado') {
-        updates.fecha_notificado = new Date().toISOString();
+      if (
+        selectedExpediente.tipo_modulo === 'dropship' &&
+        estadoNuevo === 'Notificado' &&
+        estadoAnterior !== 'Notificado'
+      ) {
+        updates.fecha_notificado = hoy;
       }
 
       const { error } = await supabase
@@ -1326,9 +506,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
       if (error) throw error;
 
-      console.log('✅ Expediente actualizado correctamente');
-
-      // === Notificación si se agregaron documentos ===
+      // Notificación si se agregaron documentos
       if (docsAgregados && countDocsNuevos > 0) {
         crearNotificacion({
           poTiquetera: selectedExpediente.po_tiquetera,
@@ -1342,7 +520,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         });
       }
 
-      // === Notificación de comentario (si se agregó o modificó la observación) ===
+      // Notificación de comentario
       const comentarioAnterior = (expedienteOriginal.instrucciones_adicionales || '').trim();
       const comentarioNuevo = (selectedExpediente.instrucciones_adicionales || '').trim();
       if (comentarioNuevo && comentarioNuevo !== comentarioAnterior) {
@@ -1359,32 +537,35 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       // Si cambió el estado, registrar tiempo y enviar correo
       if (estadoAnterior && estadoNuevo && estadoAnterior !== estadoNuevo) {
         await registrarTiempoEstado(selectedExpediente.id, estadoAnterior, estadoNuevo);
-        await enviarCorreoCambioEstado(selectedExpediente, estadoAnterior, estadoNuevo);
+        await enviarCorreoCambioEstado(
+          selectedExpediente,
+          estadoAnterior,
+          estadoNuevo,
+          tipoModulo
+        );
       }
 
-      // Actualizar el expediente en el estado local al instante (sin bloquear la UI)
-      setExpedientes(prev =>
-        prev.map(exp => exp.id === selectedExpediente.id ? { ...exp, ...updates } : exp)
+      // Actualizar el expediente en el estado local al instante
+      setExpedientes((prev) =>
+        prev.map((exp) => (exp.id === selectedExpediente.id ? { ...exp, ...updates } : exp))
       );
 
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+      mostrarExito();
       setEditMode(false);
       setIsAsignarMode(false);
       cerrarModal();
-      // Recarga silenciosa en background — no bloquea la UI si falla o tarda
+      // Recarga silenciosa en background — no bloquea la UI
       recargaSilenciosa();
     } catch (error: any) {
       console.error('❌ Error al guardar cambios:', error);
-      setErrorMessage(error.message || 'Error al guardar los cambios');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
+      mostrarError(error.message || 'Error al guardar los cambios');
     } finally {
       setSaving(false);
       setUploadingFiles(false);
     }
   };
 
+  // ── Arrastrar y soltar en el kanban ──
   const handleDragStart = (e: React.DragEvent, expediente: Expediente) => {
     setDraggedItem(expediente);
     e.dataTransfer.effectAllowed = 'move';
@@ -1397,7 +578,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
   const handleDrop = async (e: React.DragEvent, nuevoEstado: string) => {
     e.preventDefault();
-    
+
     if (!draggedItem || draggedItem.estado_expediente === nuevoEstado) {
       setDraggedItem(null);
       return;
@@ -1405,11 +586,12 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
     // ── Regla Dropship: avance uno a uno y sin retrocesos (salvo excepciones) ──
     if (tipoModulo === 'dropship') {
-      const errorTransicion = validarTransicionDropship(draggedItem.estado_expediente, nuevoEstado);
+      const errorTransicion = validarTransicionDropship(
+        draggedItem.estado_expediente,
+        nuevoEstado
+      );
       if (errorTransicion) {
-        setErrorMessage(errorTransicion);
-        setShowError(true);
-        setTimeout(() => setShowError(false), 5000);
+        mostrarError(errorTransicion);
         setDraggedItem(null);
         return;
       }
@@ -1418,40 +600,38 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
     // Caso especial: No Asignado → Asignado abre modal para completar campos
     if (draggedItem.estado_expediente === 'No Asignado' && nuevoEstado === 'Asignado') {
       // Validar que tenga BL cargado y documentos
-      // Usamos comparación estricta !== true para cubrir null, undefined, false y cualquier valor corrupto
       if (draggedItem.bl_cargado !== true) {
-        setErrorMessage('No se puede asignar este expediente: debe tener el BL cargado (marcado en el módulo CAA o desde edición).');
-        setShowError(true);
-        setTimeout(() => setShowError(false), 5000);
+        mostrarError(
+          'No se puede asignar este expediente: debe tener el BL cargado (marcado en el módulo CAA o desde edición).'
+        );
         setDraggedItem(null);
         return;
       }
-      
+
       // Cargar `doc` bajo demanda para validar que tenga documentos
       let docActual = draggedItem.doc;
       if (docActual === undefined) {
         docActual = await cargarDocExpediente(draggedItem.id);
       }
 
-      // Verificar que tenga documentos
       let tieneDocs = false;
       if (docActual) {
         if (Array.isArray(docActual)) {
           tieneDocs = docActual.length > 0;
         } else if (typeof docActual === 'string') {
           const trimmed = docActual.trim();
-          tieneDocs = trimmed !== '' && trimmed !== '[]' && trimmed !== '{}';
+          tieneDocs = trimmed.length > 2 && trimmed !== '[]';
         }
       }
-      
+
       if (!tieneDocs) {
-        setErrorMessage('No se puede asignar este expediente: debe tener al menos un documento adjunto.');
-        setShowError(true);
-        setTimeout(() => setShowError(false), 5000);
+        mostrarError(
+          'No se puede asignar este expediente: debe tener al menos un documento adjunto.'
+        );
         setDraggedItem(null);
         return;
       }
-      
+
       setSelectedExpediente({ ...draggedItem, doc: docActual, estado_expediente: 'Asignado' });
       setEditMode(true);
       setIsAsignarMode(true);
@@ -1464,10 +644,12 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       const estadoAnterior = draggedItem.estado_expediente;
 
       // Obtener usuario actual
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       let nombreUsuario = 'Sistema';
       let emailUsuario = '';
-      
+
       if (user) {
         emailUsuario = user.email || '';
         const { data: usuario } = await supabase
@@ -1475,42 +657,35 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
           .select('nombre')
           .eq('email', user.email)
           .single();
-        
-        if (usuario) {
-          nombreUsuario = usuario.nombre;
-        }
+        if (usuario) nombreUsuario = usuario.nombre;
       }
 
       const updates: any = {
         estado_expediente: nuevoEstado,
         updated_at: new Date().toISOString(),
-        usuario_modificador: emailUsuario
+        usuario_modificador: emailUsuario,
       };
 
-      // Determinar el estado final según el tipo de módulo
       const estadoFinal = draggedItem.tipo_modulo === 'dropship' ? 'Notificado' : 'Completado';
-      
-      // Si cambia al estado final, calcular tiempos reales
+
       if (nuevoEstado === estadoFinal) {
-        const fechaInicio = draggedItem.created_at;
+        const fechaInicio = fechaInicioTicket(draggedItem);
         const fechaFinalizacion = new Date().toISOString();
-        const tiempoRealMinutos = calcularTiempoReal(fechaInicio, fechaFinalizacion);
-        const diasEntregaReal = calcularDiasHabilesReales(fechaInicio, fechaFinalizacion);
-        
+
         updates.fecha_liberacion = fechaFinalizacion;
-        updates.tiempo_real_minutos = tiempoRealMinutos;
-        updates.dias_entrega_real = diasEntregaReal;
+        updates.tiempo_real_minutos = calcularTiempoReal(fechaInicio, fechaFinalizacion);
+        updates.dias_entrega_real = calcularDiasHabilesReales(fechaInicio, fechaFinalizacion);
       }
 
-      // Dropship: actualizar fecha_liberacion y fecha_visto_listo al llegar a Visto Listo (conteo de 10 días)
+      const hoy = new Date().toISOString();
+
       if (draggedItem.tipo_modulo === 'dropship' && nuevoEstado === 'Visto Listo') {
-        updates.fecha_liberacion = new Date().toISOString();
-        updates.fecha_visto_listo = new Date().toISOString();
+        updates.fecha_liberacion = hoy;
+        updates.fecha_visto_listo = hoy;
       }
 
-      // Dropship: registrar fecha al llegar a Notificado (regla OK País automático)
       if (draggedItem.tipo_modulo === 'dropship' && nuevoEstado === 'Notificado') {
-        updates.fecha_notificado = new Date().toISOString();
+        updates.fecha_notificado = hoy;
       }
 
       const { error } = await supabase
@@ -1520,167 +695,66 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
 
       if (error) throw error;
 
-      // Registrar cambio en historial con usuario
-      await supabase.from('expedientes_historial').insert([{
-        expediente_id: draggedItem.id,
-        campo_modificado: 'Estado',
-        valor_anterior: estadoAnterior,
-        valor_nuevo: nuevoEstado,
-        usuario: nombreUsuario,
-        usuario_email: emailUsuario,
-        fecha_cambio: new Date().toISOString()
-      }]);
+      await supabase.from('expedientes_historial').insert([
+        {
+          expediente_id: draggedItem.id,
+          campo_modificado: 'Estado',
+          valor_anterior: estadoAnterior,
+          valor_nuevo: nuevoEstado,
+          usuario: nombreUsuario,
+          usuario_email: emailUsuario,
+          fecha_cambio: hoy,
+        },
+      ]);
 
-      // Registrar tiempo en el estado anterior y abrir nuevo estado
       await registrarTiempoEstado(draggedItem.id, estadoAnterior, nuevoEstado);
+      await enviarCorreoCambioEstado(draggedItem, estadoAnterior, nuevoEstado, tipoModulo);
 
-      await enviarCorreoCambioEstado(draggedItem, estadoAnterior, nuevoEstado);
-
-      // Actualizar el expediente en el estado local al instante
-      setExpedientes(prev =>
-        prev.map(exp => exp.id === draggedItem.id ? { ...exp, ...updates } : exp)
+      setExpedientes((prev) =>
+        prev.map((exp) => (exp.id === draggedItem.id ? { ...exp, ...updates } : exp))
       );
 
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 2000);
-      // Recarga silenciosa en background
+      mostrarExito(2000);
       recargaSilenciosa();
     } catch (error) {
       console.error('Error al actualizar estado:', error);
-      setShowError(true);
-      setTimeout(() => setShowError(false), 3000);
+      mostrarError('Error al actualizar el estado del expediente', 3000);
     } finally {
       setDraggedItem(null);
     }
   };
 
-  const getPrioridadColor = (prioridad: string, urgente: boolean) => {
-    if (urgente) return 'bg-red-100 text-red-800 border-red-200';
-    switch (prioridad) {
-      case 'Alta': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'Media': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'Baja': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+  // ── Devolver a Documentación ──
+  const abrirConfirmacionDevolver = async (expediente: Expediente) => {
+    setShowDevolverConfirm(true);
+    setDevolverGrupos([]);
+    setDevolverCargandoInfo(true);
+    const grupos = await obtenerGruposOriginales(expediente);
+    setDevolverGrupos(grupos);
+    setDevolverCargandoInfo(false);
   };
 
-  const getEstadoColor = (estado: string) => {
-    switch (estado) {
-      case 'No Asignado': return 'bg-gray-400';
-      case 'Nuevo': return 'bg-blue-500';
-      case 'Asignado': return 'bg-purple-500';
-      case 'Creado': return 'bg-teal-500';
-      case 'En Proceso': return 'bg-orange-500';
-      case 'En Revisión': return 'bg-yellow-500';
-      case 'Recepción de Carga': return 'bg-indigo-500';
-      case 'Facturación': return 'bg-pink-500';
-      case 'Liberado': return 'bg-green-500';
-      case 'Completado': return 'bg-emerald-500';
-      case 'Arribo de Carga': return 'bg-cyan-500';
-      case 'Pendiente Proforma': return 'bg-violet-500';
-      case 'Espera de Respuesta': return 'bg-amber-400';
-      case 'Liberación': return 'bg-green-500';
-      case 'Notificado': return 'bg-lime-500';
-      case 'Visto Listo': return 'bg-rose-500';
-      default: return 'bg-gray-500';
-    }
-  };
+  const devolverADocumentacion = async (expediente: Expediente) => {
+    try {
+      setSaving(true);
+      await devolverTicketADocumentacion(expediente);
 
-  const getDificultadColor = (dificultad: string) => {
-    switch (dificultad) {
-      case 'Alta': return 'bg-red-100 text-red-800';
-      case 'Media': return 'bg-yellow-100 text-yellow-800';
-      case 'Baja': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+      // Actualizar estado local al instante
+      setExpedientes((prev) => prev.filter((e) => e.id !== expediente.id));
 
-  const getDificultadIcon = (dificultad: string) => {
-    switch (dificultad) {
-      case 'Alta': return 'ri-arrow-up-circle-fill text-red-600';
-      case 'Media': return 'ri-arrow-right-circle-fill text-yellow-600';
-      case 'Baja': return 'ri-arrow-down-circle-fill text-green-600';
-      default: return 'ri-checkbox-blank-circle-line text-gray-400';
+      setShowDevolverConfirm(false);
+      mostrarExito();
+      cerrarModal();
+    } catch (error: any) {
+      console.error('Error al devolver a Documentación:', error);
+      mostrarError(error.message || 'Error al devolver el ticket a Documentación.');
+    } finally {
+      setSaving(false);
     }
-  };
-
-  const getExpedientesPorEstado = (estado: string) => {
-    return filteredExpedientes.filter(exp => exp.estado_expediente === estado);
   };
 
   if (loading) {
-    return (
-      <div className="p-8">
-        {/* Encabezado con indicador de carga */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">{tituloModulo}</h1>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
-              <p className="text-sm text-teal-600 font-medium">Cargando tickets...</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Banner de carga */}
-        <div className="mb-6 bg-teal-50 border border-teal-200 rounded-xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 flex items-center justify-center bg-teal-100 rounded-full flex-shrink-0">
-            <i className="ri-ship-line text-teal-600 text-xl"></i>
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-teal-800">
-              Preparando el tablero de {tipoModulo === 'dropship' ? 'Dropship' : 'ZF'}
-            </p>
-            <p className="text-xs text-teal-600 mt-0.5">
-              Estamos trayendo los expedientes desde la base de datos...
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-            <span className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-          </div>
-        </div>
-
-        {/* Esqueleto del tablero Kanban */}
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {ESTADOS.map(estado => (
-            <div
-              key={estado}
-              className="flex-shrink-0 w-80 bg-gray-50 rounded-xl border border-gray-200"
-            >
-              <div className="px-4 py-3 rounded-t-xl flex items-center justify-between bg-gray-200 animate-pulse">
-                <div className="h-4 w-24 bg-gray-300 rounded animate-pulse"></div>
-                <div className="h-5 w-8 bg-gray-300 rounded-full animate-pulse"></div>
-              </div>
-
-              <div className="p-3 space-y-3">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className="bg-white rounded-lg border border-gray-200 p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 space-y-2">
-                        <div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div>
-                        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
-                      </div>
-                      <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse"></div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="h-3 w-full bg-gray-100 rounded animate-pulse"></div>
-                      <div className="h-3 w-3/4 bg-gray-100 rounded animate-pulse"></div>
-                      <div className="h-3 w-1/2 bg-gray-100 rounded animate-pulse"></div>
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
-                      <div className="h-6 w-6 bg-gray-100 rounded animate-pulse"></div>
-                      <div className="h-6 w-6 bg-gray-100 rounded animate-pulse"></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <CargandoTablero tipoModulo={tipoModulo} titulo={tituloModulo} />;
   }
 
   return (
@@ -1692,6 +766,7 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         </div>
         {tipoModulo !== 'dropship' && (
           <button
+            type="button"
             onClick={() => {
               const event = new CustomEvent('openFormularioExpediente', { detail: { tipoModulo } });
               window.dispatchEvent(event);
@@ -1714,348 +789,49 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
       {showError && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-3">
           <i className="ri-error-warning-line text-red-600 text-xl"></i>
-          <p className="text-red-800 font-semibold text-sm">{errorMessage || 'Error al realizar la operación'}</p>
+          <p className="text-red-800 font-semibold text-sm">
+            {errorMessage || 'Error al realizar la operación'}
+          </p>
         </div>
       )}
 
-      {/* Filtros */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className={`grid grid-cols-1 gap-4 ${tipoModulo === 'dropship' ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
-            <div className="relative">
-              <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="PO, N° de factura, EXP ID, Solicitante, Responsable..."
-                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                >
-                  <i className="ri-close-circle-line text-sm"></i>
-                </button>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{tipoModulo === 'dropship' ? 'Solicitante' : 'Persona'}</label>
-            <select
-              value={filterPersona}
-              onChange={(e) => setFilterPersona(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-            >
-              <option value="Todos">Todos</option>
-              {todasPersonas.map(persona => (
-                <option key={persona} value={persona}>{persona}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Prioridad</label>
-            <select
-              value={filterPrioridad}
-              onChange={(e) => setFilterPrioridad(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-            >
-              <option value="Todos">Todos</option>
-              <option value="Urgente">Urgente</option>
-              <option value="Alta">Alta</option>
-              <option value="Media">Media</option>
-              <option value="Baja">Baja</option>
-            </select>
-          </div>
-          {tipoModulo === 'dropship' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Ruta Logística</label>
-              <MultiSelectFiltro
-                opciones={rutas.filter(r => r.modulo === 'dropship').map(ruta => ({ value: ruta.key, label: ruta.label }))}
-                seleccionados={filterRutas}
-                onChange={setFilterRutas}
-                placeholder="Todas las rutas"
-                icono="ri-route-line"
-              />
-            </div>
-          )}
-        </div>
-        {(searchTerm || filterPersona !== 'Todos' || filterPrioridad !== 'Todos' || filterRutas.length > 0) && (
-          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
-            <p className="text-sm text-gray-600">
-              Mostrando <span className="font-semibold text-teal-600">{filteredExpedientes.length}</span> expediente(s) con los filtros activos
-            </p>
-            <button
-              onClick={() => { setSearchTerm(''); setFilterPersona('Todos'); setFilterPrioridad('Todos'); setFilterRutas([]); }}
-              className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1 cursor-pointer"
-            >
-              <i className="ri-filter-off-line"></i>
-              Limpiar filtros
-            </button>
-          </div>
-        )}
-      </div>
+      <FiltrosGestion
+        tipoModulo={tipoModulo}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        filterPersona={filterPersona}
+        onPersonaChange={setFilterPersona}
+        filterPrioridad={filterPrioridad}
+        onPrioridadChange={setFilterPrioridad}
+        filterRutas={filterRutas}
+        onRutasChange={setFilterRutas}
+        todasPersonas={todasPersonas}
+        rutas={rutas}
+        totalResultados={filteredExpedientes.length}
+        onLimpiar={limpiarFiltros}
+      />
 
-      {/* Tablero Kanban */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {ESTADOS.map(estado => {
-          const expedientesEstado = getExpedientesPorEstado(estado);
-          return (
-            <div
-              key={estado}
-              className="flex-shrink-0 w-80 bg-gray-50 rounded-xl border border-gray-200"
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, estado)}
-            >
-              <div className={`${getEstadoColor(estado)} text-white px-4 py-3 rounded-t-xl flex items-center justify-between`}>
-                <h3 className="font-semibold text-sm">{estado}</h3>
-                <span className="bg-white/20 px-2 py-1 rounded-full text-xs font-bold">
-                  {expedientesEstado.length}
-                </span>
-              </div>
-              
-              <div className="p-3 space-y-3 max-h-[calc(100vh-320px)] overflow-y-auto">
-                {expedientesEstado.map(expediente => {
-                  const tiempoTranscurrido = calcularTiempoTranscurrido(expediente);
-                  // Para Dropship: tanto Notificado como Visto Listo son estados finales
-                  const esFinalizado = expediente.tipo_modulo === 'dropship'
-                    ? (expediente.estado_expediente === 'Notificado' || expediente.estado_expediente === 'Visto Listo')
-                    : expediente.estado_expediente === 'Completado';
-                  
-                  return (
-                    <div
-                      key={expediente.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, expediente)}
-                      onClick={() => abrirModal(expediente)}
-                      className="bg-white rounded-lg border border-gray-200 p-4 cursor-move hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-gray-900 text-sm mb-1">
-                            {expediente.po_tiquetera}
-                          </h4>
-                          <p className="text-xs text-gray-500">{expediente.exp_id}</p>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          {expediente.prioridad_urgente && (
-                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
-                              URGENTE
-                            </span>
-                          )}
-                          {expediente.transito_corto && (
-                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
-                              TC
-                            </span>
-                          )}
-                          {expediente.ok_pais && (
-                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
-                              ✓ OK País
-                            </span>
-                          )}
-                          {expediente.bl_cargado && (
-                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
-                              BL
-                            </span>
-                          )}
-                          {expediente.aplica_tlc && (
-                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
-                              TLC
-                            </span>
-                          )}
-                          {expediente.mcg && (
-                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
-                              MCG
-                            </span>
-                          )}
-                          {expediente.finiquito && (
-                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
-                              Finiquito
-                            </span>
-                          )}
-                          {expediente.incidente && (
-                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
-                              ⚠ Incidente
-                            </span>
-                          )}
-                        </div>
-                      </div>
+      <TableroKanban
+        estados={ESTADOS}
+        searchTerm={searchTerm}
+        getExpedientesPorEstado={getExpedientesPorEstado}
+        calcularTiempoTranscurrido={calcularTiempoTranscurrido}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onDragStart={handleDragStart}
+        onAbrir={abrirModal}
+        onHistorial={verHistorial}
+        onDocumentos={verDocumentos}
+      />
 
-                      <div className="space-y-2 mb-3">
-                        <div className="flex items-center gap-2 text-xs text-gray-600">
-                          <i className="ri-user-line"></i>
-                          <span>{expediente.solicitante}</span>
-                        </div>
-                        
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 font-medium min-w-[70px]">Prioridad:</span>
-                            <span className={`text-xs font-medium px-2 py-1 rounded-full border ${getPrioridadColor(expediente.prioridad, expediente.prioridad_urgente)}`}>
-                              {expediente.prioridad}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 font-medium min-w-[70px]">Dificultad:</span>
-                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${getDificultadColor(expediente.dificultad)}`}>
-                              {expediente.dificultad}
-                            </span>
-                          </div>
-                        </div>
+      <ModalHistorialExpediente
+        show={showHistorial}
+        onClose={() => setShowHistorial(false)}
+        expediente={expedienteSeleccionado}
+        historialData={historialData}
+        cargadorNoAutorizado={cargadorNoAutorizado}
+      />
 
-                        <div className="text-xs bg-gray-50 rounded p-2 border border-gray-200">
-                          <div className={`font-medium ${esFinalizado ? 'text-green-700' : 'text-blue-700'}`}>
-                            ⏱️ {formatearTiempo(tiempoTranscurrido.minutos)}
-                          </div>
-                          <div className={`${esFinalizado ? 'text-green-600' : 'text-blue-600'}`}>
-                            📅 {tiempoTranscurrido.dias} días hábiles
-                          </div>
-                          {!esFinalizado && (
-                            <div className="text-gray-400 mt-1">
-                              🔄 En curso...
-                            </div>
-                          )}
-                          {esFinalizado && (
-                            <div className="text-green-500 mt-1">
-                              ✅ Finalizado
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            verHistorial(expediente);
-                          }}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors cursor-pointer"
-                          title="Ver historial"
-                        >
-                          <i className="ri-history-line text-sm"></i>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            verDocumentos(expediente);
-                          }}
-                          className="p-1.5 text-teal-600 hover:bg-teal-50 rounded transition-colors cursor-pointer"
-                          title="Ver documentos"
-                        >
-                          <i className="ri-file-list-line text-sm"></i>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                
-                {expedientesEstado.length === 0 && (
-                  <div className="text-center py-8 text-gray-400 text-sm">
-                    <i className="ri-inbox-line text-3xl mb-2"></i>
-                    <p>Sin expedientes</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Modal de Historial */}
-      {showHistorial && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">Historial de Cambios</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  PO: {expedienteSeleccionado?.po_tiquetera} | EXP: {expedienteSeleccionado?.exp_id}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowHistorial(false)}
-                className="text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                <i className="ri-close-line text-2xl"></i>
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto max-h-[60vh]">
-              {/* Línea especial: quién cargó originalmente el ticket desde Carga CAA */}
-              {cargadorNoAutorizado && (
-                <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3">
-                  <div className="w-8 h-8 flex items-center justify-center bg-red-100 rounded-full flex-shrink-0">
-                    <i className="ri-error-warning-line text-red-600 text-base"></i>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-red-700 font-bold uppercase tracking-wide">⚠️ Cargador no autorizado</p>
-                    <p className="text-sm text-gray-800 font-semibold">
-                      Este ticket no fue cargado por un usuario autorizado de Carga CAA.
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">Solo lchavala, smcdonald, mpaniagua y los administradores pueden cargar documentos.</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="mb-4 bg-teal-50 border border-teal-200 rounded-lg p-3 flex items-start gap-3">
-                <div className="w-8 h-8 flex items-center justify-center bg-teal-100 rounded-full flex-shrink-0">
-                  <i className="ri-upload-cloud-2-line text-teal-600 text-base"></i>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-teal-700 font-medium uppercase tracking-wide">Origen del ticket</p>
-                  <p className="text-sm text-gray-800 font-semibold">
-                    Cargado por: {expedienteSeleccionado?.cargador_documentos || expedienteSeleccionado?.solicitante || 'N/A'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">Documentos y PO cargados desde Carga CAA</p>
-                </div>
-              </div>
-
-              {historialData.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">No hay cambios registrados</p>
-              ) : (
-                <div className="space-y-4">
-                  {historialData.map((cambio, index) => (
-                    <div key={index} className="border-l-4 border-teal-500 pl-4 py-2 bg-gray-50 rounded-r-lg">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold text-gray-900">
-                            {cambio.campo_modificado}
-                          </p>
-                          <div className="text-xs text-gray-600 mt-1 space-y-1">
-                            <div>
-                              <span className="font-medium">Anterior:</span>{' '}
-                              <span className="text-red-600">{cambio.valor_anterior || 'N/A'}</span>
-                            </div>
-                            <div>
-                              <span className="font-medium">Nuevo:</span>{' '}
-                              <span className="text-green-600">{cambio.valor_nuevo}</span>
-                            </div>
-                          </div>
-                          <p className="text-xs text-teal-600 mt-2 font-medium">
-                            <i className="ri-user-line mr-1"></i>
-                            Modificado por: {cambio.usuario}
-                          </p>
-                        </div>
-                        <span className="text-xs text-gray-500 ml-4">
-                          {new Date(cambio.fecha_cambio).toLocaleString('es-ES', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Documentos */}
       <ModalDocumentosExpediente
         show={showDocumentos}
         onClose={() => setShowDocumentos(false)}
@@ -2066,769 +842,47 @@ export default function GestionExpedientes({ onNuevoExpediente, refreshTrigger, 
         onDescargar={descargarDocumento}
       />
 
-      {/* Modal de Detalles/Edición */}
-      {showModal && selectedExpediente && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {isAsignarMode && (
-                  <div className="w-9 h-9 flex items-center justify-center bg-amber-100 rounded-lg flex-shrink-0">
-                    <i className="ri-user-add-line text-amber-600 text-lg"></i>
-                  </div>
-                )}
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {isAsignarMode ? 'Asignar Expediente' : editMode ? 'Editar Expediente' : 'Detalles del Expediente'}
-                </h2>
-              </div>
-              <button
-                onClick={cerrarModal}
-                className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-              >
-                <i className="ri-close-line text-2xl text-gray-500"></i>
-              </button>
-            </div>
+      <ModalDetalleExpediente
+        show={showModal}
+        expediente={selectedExpediente}
+        editMode={editMode}
+        isAsignarMode={isAsignarMode}
+        estados={ESTADOS}
+        rutas={rutas}
+        responsables={responsables}
+        saving={saving}
+        uploadingFiles={uploadingFiles}
+        uploadedFiles={uploadedFiles}
+        esAdmin={esAdmin}
+        corregir={corregir}
+        onClose={cerrarModal}
+        onChange={handleChange}
+        onEstadoChange={handleEstadoChange}
+        onEdit={() => handleEdit()}
+        onDelete={handleDelete}
+        onGuardar={guardarCambios}
+        onCancelarEdicion={() => {
+          setEditMode(false);
+          setUploadedFiles([]);
+        }}
+        onFileChange={handleFileChange}
+        onRemoveFile={removeFile}
+        onDevolver={() => {
+          if (selectedExpediente) abrirConfirmacionDevolver(selectedExpediente);
+        }}
+      />
 
-            {/* Banner de asignación */}
-            {isAsignarMode && (
-              <div className="mx-6 mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-                <div className="w-8 h-8 flex items-center justify-center bg-amber-100 rounded-full flex-shrink-0 mt-0.5">
-                  <i className="ri-alert-line text-amber-600 text-base"></i>
-                </div>
-                <div>
-                  <p className="font-bold text-amber-800 text-sm">Completa los campos para asignar este expediente</p>
-                  <p className="text-amber-700 text-xs mt-1">Los campos marcados con <span className="font-bold text-amber-600">★</span> son prioritarios: <strong>Ruta Logística</strong> y <strong>Responsable</strong>. El EXP ID puede completarse después. El estado pasará a <strong>Asignado</strong> automáticamente al guardar.</p>
-                </div>
-              </div>
-            )}
-
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">PO/Tiquetera</label>
-                  {editMode ? (
-                    <input
-                      type="text"
-                      value={selectedExpediente.po_tiquetera}
-                      onChange={(e) => handleChange('po_tiquetera', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                    />
-                  ) : (
-                    <p className="text-gray-900">{selectedExpediente.po_tiquetera}</p>
-                  )}
-                </div>
-
-                <div className={isAsignarMode ? 'ring-2 ring-amber-300 rounded-xl p-3 -m-3' : ''}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isAsignarMode && <span className="text-amber-500 mr-1">★</span>}
-                    Ruta Logística
-                  </label>
-                  {editMode ? (
-                    <select
-                      value={selectedExpediente.tipo_po}
-                      onChange={(e) => handleChange('tipo_po', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    >
-                      {rutas.map((ruta) => (
-                        <option key={ruta.id} value={ruta.key}>{ruta.label}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="text-gray-900">{selectedExpediente.tipo_po}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Solicitante
-                    <span className="ml-2 text-xs font-normal text-gray-400">(inmutable)</span>
-                  </label>
-                  <div className="flex items-center gap-2 w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg">
-                    <i className="ri-lock-line text-gray-400 text-sm"></i>
-                    <span className="text-gray-900">{selectedExpediente.solicitante}</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">Quien consolidó y creó el ticket desde Documentación. No se puede modificar.</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Cargador de Documentos
-                    <span className="ml-2 text-xs font-normal text-gray-400">(inmutable)</span>
-                  </label>
-                  <div className="flex items-center gap-2 w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg">
-                    <i className="ri-lock-line text-gray-400 text-sm"></i>
-                    <span className="text-gray-900">{selectedExpediente.cargador_documentos || 'N/A'}</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">Quien cargó los documentos y la PO desde Carga CAA. No se puede modificar.</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Estado</label>
-                  {editMode ? (
-                    <select
-                      value={selectedExpediente.estado_expediente}
-                      onChange={(e) => handleEstadoChange(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    >
-                      {ESTADOS.map(estado => (
-                        <option key={estado} value={estado}>{estado}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium text-white ${getEstadoColor(selectedExpediente.estado_expediente)}`}>
-                      {selectedExpediente.estado_expediente}
-                    </span>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Prioridad</label>
-                  {editMode ? (
-                    <select
-                      value={selectedExpediente.prioridad}
-                      onChange={(e) => handleChange('prioridad', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    >
-                      <option value="Baja">Baja</option>
-                      <option value="Media">Media</option>
-                      <option value="Alta">Alta</option>
-                    </select>
-                  ) : (
-                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium border ${getPrioridadColor(selectedExpediente.prioridad, selectedExpediente.prioridad_urgente)}`}>
-                      {selectedExpediente.prioridad}
-                    </span>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Prioridad Urgente</label>
-                  {editMode ? (
-                    <button
-                      type="button"
-                      onClick={() => handleChange('prioridad_urgente', !selectedExpediente.prioridad_urgente)}
-                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer ${
-                        selectedExpediente.prioridad_urgente ? 'bg-red-500' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          selectedExpediente.prioridad_urgente ? 'translate-x-8' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  ) : (
-                    <p className="text-gray-900">{selectedExpediente.prioridad_urgente ? 'Sí' : 'No'}</p>
-                  )}
-                </div>
-
-                {selectedExpediente.prioridad_urgente && (
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Motivo de Urgencia</label>
-                    <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-                      {selectedExpediente.motivo_urgencia || 'N/A'}
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Dificultad</label>
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getDificultadColor(selectedExpediente.dificultad)}`}>
-                    {selectedExpediente.dificultad}
-                  </span>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Líneas OC</label>
-                  {editMode ? (
-                    <input
-                      type="number"
-                      value={selectedExpediente.lineas_oc}
-                      onChange={(e) => handleChange('lineas_oc', parseInt(e.target.value))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                    />
-                  ) : (
-                    <p className="text-gray-900">{selectedExpediente.lineas_oc}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    EXP ID
-                  </label>
-                  {editMode ? (
-                    <input
-                      type="text"
-                      value={selectedExpediente.exp_id}
-                      onChange={(e) => handleChange('exp_id', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                    />
-                  ) : (
-                    <p className="text-gray-900">{selectedExpediente.exp_id}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Solicitud</label>
-                  <p className="text-gray-900">{formatearFecha(selectedExpediente.fecha_solicitud)}</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Requerimiento</label>
-                  <p className="text-gray-900">{formatearFecha(selectedExpediente.fecha_requerimiento)}</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Creación</label>
-                  <p className="text-gray-900">{formatearFecha(selectedExpediente.fecha_creacion_expediente)}</p>
-                </div>
-
-                <div className={isAsignarMode ? 'ring-2 ring-amber-300 rounded-xl p-3 -m-3' : ''}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {isAsignarMode && <span className="text-amber-500 mr-1">★</span>}
-                    Responsable Creación
-                  </label>
-                  {editMode ? (
-                    <>
-                      <select
-                        value={selectedExpediente.responsable_creacion}
-                        onChange={(e) => handleChange('responsable_creacion', e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                      >
-                        {responsables.map(nombre => (
-                          <option key={nombre} value={nombre}>{nombre}</option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                        <i className="ri-history-line"></i>
-                        Al cambiar el responsable, el historial conservará quién lo tenía antes.
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-gray-900">{selectedExpediente.responsable_creacion}</p>
-                  )}
-                </div>
-
-                {/* Campo ETD solo para Dropship */}
-                {selectedExpediente.tipo_modulo === 'dropship' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">ETD</label>
-                    {editMode ? (
-                      <input
-                        type="date"
-                        value={selectedExpediente.etd || ''}
-                        onChange={(e) => handleChange('etd', e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                      />
-                    ) : (
-                      <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-                        {selectedExpediente.etd ? formatearFecha(selectedExpediente.etd) : 'No especificado'}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Checkbox Tránsito Corto — disponible para Dropship y ZF */}
-                <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.transito_corto ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-                  <div className="flex-1">
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">
-                      Tránsito Corto
-                    </label>
-                    <p className="text-xs text-gray-500">Expediente de tránsito corto</p>
-                  </div>
-                  {editMode ? (
-                    <button
-                      type="button"
-                      onClick={() => handleChange('transito_corto', !selectedExpediente.transito_corto)}
-                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                        selectedExpediente.transito_corto ? 'bg-amber-500' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          selectedExpediente.transito_corto ? 'translate-x-8' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  ) : (
-                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.transito_corto ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {selectedExpediente.transito_corto ? 'Sí' : 'No'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Checkboxes OK País, Finiquito, MCG e Incidente — solo Dropship */}
-                {selectedExpediente.tipo_modulo === 'dropship' && (
-                  <>
-                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.ok_pais ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <div className="flex-1">
-                        <label className="block text-sm font-semibold text-gray-800 mb-1">
-                          OK País
-                        </label>
-                        <p className="text-xs text-gray-500">Marcar cuando el expediente esté cerrado</p>
-                      </div>
-                      {editMode ? (
-                        <button
-                          type="button"
-                          onClick={() => handleChange('ok_pais', !selectedExpediente.ok_pais)}
-                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                            selectedExpediente.ok_pais ? 'bg-green-500' : 'bg-gray-300'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              selectedExpediente.ok_pais ? 'translate-x-8' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      ) : (
-                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.ok_pais ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {selectedExpediente.ok_pais ? '✓ OK País' : 'Pendiente'}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.finiquito ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <div className="flex-1">
-                        <label className="block text-sm font-semibold text-gray-800 mb-1">
-                          Finiquito
-                        </label>
-                        <p className="text-xs text-gray-500">Marcar si el expediente tiene finiquito</p>
-                      </div>
-                      {editMode ? (
-                        <button
-                          type="button"
-                          onClick={() => handleChange('finiquito', !selectedExpediente.finiquito)}
-                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                            selectedExpediente.finiquito ? 'bg-orange-500' : 'bg-gray-300'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              selectedExpediente.finiquito ? 'translate-x-8' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      ) : (
-                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.finiquito ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {selectedExpediente.finiquito ? 'Sí' : 'No'}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.mcg ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <div className="flex-1">
-                        <label className="block text-sm font-semibold text-gray-800 mb-1">
-                          MCG
-                        </label>
-                        <p className="text-xs text-gray-500">Marcar si aplica MCG</p>
-                      </div>
-                      {editMode ? (
-                        <button
-                          type="button"
-                          onClick={() => handleChange('mcg', !selectedExpediente.mcg)}
-                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                            selectedExpediente.mcg ? 'bg-indigo-500' : 'bg-gray-300'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              selectedExpediente.mcg ? 'translate-x-8' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      ) : (
-                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.mcg ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {selectedExpediente.mcg ? 'Sí' : 'No'}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.incidente ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
-                      <div className="flex-1">
-                        <label className="block text-sm font-semibold text-gray-800 mb-1">
-                          Incidente
-                        </label>
-                        <p className="text-xs text-gray-500">Marcar si el expediente presenta un incidente</p>
-                      </div>
-                      {editMode ? (
-                        <button
-                          type="button"
-                          onClick={() => handleChange('incidente', !selectedExpediente.incidente)}
-                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                            selectedExpediente.incidente ? 'bg-red-500' : 'bg-gray-300'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              selectedExpediente.incidente ? 'translate-x-8' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      ) : (
-                        <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.incidente ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {selectedExpediente.incidente ? 'Sí' : 'No'}
-                        </span>
-                      )}
-                    </div>
-
-                    {selectedExpediente.incidente && (
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Comentario del Incidente
-                        </label>
-                        {editMode ? (
-                          <textarea
-                            value={selectedExpediente.comentario_incidente || ''}
-                            onChange={(e) => {
-                              handleChange('comentario_incidente', e.target.value);
-                              corregir(e.target, (v) => handleChange('comentario_incidente', v));
-                            }}
-                            rows={3}
-                            maxLength={500}
-                            spellCheck="true"
-                            lang="es"
-                            className="w-full px-4 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm resize-none"
-                            placeholder="Describe el incidente..."
-                          />
-                        ) : (
-                          <p className="text-gray-900 bg-red-50 px-4 py-2 rounded-lg border border-red-200">
-                            {selectedExpediente.comentario_incidente || 'Sin comentario'}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* Checkbox BL — disponible para ambos módulos */}
-                <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.bl_cargado ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
-                  <div className="flex-1">
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">
-                      BL (Bill of Lading) cargado
-                    </label>
-                    <p className="text-xs text-gray-500">Marcar si el BL ya fue cargado o está adjunto al expediente</p>
-                  </div>
-                  {editMode ? (
-                    <button
-                      type="button"
-                      onClick={() => handleChange('bl_cargado', !selectedExpediente.bl_cargado)}
-                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                        selectedExpediente.bl_cargado ? 'bg-blue-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          selectedExpediente.bl_cargado ? 'translate-x-8' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  ) : (
-                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.bl_cargado ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {selectedExpediente.bl_cargado ? 'BL Cargado' : 'Sin BL'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Checkbox TLC — disponible para ambos módulos */}
-                <div className={`flex items-center gap-4 rounded-lg p-4 border ${selectedExpediente.aplica_tlc ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                  <div className="flex-1">
-                    <label className="block text-sm font-semibold text-gray-800 mb-1">
-                      Aplica TLC (Tratado de Libre Comercio)
-                    </label>
-                    <p className="text-xs text-gray-500">Marcar si esta documentación aplica para TLC</p>
-                  </div>
-                  {editMode ? (
-                    <button
-                      type="button"
-                      onClick={() => handleChange('aplica_tlc', !selectedExpediente.aplica_tlc)}
-                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                        selectedExpediente.aplica_tlc ? 'bg-green-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          selectedExpediente.aplica_tlc ? 'translate-x-8' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  ) : (
-                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${selectedExpediente.aplica_tlc ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {selectedExpediente.aplica_tlc ? 'TLC Aplica' : 'Sin TLC'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Campo ETA Real solo para ZF */}
-                {selectedExpediente.tipo_modulo === 'zf' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">ETA Real</label>
-                    {editMode ? (
-                      <input
-                        type="date"
-                        value={selectedExpediente.eta_real || ''}
-                        onChange={(e) => handleChange('eta_real', e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                      />
-                    ) : (
-                      <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-                        {selectedExpediente.eta_real ? formatearFecha(selectedExpediente.eta_real) : 'No especificado'}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {selectedExpediente.estado_expediente === 'En Revisión' && (
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Motivo de Revisión
-                    </label>
-                    {editMode ? (
-                      <textarea
-                        value={selectedExpediente.motivo_revision || ''}
-                        onChange={(e) => {
-                          handleChange('motivo_revision', e.target.value);
-                          corregir(e.target, (v) => handleChange('motivo_revision', v));
-                        }}
-                        rows={3}
-                        spellCheck="true"
-                        lang="es"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm resize-none"
-                      />
-                    ) : (
-                      <p className="text-gray-900">{selectedExpediente.motivo_revision || 'N/A'}</p>
-                    )}
-                  </div>
-                )}
-
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Observaciones
-                  </label>
-                  {editMode ? (
-                    <textarea
-                      value={selectedExpediente.instrucciones_adicionales || ''}
-                      onChange={(e) => {
-                        handleChange('instrucciones_adicionales', e.target.value);
-                        corregir(e.target, (v) => handleChange('instrucciones_adicionales', v));
-                      }}
-                      rows={6}
-                      spellCheck="true"
-                      lang="es"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm resize-none"
-                      placeholder="Agregue observaciones adicionales..."
-                    />
-                  ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-                      {selectedExpediente.instrucciones_adicionales || 'Sin observaciones'}
-                    </p>
-                  )}
-                </div>
-
-                {editMode && (
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Agregar Documentos (PDF, Excel, CSV e imágenes)
-                    </label>
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <label className="flex-1 cursor-pointer">
-                          <div className="w-full px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-lg hover:border-teal-500 transition-colors flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-teal-600">
-                            <i className="ri-upload-cloud-line text-xl"></i>
-                            <span>Seleccionar archivos adicionales</span>
-                          </div>
-                          <input
-                            type="file"
-                            multiple
-                            accept=".pdf,.xlsx,.xls,.xlsm,.csv,.png,.jpg,.jpeg,.webp,.gif,.bmp"
-                            onChange={handleFileChange}
-                            className="hidden"
-                          />
-                        </label>
-                      </div>
-                      {uploadedFiles.length > 0 && (
-                        <div className="space-y-2">
-                          {uploadedFiles.map((file, index) => (
-                            <div key={index} className="flex items-center justify-between bg-gray-50 px-4 py-2 rounded-lg">
-                              <div className="flex items-center gap-2">
-                                <i className="ri-file-line text-teal-600"></i>
-                                <span className="text-sm text-gray-700">{file.name}</span>
-                                <span className="text-xs text-gray-500">({(file.size / 1024).toFixed(1)} KB)</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => removeFile(index)}
-                                className="text-red-500 hover:text-red-700 cursor-pointer"
-                              >
-                                <i className="ri-close-line text-lg"></i>
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div className="md:col-span-2 flex justify-end gap-3 pt-4 border-t">
-                  {!editMode ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleEdit()}
-                        className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        <i className="ri-edit-line mr-2"></i>
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(selectedExpediente.id)}
-                        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        <i className="ri-delete-bin-line mr-2"></i>
-                        Eliminar
-                      </button>
-                      {esAdmin && selectedExpediente.estado_expediente === 'No Asignado' && (
-                        <button
-                          type="button"
-                          onClick={() => abrirConfirmacionDevolver(selectedExpediente)}
-                          className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors cursor-pointer whitespace-nowrap"
-                        >
-                          <i className="ri-arrow-go-back-line mr-2"></i>
-                          Devolver a Documentación
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={cerrarModal}
-                        className="px-6 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        Cerrar
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditMode(false);
-                          setUploadedFiles([]);
-                        }}
-                        className="px-6 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={guardarCambios}
-                        disabled={saving || uploadingFiles}
-                        className={`px-6 py-2 text-white rounded-lg transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
-                          isAsignarMode
-                            ? 'bg-amber-500 hover:bg-amber-600'
-                            : 'bg-teal-600 hover:bg-teal-700'
-                        }`}
-                      >
-                        {saving ? (
-                          uploadingFiles ? 'Subiendo archivos...' : 'Guardando...'
-                        ) : isAsignarMode ? (
-                          <><i className="ri-user-add-line"></i> Asignar Expediente</>
-                        ) : (
-                          'Guardar Cambios'
-                        )}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de confirmación: Devolver a Documentación */}
-      {showDevolverConfirm && selectedExpediente && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 flex items-center justify-center bg-amber-100 rounded-full flex-shrink-0">
-                  <i className="ri-arrow-go-back-line text-amber-600 text-xl"></i>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">¿Devolver a Documentación?</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    El ticket <strong>{selectedExpediente.po_tiquetera}</strong> volverá a la bandeja de{' '}
-                    <strong>Documentación</strong> y se quitará del Kanban. Podrás volver a consolidarlo cuando lo necesites.
-                  </p>
-                </div>
-              </div>
-
-              {/* Aviso visual: estructura de POs a separar */}
-              {devolverCargandoInfo ? (
-                <div className="mb-4 flex items-center gap-2 text-gray-400 text-sm">
-                  <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin flex-shrink-0"></div>
-                  <span>Analizando estructura del ticket...</span>
-                </div>
-              ) : devolverGrupos.length > 1 ? (
-                <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <i className="ri-git-branch-line text-indigo-600 text-lg"></i>
-                    <p className="text-sm font-semibold text-indigo-800">
-                      Este ticket se separará en {devolverGrupos.length} POs independientes
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    {devolverGrupos.map((g: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between bg-white rounded-md px-3 py-2 border border-indigo-100">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-6 h-6 flex items-center justify-center bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold flex-shrink-0">
-                            {i + 1}
-                          </span>
-                          <span className="text-sm text-gray-700 font-medium truncate">
-                            {g.po_tiquetera ?? selectedExpediente.po_tiquetera}
-                          </span>
-                        </div>
-                        <span className="text-xs text-gray-500 whitespace-nowrap ml-3">
-                          {contarDocs(g.doc ?? null)} doc(s)
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-indigo-600 mt-3 flex items-center gap-1">
-                    <i className="ri-file-list-3-line"></i>
-                    Cada PO conservará sus propios documentos asociados.
-                  </p>
-                </div>
-              ) : (
-                <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-start gap-2">
-                  <i className="ri-information-line text-gray-400 mt-0.5 flex-shrink-0"></i>
-                  <p className="text-xs text-gray-500">
-                    Este ticket volverá como <strong>una sola fila</strong> en Documentación (sin POs separadas).
-                  </p>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setShowDevolverConfirm(false)}
-                  className="px-5 py-2 text-gray-700 bg-gray-100 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => devolverADocumentacion(selectedExpediente)}
-                  disabled={saving}
-                  className="px-5 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  {saving ? 'Devolviendo...' : 'Sí, devolver'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalConfirmarDevolver
+        show={showDevolverConfirm}
+        expediente={selectedExpediente}
+        grupos={devolverGrupos}
+        cargandoInfo={devolverCargandoInfo}
+        saving={saving}
+        onClose={() => setShowDevolverConfirm(false)}
+        onConfirmar={() => {
+          if (selectedExpediente) devolverADocumentacion(selectedExpediente);
+        }}
+      />
     </div>
   );
 }

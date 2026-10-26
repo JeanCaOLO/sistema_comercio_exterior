@@ -10,7 +10,7 @@ export default function Reportes() {
     <div className="p-8">
       {/* Encabezado */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Reportes</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Reporte de Expedientes</h1>
         <p className="text-gray-500 mt-2">Analítica de productividad, eficiencia y atrasos de expedientes</p>
       </div>
 

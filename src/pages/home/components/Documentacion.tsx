@@ -1,546 +1,20 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../../../lib/supabase';
-import { parseDocEntries, combinarEntradas, type DocEntry } from '@/lib/documentos';
-import { crearNotificacion } from '../../../lib/notificaciones';
-import { hoyLocal } from '../../../lib/fechas';
-import { useAuth } from '../../../contexts/AuthContext';
-
-// Emails autorizados para eliminar documentos en el módulo de Documentación
-const EMAILS_AUTORIZADOS_ELIMINAR = [
-  'jalvarez@ologistics.com',
-  'jmora@ologistics.com',
-];
-
-interface DocumentoCAA {
-  id: string;
-  po_tiquetera: string;
-  tipo_po: string;
-  solicitante: string;
-  tipo_modulo: string;
-  bl_cargado: boolean;
-  tc_cargado?: boolean;
-  aplica_tlc?: boolean;
-  doc: string | string[] | null;
-  created_at: string;
-  responsable_creacion: string;
-}
+import { parseDocEntries } from '@/lib/documentos';
+import ModalDocumentosExpediente from '@/pages/home/components/ModalDocumentosExpediente';
+import Paginacion from '@/components/feature/Paginacion';
+import CargandoDocumentacion from '@/pages/home/components/documentacion/CargandoDocumentacion';
+import BarraFiltrosDocumentacion from '@/pages/home/components/documentacion/BarraFiltrosDocumentacion';
+import TablaDocumentacion from '@/pages/home/components/documentacion/TablaDocumentacion';
+import ModalConfirmarEliminarDocumentos from '@/pages/home/components/documentacion/ModalConfirmarEliminarDocumentos';
+import ModalPreguntaMcg from '@/pages/home/components/documentacion/ModalPreguntaMcg';
+import { useDocumentacion } from '@/pages/home/components/documentacion/useDocumentacion';
 
 export default function Documentacion() {
-  const { user } = useAuth();
-  const [documentos, setDocumentos] = useState<DocumentoCAA[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [targetModulo, setTargetModulo] = useState<'dropship' | 'zf'>('dropship');
-  const [generando, setGenerando] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [showError, setShowError] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [usuarioActual, setUsuarioActual] = useState('Sistema');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [searchPO, setSearchPO] = useState('');
-  const [filtroRuta, setFiltroRuta] = useState('');
-  const [loadTimeout, setLoadTimeout] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [showMCGPrompt, setShowMCGPrompt] = useState(false);
-  const ITEMS_PER_PAGE = 25;
+  const doc = useDocumentacion();
 
-  useEffect(() => {
-    cargarDocumentos();
-    obtenerUsuarioActual();
-  }, []);
-
-  // Safety net: si loading queda true más de 15 segundos, lo forzamos a false
-  useEffect(() => {
-    if (!loading) {
-      setLoadTimeout(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      console.warn('Documentacion: carga bloqueada por más de 15s, forzando salida del loading');
-      setLoadTimeout(true);
-      setLoading(false);
-      setDocumentos([]);
-    }, 15000);
-    return () => clearTimeout(timer);
-  }, [loading]);
-
-  // Resetear página al cambiar filtros
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchPO, filtroRuta]);
-
-  const obtenerUsuarioActual = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: usuario } = await supabase
-          .from('usuarios')
-          .select('nombre')
-          .eq('email', user.email)
-          .maybeSingle();
-        if (usuario) setUsuarioActual(usuario.nombre);
-      }
-    } catch (error) {
-      console.error('Error al obtener usuario:', error);
-    }
-  };
-
-  const cargarDocumentos = async () => {
-    try {
-      setLoading(true);
-      setLoadTimeout(false);
-
-      const { data, error } = await supabase
-        .from('documentos_caa')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const documentosData = data || [];
-      setDocumentos(documentosData);
-      setSelectedIds(new Set());
-    } catch (error) {
-      console.error('Error al cargar documentos:', error);
-      setDocumentos([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Recarga en segundo plano sin mostrar spinner — evita bloquear la UI
-  const recargarSilencioso = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('documentos_caa')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setDocumentos(data || []);
-    } catch (error) {
-      console.error('Error en recarga silenciosa:', error);
-    }
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === documentosFiltrados.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(documentosFiltrados.map(d => d.id)));
-    }
-  };
-
-  const getDocCount = (doc: string | string[] | null): number => {
-    if (!doc) return 0;
-    if (Array.isArray(doc)) return doc.length;
-    try {
-      const parsed = JSON.parse(doc);
-      return Array.isArray(parsed) ? parsed.length : 1;
-    } catch {
-      return doc.trim() ? 1 : 0;
-    }
-  };
-
-  const generarTickets = async (marcarMCG = false) => {
-    if (selectedIds.size === 0) {
-      setErrorMessage('Selecciona al menos un documento para generar ticket.');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 4000);
-      return;
-    }
-
-    setGenerando(true);
-    setShowError(false);
-    setShowSuccess(false);
-
-    try {
-      const ahora = new Date().toISOString();
-      const hoy = hoyLocal();
-
-      const { data: { user } } = await supabase.auth.getUser();
-      let nombreUsuario = 'Sistema';
-      if (user) {
-        const { data: usuario } = await supabase
-          .from('usuarios')
-          .select('nombre')
-          .eq('email', user.email)
-          .single();
-        if (usuario) nombreUsuario = usuario.nombre;
-      }
-
-      const ids = Array.from(selectedIds);
-
-      // Obtener los documentos completos desde documentos_caa
-      const { data: docsCAA, error: fetchError } = await supabase
-        .from('documentos_caa')
-        .select('*')
-        .in('id', ids);
-
-      if (fetchError) throw new Error(`Error al leer documentos: ${fetchError.message}`);
-      if (!docsCAA || docsCAA.length === 0) throw new Error('No se encontraron los documentos seleccionados.');
-
-      // === CONSOLIDAR: merger todas las POs y docs en UN solo ticket ===
-
-      const todasLasPOs: string[] = [];
-      const todasLasEntradas: DocEntry[] = [];
-      const grupos: any[] = [];
-      let algunBL = false;
-      let algunTC = false;
-      let algunTLC = false;
-
-      for (const doc of docsCAA) {
-        // Parsear POs — cada fila puede tener múltiples POs separadas por " / "
-        if (doc.po_tiquetera) {
-          const pos = doc.po_tiquetera.split('/').map((p: string) => p.trim()).filter(Boolean);
-          todasLasPOs.push(...pos);
-        }
-
-        // Parsear documentos de esta fila preservando el tipo ({ url, tipo })
-        const entradasFila = parseDocEntries(doc.doc);
-        todasLasEntradas.push(...entradasFila);
-
-        if (doc.bl_cargado) algunBL = true;
-        if (doc.tc_cargado) algunTC = true;
-        if (doc.aplica_tlc) algunTLC = true;
-
-        // Preservar la fila original (PO + sus documentos) para poder
-        // separarla tal cual vino al devolverla a Documentación
-        grupos.push({
-          po_tiquetera: doc.po_tiquetera,
-          tipo_po: doc.tipo_po,
-          solicitante: doc.solicitante,
-          tipo_modulo: doc.tipo_modulo,
-          bl_cargado: doc.bl_cargado,
-          tc_cargado: doc.tc_cargado,
-          aplica_tlc: doc.aplica_tlc,
-          doc: entradasFila,
-          responsable_creacion: doc.responsable_creacion,
-          instrucciones_adicionales: doc.instrucciones_adicionales,
-          fecha_solicitud: doc.fecha_solicitud,
-          prioridad: doc.prioridad,
-          prioridad_urgente: doc.prioridad_urgente,
-          motivo_urgencia: doc.motivo_urgencia,
-          dificultad: doc.dificultad,
-          tiempo_minutos: doc.tiempo_minutos,
-          dias_entrega: doc.dias_entrega,
-          fecha_requerimiento: doc.fecha_requerimiento,
-          exp_id: doc.exp_id,
-          lineas_oc: doc.lineas_oc,
-          fecha_creacion_expediente: doc.fecha_creacion_expediente,
-          created_at: doc.created_at,
-        });
-      }
-
-      // Deduplicar (conservando la marca de factura si existe)
-      const poUnicas = [...new Set(todasLasPOs)];
-      const entradasConsolidadas = combinarEntradas(todasLasEntradas);
-
-      // Usar la metadata del primer documento como base
-      const primerDoc = docsCAA[0];
-      const { id: _id, tc_cargado: _tc, created_at: _createdAt, responsable_creacion: _respCreacion, ...basePayload } = primerDoc;
-
-      // ─── PRESERVAR AUDITORÍA ORIGINAL ───
-      // El cargador de documentos es quien subió los docs/POs en CAA (INMUTABLE).
-      // El solicitante es quien consolida ahora (INMUTABLE).
-      // El responsable de creación queda vacío esperando asignación (mutable).
-      const cargadoresUnicos = [...new Set(docsCAA.map((d: any) => d.responsable_creacion).filter(Boolean))];
-      const cargadorOriginal = cargadoresUnicos.join(', ') || 'Sistema';
-
-      // Preservar la fecha de creación más antigua (cuando se cargaron los docs)
-      const fechasCreacion = docsCAA.map((d: any) => new Date(d.created_at || ahora).getTime()).filter(t => !isNaN(t));
-      const fechaMasAntigua = fechasCreacion.length > 0 ? new Date(Math.min(...fechasCreacion)).toISOString() : ahora;
-
-      // Crear UN solo expediente consolidado
-      const { data: nuevoExp, error: insertExpError } = await supabase
-        .from('expedientes')
-        .insert([{
-          ...basePayload,
-          po_tiquetera: poUnicas.join(' / '),
-          doc: entradasConsolidadas,
-          bl_cargado: algunBL,
-          transito_corto: algunTC,
-          aplica_tlc: algunTLC,
-          mcg: marcarMCG,
-          estado_expediente: 'No Asignado',
-          tipo_modulo: targetModulo,
-          fecha_creacion_expediente: hoy,
-          // AUDITORÍA: cargador (inmutable), solicitante (inmutable), responsable vacío
-          cargador_documentos: cargadorOriginal,
-          solicitante: nombreUsuario,
-          responsable_creacion: '',
-          created_at: fechaMasAntigua,
-        }])
-        .select('id, exp_id')
-        .single();
-
-      if (insertExpError) throw new Error(`Error al crear el ticket consolidado: ${insertExpError.message}`);
-
-      const nuevoExpId = nuevoExp?.id;
-      if (!nuevoExpId) throw new Error('No se pudo obtener el ID del ticket creado.');
-
-      // Registrar historial: quién consolidó vs quién creó originalmente
-      await supabase.from('expedientes_historial').insert([{
-        expediente_id: nuevoExpId,
-        campo_modificado: 'Estado',
-        valor_anterior: 'Documentación',
-        valor_nuevo: 'No Asignado',
-        usuario: nombreUsuario,
-        fecha_cambio: ahora,
-        detalle: {
-          tipo: 'consolidacion',
-          consolidado_por: nombreUsuario,
-          cargador_original: cargadorOriginal,
-          total_pos: poUnicas.length,
-          total_docs: entradasConsolidadas.length,
-          pos: poUnicas,
-          grupos,
-        }
-      }]);
-
-      // Abrir registro de tiempo
-      await supabase.from('expedientes_tiempos_estados').insert([{
-        expediente_id: nuevoExpId,
-        estado_anterior: 'Documentación',
-        estado_nuevo: 'No Asignado',
-        fecha_inicio: ahora,
-        fecha_fin: null,
-        minutos_transcurridos: null
-      }]);
-
-      // ─── PRESERVAR EL HISTORIAL DE CAMBIOS ───
-      // Los cambios que se hicieron sobre las filas originales en Documentación
-      // (subir un archivo, toggles, comentarios) quedaban apuntando a un registro
-      // que desaparece al consolidar. Los re-apuntamos al ticket nuevo para que
-      // el historial no se pierda y cada archivo siga mostrando quién lo subió.
-      try {
-        await supabase
-          .from('documento_modificaciones')
-          .update({
-            registro_id: nuevoExpId,
-            tabla_origen: 'expedientes',
-            exp_id: (nuevoExp as any)?.exp_id || null,
-          })
-          .in('registro_id', ids);
-      } catch (histErr: any) {
-        console.error('[Historial] No se pudo re-apuntar el historial al ticket consolidado:', histErr?.message || histErr);
-      }
-
-      // Eliminar los documentos procesados de la tabla staging
-      await supabase
-        .from('documentos_caa')
-        .delete()
-        .in('id', ids);
-
-      setSuccessMessage(`¡Ticket consolidado generado! 1 expediente con ${poUnicas.length} PO(s) y ${entradasConsolidadas.length} documento(s) enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}.`);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 5000);
-
-      // === Notificación ===
-      crearNotificacion({
-        poTiquetera: poUnicas.join(' / '),
-        solicitante: primerDoc.solicitante || '',
-        responsable: primerDoc.responsable_creacion || '',
-        usuarioGenero: nombreUsuario,
-        tipo: 'ticket_creado',
-        mensaje: `${nombreUsuario} consolidó ${entradasConsolidadas.length} documento(s) en 1 ticket para las POs: ${poUnicas.slice(0, 3).join(', ')}${poUnicas.length > 3 ? ' y más' : ''} — enviado a ${targetModulo === 'dropship' ? 'Dropship' : 'ZF'}`,
-        icono: 'ri-send-plane-line',
-        expedienteId: nuevoExpId,
-      });
-
-      // === Limpiar estado local al instante sin esperar recarga del servidor ===
-      // Esto evita que la UI se quede bloqueada si la recarga tarda o se cuelga
-      const idsSet = new Set(ids);
-      setDocumentos(prev => prev.filter(d => !idsSet.has(d.id)));
-      setSelectedIds(new Set());
-
-      // Recargar en segundo plano para sincronizar con BD (no bloquea la UI)
-      recargarSilencioso();
-    } catch (error: any) {
-      console.error('Error al generar ticket:', error);
-      setErrorMessage(error.message || 'Error al generar el ticket.');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
-    } finally {
-      setGenerando(false);
-    }
-  };
-
-  const eliminarSeleccionados = async () => {
-    if (selectedIds.size === 0) return;
-
-    setDeleting(true);
-    setShowError(false);
-
-    try {
-      const { error } = await supabase
-        .from('documentos_caa')
-        .delete()
-        .in('id', Array.from(selectedIds));
-
-      if (error) throw error;
-
-      setSuccessMessage(`${selectedIds.size} documento(s) eliminado(s) de Documentación.`);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 4000);
-      setShowDeleteConfirm(false);
-      await cargarDocumentos();
-    } catch (error: any) {
-      console.error('Error al eliminar:', error);
-      setErrorMessage(error.message || 'Error al eliminar los documentos.');
-      setShowError(true);
-      setTimeout(() => setShowError(false), 5000);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('es-ES', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const rutasDisponibles = [...new Set(documentos.map(doc => doc.tipo_po).filter(Boolean))].sort();
-
-  const documentosFiltrados = documentos.filter(doc => {
-    // Filtro por texto
-    if (searchPO.trim()) {
-      const term = searchPO.toLowerCase();
-      const coincideTexto =
-        (doc.po_tiquetera && doc.po_tiquetera.toLowerCase().includes(term)) ||
-        (doc.solicitante && doc.solicitante.toLowerCase().includes(term)) ||
-        (doc.responsable_creacion && doc.responsable_creacion.toLowerCase().includes(term));
-      if (!coincideTexto) return false;
-    }
-    // Filtro por ruta logística
-    if (filtroRuta && doc.tipo_po !== filtroRuta) return false;
-    return true;
-  });
-
-  // Paginación
-  const totalPages = Math.ceil(documentosFiltrados.length / ITEMS_PER_PAGE);
-  const safePage = Math.min(currentPage, Math.max(1, totalPages));
-  const docsPaginados = documentosFiltrados.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
-  const startIndex = documentosFiltrados.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0;
-  const endIndex = Math.min(safePage * ITEMS_PER_PAGE, documentosFiltrados.length);
-
-  if (loading) {
-    return (
-      <div className="p-8">
-        {/* Encabezado con indicador de carga */}
-        <div className="mb-6 flex items-center gap-3">
-          <div className="w-10 h-10 flex items-center justify-center bg-amber-100 rounded-lg">
-            <i className="ri-folder-open-line text-amber-700 text-xl"></i>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Documentación</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
-              <p className="text-sm text-amber-600 font-medium">Cargando documentos...</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Banner de carga */}
-        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
-          <div className="w-10 h-10 flex items-center justify-center bg-amber-100 rounded-full flex-shrink-0">
-            <i className="ri-folder-open-line text-amber-600 text-xl"></i>
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-amber-800">
-              Preparando la bandeja de Documentación
-            </p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              Estamos trayendo los documentos cargados desde CAA...
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-          </div>
-        </div>
-
-        {/* Esqueleto de la tabla */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <th key={i} className="px-3 py-3">
-                      <div className="h-3 w-16 bg-gray-200 rounded animate-pulse mx-auto"></div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {[0, 1, 2, 3, 4, 5, 6, 7].map(i => (
-                  <tr key={i}>
-                    <td className="px-4 py-3">
-                      <div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="h-5 w-16 bg-gray-100 rounded-full animate-pulse"></div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="h-3 w-24 bg-gray-100 rounded animate-pulse"></div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse"></div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse"></div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="h-5 w-10 bg-gray-100 rounded-full animate-pulse"></div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="h-4 w-6 bg-gray-100 rounded animate-pulse mx-auto"></div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-gray-100 rounded-full animate-pulse"></div>
-                        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="h-3 w-20 bg-gray-100 rounded animate-pulse"></div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (doc.loading) return <CargandoDocumentacion />;
 
   return (
     <div className="p-8">
-      {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 flex items-center justify-center bg-amber-100 rounded-lg">
@@ -553,24 +27,21 @@ export default function Documentacion() {
         </div>
       </div>
 
-      {/* Success */}
-      {showSuccess && (
+      {doc.showSuccess && (
         <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">
           <i className="ri-checkbox-circle-line text-green-600 text-xl"></i>
-          <p className="text-green-800 font-semibold text-sm">{successMessage}</p>
+          <p className="text-green-800 font-semibold text-sm">{doc.successMessage}</p>
         </div>
       )}
 
-      {/* Error */}
-      {showError && (
+      {doc.showError && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-3">
           <i className="ri-error-warning-line text-red-600 text-xl"></i>
-          <p className="text-red-800 font-semibold text-sm">{errorMessage}</p>
+          <p className="text-red-800 font-semibold text-sm">{doc.errorMessage}</p>
         </div>
       )}
 
-      {/* Empty state */}
-      {documentos.length === 0 && (
+      {doc.documentos.length === 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
           <div className="w-20 h-20 mx-auto flex items-center justify-center bg-amber-50 rounded-full mb-6">
             <i className="ri-inbox-line text-4xl text-amber-400"></i>
@@ -582,372 +53,84 @@ export default function Documentacion() {
         </div>
       )}
 
-      {/* Toolbar */}
-      {documentos.length > 0 && (
+      {doc.documentos.length > 0 && (
         <>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex flex-wrap items-center gap-4">
-            {/* Buscador PO */}
-            <div className="relative flex-1 min-w-[260px] max-w-md">
-              <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-              <input
-                type="text"
-                value={searchPO}
-                onChange={(e) => setSearchPO(e.target.value)}
-                placeholder="Buscar por PO, solicitante o responsable..."
-                className="w-full pl-9 pr-9 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-              />
-              {searchPO && (
-                <button
-                  type="button"
-                  onClick={() => setSearchPO('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full cursor-pointer"
-                >
-                  <i className="ri-close-line text-sm"></i>
-                </button>
-              )}
+          <BarraFiltrosDocumentacion
+            searchPO={doc.searchPO}
+            onSearchChange={doc.setSearchPO}
+            filtroRuta={doc.filtroRuta}
+            onRutaChange={doc.setFiltroRuta}
+            rutasDisponibles={doc.rutasDisponibles}
+            filtroRapido={doc.filtroRapido}
+            onFiltroRapidoChange={doc.setFiltroRapido}
+            targetModulo={doc.targetModulo}
+            onModuloChange={doc.setTargetModulo}
+            selectedCount={doc.selectedIds.size}
+            filteredCount={doc.documentosFiltrados.length}
+            totalCount={doc.documentos.length}
+            hayFiltrosActivos={doc.hayFiltrosActivos}
+            pagina={doc.paginacion.paginaSegura}
+            totalPaginas={doc.paginacion.totalPaginas}
+            puedeEliminar={doc.puedeEliminar}
+            onEliminar={() => doc.setShowDeleteConfirm(true)}
+            onGenerar={() => doc.setShowMCGPrompt(true)}
+            generando={doc.generando}
+          />
+
+          {doc.documentosFiltrados.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+              <i className="ri-file-search-line text-4xl text-gray-300"></i>
+              <p className="text-gray-500 font-medium mt-3">No hay documentos con esos filtros</p>
+              <p className="text-gray-400 text-sm mt-1">Probá ajustando la búsqueda o los filtros</p>
             </div>
-
-            {/* Filtro Ruta Logística */}
-            <div className="relative min-w-[220px]">
-              <select
-                value={filtroRuta}
-                onChange={(e) => setFiltroRuta(e.target.value)}
-                className="w-full pl-3 pr-9 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent appearance-none bg-white cursor-pointer"
-              >
-                <option value="">Todas las rutas</option>
-                {rutasDisponibles.map(ruta => (
-                  <option key={ruta} value={ruta}>{ruta}</option>
-                ))}
-              </select>
-              <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
-            </div>
-            {/* Selector de módulo destino */}
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Enviar a:</span>
-              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setTargetModulo('dropship')}
-                  className={`px-4 py-2 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                    targetModulo === 'dropship'
-                      ? 'bg-teal-600 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <i className="ri-ship-line mr-1.5"></i>
-                  Dropship
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTargetModulo('zf')}
-                  className={`px-4 py-2 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                    targetModulo === 'zf'
-                      ? 'bg-sky-600 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <i className="ri-building-line mr-1.5"></i>
-                  ZF
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1"></div>
-
-            {/* Contador */}
-            <span className="text-sm text-gray-500 whitespace-nowrap">
-              <span className="font-bold text-amber-600">{selectedIds.size}</span> de {documentosFiltrados.length} seleccionado(s)
-              {(searchPO || filtroRuta) && documentosFiltrados.length !== documentos.length && (
-                <span className="text-gray-400 ml-1">(filtrado de {documentos.length})</span>
-              )}
-              <span className="text-gray-400 mx-1">|</span>
-              <span className="text-gray-500">Pág. {safePage} de {Math.max(1, totalPages)}</span>
-            </span>
-
-            {/* Botón eliminar — solo visible para administradores */}
-            {user && user.email && EMAILS_AUTORIZADOS_ELIMINAR.includes(user.email) && (
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                disabled={selectedIds.size === 0}
-                className="px-4 py-2 text-red-600 bg-red-50 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                <i className="ri-delete-bin-line mr-1.5"></i>
-                Eliminar
-              </button>
-            )}
-
-            {/* Botón generar ticket */}
-            <button
-              type="button"
-              onClick={() => setShowMCGPrompt(true)}
-              disabled={selectedIds.size === 0 || generando}
-              className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 ${
-                targetModulo === 'dropship'
-                  ? 'bg-teal-600 text-white hover:bg-teal-700'
-                  : 'bg-sky-600 text-white hover:bg-sky-700'
-              }`}
-            >
-              {generando ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin flex-shrink-0"></div>
-                  Generando...
-                </>
-              ) : (
-                <>
-                  <i className="ri-send-plane-line"></i>
-                  Consolidar en 1 Ticket ({selectedIds.size} filas)
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Tabla */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 w-12">
-                      <input
-                        type="checkbox"
-                        checked={documentosFiltrados.length > 0 && selectedIds.size === documentosFiltrados.length && documentosFiltrados.length > 0}
-                        onChange={toggleSelectAll}
-                        className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
-                      />
-                    </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">POs Asociadas</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Módulo</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Ruta Logística</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">BL</th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">TC</th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">TLC</th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Docs</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Cargado por</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Fecha</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {docsPaginados.map((doc) => {
-                    const isSelected = selectedIds.has(doc.id);
-                    return (
-                      <tr
-                        key={doc.id}
-                        onClick={() => toggleSelect(doc.id)}
-                        className={`cursor-pointer transition-colors ${
-                          isSelected ? 'bg-amber-50' : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => { e.stopPropagation(); toggleSelect(doc.id); }}
-                            className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
-                          />
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="text-sm font-semibold text-gray-900">{doc.po_tiquetera}</div>
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            doc.tipo_modulo === 'dropship'
-                              ? 'bg-teal-100 text-teal-800'
-                              : 'bg-sky-100 text-sky-800'
-                          }`}>
-                            {doc.tipo_modulo === 'dropship' ? 'Dropship' : 'ZF'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="text-xs text-gray-600 max-w-[200px] truncate" title={doc.tipo_po}>
-                            {doc.tipo_po}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          {doc.bl_cargado ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                              BL
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          {doc.tc_cargado ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                              TC
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          {doc.aplica_tlc ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                              TLC
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          <span className="text-sm font-semibold text-gray-700">{getDocCount(doc.doc)}</span>
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 flex items-center justify-center bg-gray-100 rounded-full">
-                              <i className="ri-user-line text-xs text-gray-500"></i>
-                            </div>
-                            <span className="text-sm text-gray-700">{doc.responsable_creacion}</span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          <span className="text-xs text-gray-500">{formatDate(doc.created_at)}</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Paginación */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4">
-              <span className="text-sm text-gray-500">
-                Mostrando <strong>{startIndex}-{endIndex}</strong> de <strong>{documentosFiltrados.length}</strong> documento(s)
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={safePage <= 1}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                >
-                  <i className="ri-arrow-left-s-line"></i>
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2)
-                  .reduce<(number | 'ellipsis')[]>((acc, p, idx, arr) => {
-                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('ellipsis');
-                    acc.push(p);
-                    return acc;
-                  }, [])
-                  .map((p, i) =>
-                    p === 'ellipsis' ? (
-                      <span key={`e-${i}`} className="w-8 h-8 flex items-center justify-center text-sm text-gray-400">...</span>
-                    ) : (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setCurrentPage(p as number)}
-                        className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                          safePage === p
-                            ? 'bg-amber-600 text-white'
-                            : 'text-gray-600 hover:bg-gray-100'
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    )
-                  )}
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={safePage >= totalPages}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                >
-                  <i className="ri-arrow-right-s-line"></i>
-                </button>
-              </div>
-            </div>
+          ) : (
+            <TablaDocumentacion
+              documentos={doc.paginacion.visibles}
+              selectedIds={doc.selectedIds}
+              onToggle={doc.toggleSelect}
+              onToggleAll={doc.toggleSelectAll}
+              onAbrirRepositorio={doc.setFilaDocumentos}
+            />
           )}
+
+          <Paginacion
+            pagina={doc.paginacion.paginaSegura}
+            totalPaginas={doc.paginacion.totalPaginas}
+            onCambiar={doc.setCurrentPage}
+            resumen={`Mostrando ${doc.paginacion.inicio}-${doc.paginacion.fin} de ${doc.documentosFiltrados.length} documento(s)`}
+          />
         </>
       )}
 
-      {/* Modal confirmación eliminar */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 flex items-center justify-center bg-red-100 rounded-full flex-shrink-0">
-                  <i className="ri-alert-line text-red-600 text-xl"></i>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">¿Eliminar documentos?</h3>
-                  <p className="text-sm text-gray-500">
-                    Se eliminarán <strong>{selectedIds.size}</strong> documento(s) de Documentación. Esta acción no se puede deshacer.
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="px-5 py-2 text-gray-700 bg-gray-100 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={eliminarSeleccionados}
-                  disabled={deleting}
-                  className="px-5 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  {deleting ? 'Eliminando...' : 'Sí, eliminar'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {doc.showDeleteConfirm && (
+        <ModalConfirmarEliminarDocumentos
+          cantidad={doc.selectedIds.size}
+          eliminando={doc.deleting}
+          onCancelar={() => doc.setShowDeleteConfirm(false)}
+          onConfirmar={doc.confirmarEliminar}
+        />
       )}
 
-      {/* Modal pregunta MCG al consolidar */}
-      {showMCGPrompt && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 flex items-center justify-center bg-indigo-100 rounded-full flex-shrink-0">
-                  <i className="ri-question-line text-indigo-600 text-xl"></i>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">¿Marcar MCG?</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    ¿Deseas marcar la opción <strong>MCG</strong> en el ticket que vas a consolidar ({selectedIds.size} fila(s))?
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setShowMCGPrompt(false)}
-                  className="px-5 py-2 text-gray-700 bg-gray-100 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowMCGPrompt(false); generarTickets(false); }}
-                  disabled={generando}
-                  className="px-5 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  No marcar MCG
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowMCGPrompt(false); generarTickets(true); }}
-                  disabled={generando}
-                  className="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  Sí, marcar MCG
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      <ModalDocumentosExpediente
+        show={!!doc.filaDocumentos}
+        onClose={() => doc.setFilaDocumentos(null)}
+        poTiquetera={doc.filaDocumentos?.po_tiquetera}
+        expId={doc.filaDocumentos?.exp_id || 'Por Asignar'}
+        documentos={doc.filaDocumentos ? parseDocEntries(doc.filaDocumentos.doc) : []}
+        downloadingId={doc.downloadingId}
+        onDescargar={doc.descargarDocumento}
+      />
+
+      {doc.showMCGPrompt && (
+        <ModalPreguntaMcg
+          cantidad={doc.selectedIds.size}
+          generando={doc.generando}
+          onCancelar={() => doc.setShowMCGPrompt(false)}
+          onResponder={(marcar) => {
+            doc.setShowMCGPrompt(false);
+            doc.generarTicket(marcar);
+          }}
+        />
       )}
     </div>
   );

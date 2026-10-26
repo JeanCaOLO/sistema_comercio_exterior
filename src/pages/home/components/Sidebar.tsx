@@ -1,3 +1,11 @@
+import {
+  GRUPOS_NAVEGACION,
+  ITEM_CONFIGURACION,
+  NOMBRE_SISTEMA,
+  type GrupoNavegacion,
+  type ItemNavegacion,
+} from '@/lib/navegacion';
+
 interface SidebarProps {
   activeView: string;
   setActiveView: (view: string) => void;
@@ -10,83 +18,110 @@ interface SidebarProps {
 export default function Sidebar({ activeView, setActiveView, onLogout, userName, userRoles, modulosPermitidos }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Menú principal del sistema
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: 'ri-dashboard-line' },
-    { id: 'gestion-dropship', label: 'Gestión Dropship', icon: 'ri-ship-line' },
-    { id: 'gestion-zf', label: 'Gestión ZF', icon: 'ri-building-line' },
-    { id: 'lista-expedientes', label: 'Lista de Expedientes', icon: 'ri-file-list-3-line' },
-    { id: 'reportes', label: 'Reportes', icon: 'ri-bar-chart-box-line' },
-    { id: 'carga-caa', label: 'Carga CAA', icon: 'ri-file-upload-line' },
-    { id: 'documentacion', label: 'Documentación', icon: 'ri-folder-open-line' },
-    { id: 'repositorio', label: 'Repositorio Docs', icon: 'ri-archive-line' },
-    { id: 'facturas', label: 'Facturas', icon: 'ri-bill-line' },
-    { id: 'configuracion', label: 'Configuración', icon: 'ri-settings-3-line' },
-  ];
+  const tieneAcceso = (id: string) => modulosPermitidos.includes(id);
 
-  // Submódulos de "Gestión de Cambios ETD Inicial"
-  const etdItems = [
-    { id: 'etd-solicitar', label: 'Solicitar Cambio ETD Inicial', icon: 'ri-calendar-2-line' },
-    { id: 'etd-aprobaciones', label: 'Aprobaciones Pendientes', icon: 'ri-checkbox-multiple-line' },
-    { id: 'etd-historial', label: 'Historial de Solicitudes', icon: 'ri-history-line' },
-  ];
+  const renderItem = (item: ItemNavegacion) => {
+    const activo = activeView === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => setActiveView(item.id)}
+        title={isCollapsed ? item.label : undefined}
+        className={`w-full flex items-center gap-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap text-sm ${
+          isCollapsed ? 'justify-center py-2.5' : 'px-3 py-2.5'
+        } ${activo ? 'bg-teal-50 text-teal-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+      >
+        <span className={`w-5 h-5 flex items-center justify-center flex-shrink-0 ${activo ? 'text-teal-600' : 'text-gray-400'}`}>
+          <i className={`${item.icon} text-lg`}></i>
+        </span>
+        {!isCollapsed && (
+          <span className={activo ? 'font-semibold' : 'font-medium'}>{item.label}</span>
+        )}
+      </button>
+    );
+  };
 
-  const etdPermitidas = etdItems.filter((item) => modulosPermitidos.includes(item.id));
+  const renderGrupo = (grupo: GrupoNavegacion) => {
+    const secciones = grupo.secciones
+      .map((seccion) => ({
+        ...seccion,
+        items: seccion.items.filter((item) => tieneAcceso(item.id)),
+      }))
+      .filter((seccion) => seccion.items.length > 0);
 
-  const renderItem = (item: { id: string; label: string; icon: string }) => (
-    <button
-      key={item.id}
-      onClick={() => setActiveView(item.id)}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-        activeView === item.id ? 'bg-teal-50 text-teal-700' : 'text-gray-600 hover:bg-gray-50'
-      } ${isCollapsed ? 'justify-center' : ''}`}
-      title={isCollapsed ? item.label : ''}
-    >
-      <i className={`${item.icon} text-xl flex-shrink-0`}></i>
-      {!isCollapsed && <span className="font-medium text-sm">{item.label}</span>}
-    </button>
-  );
+    const totalItems = secciones.reduce((acc, seccion) => acc + seccion.items.length, 0);
+    if (totalItems === 0) return null;
+
+    return (
+      <div key={grupo.id}>
+        {isCollapsed ? (
+          <div className="mx-2 my-2.5 h-px bg-gray-100"></div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 pt-4 pb-2">
+            <i className={`${grupo.icon} text-sm text-teal-600`}></i>
+            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500 whitespace-nowrap">
+              {grupo.nombre}
+            </span>
+            <span className="flex-1 h-px bg-gray-100"></span>
+          </div>
+        )}
+        <div className="space-y-1">
+          {secciones.map((seccion) => (
+            <div key={`${grupo.id}-${seccion.titulo || 'principal'}`}>
+              {!isCollapsed && seccion.titulo && (
+                <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                  {seccion.titulo}
+                </p>
+              )}
+              <div className="space-y-1">
+                {seccion.items.map(renderItem)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 relative`}>
+    <div className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white border-r border-gray-200 flex flex-col transition-all duration-300 relative flex-shrink-0`}>
       {/* Toggle Button */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-6 w-6 h-6 bg-teal-600 rounded-full flex items-center justify-center text-white hover:bg-teal-700 transition-colors cursor-pointer z-10 shadow-lg"
+        className="absolute -right-3 top-6 w-6 h-6 bg-teal-600 rounded-full flex items-center justify-center text-white hover:bg-teal-700 transition-colors cursor-pointer z-10"
         title={isCollapsed ? 'Expandir menú' : 'Contraer menú'}
       >
         <i className={`${isCollapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-left-s-line'} text-sm`}></i>
       </button>
 
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center gap-3">
+      {/* Marca del sistema */}
+      <div className={`${isCollapsed ? 'px-3' : 'px-5'} py-5 border-b border-gray-200`}>
+        <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`}>
           <div className="w-10 h-10 bg-teal-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <i className="ri-file-text-line text-xl text-white"></i>
+            <i className="ri-global-line text-xl text-white"></i>
           </div>
           {!isCollapsed && (
-            <div>
-              <h1 className="text-lg font-bold text-gray-900">Expedientes</h1>
-              <p className="text-xs text-gray-500">Sistema de Gestión</p>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-900 leading-tight">{NOMBRE_SISTEMA}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">Panel operativo</p>
             </div>
           )}
         </div>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {menuItems.filter((item) => modulosPermitidos.includes(item.id)).map(renderItem)}
-
-        {etdPermitidas.length > 0 && (
-          <div className="pt-3 mt-3 border-t border-gray-100 space-y-1">
-            {!isCollapsed && (
-              <p className="px-4 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">
-                Cambios ETD Inicial
-              </p>
-            )}
-            {etdPermitidas.map(renderItem)}
-          </div>
-        )}
+      {/* Módulos */}
+      <nav className="flex-1 px-3 py-3 overflow-y-auto">
+        {GRUPOS_NAVEGACION.map(renderGrupo)}
       </nav>
 
+      {/* Configuración al mismo nivel que los módulos */}
+      {tieneAcceso(ITEM_CONFIGURACION.id) && (
+        <div className="px-3 py-3 border-t border-gray-200">
+          {renderItem(ITEM_CONFIGURACION)}
+        </div>
+      )}
+
+      {/* Usuario + sesión */}
       <div className="p-4 border-t border-gray-200">
         {!isCollapsed && (
           <div className="mb-3 p-3 bg-gray-50 rounded-lg">

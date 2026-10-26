@@ -6,6 +6,7 @@ Documento de referencia técnica. Explica **cómo se calcula cada indicador**, t
 > Toda la lógica descrita aquí vive en:
 > - Dashboard: `src/pages/home/components/Dashboard.tsx`, `SeccionKpisDropship.tsx`, `SeccionKpisMcg.tsx`, `SeccionKpisZf.tsx`, `ModalDetalleZf.tsx`, `TopMotivosEspera.tsx`
 > - KPIs ZF: `src/lib/kpisZf.ts`
+> - KPIs de creación de expediente: `src/lib/kpisCreacion.ts`
 > - Reportes: `ReporteAtrasos.tsx`, `ReporteCiclo.tsx`, `ReporteRuta.tsx`
 > - Utilidades de fecha: `src/lib/fechas.ts`
 
@@ -136,7 +137,9 @@ Agrupa por `estado_expediente` usando la función `contarEstados`. Los estados c
 **Meta: cada expediente debe durar MENOS de 3 días hábiles.**
 
 - Universo: expedientes Dropship **normal** (excluye MCG).
-- **Inicio del conteo** = fecha en que pasó a `Asignado` (fallback: `created_at`).
+- **Inicio del conteo** = fecha de **carga de la factura/documentos** del ticket
+  (`created_at`; en tickets consolidados guarda la fecha del documento más antiguo cargado.
+  Respaldo: `fecha_creacion_expediente`). **Ya no** se usa la fecha de `Asignado`.
 - **Fin del conteo** = `fecha_liberacion`; si aún está en curso, se usa **el momento actual**.
 - `díasDuración = diasHabiles(inicio, fin)`.
 
@@ -200,9 +203,11 @@ El desglose muestra además el **Máximo** y el **Mínimo** de días.
 
 ## A.10 KPIs MCG — Creación de Expediente  *(expedientes con mcg = true)*
 
-**Meta: ≤ 2 días hábiles desde la asignación hasta la liberación.**
+**Meta: ≤ 2 días hábiles desde la carga de la factura hasta la liberación.**
 
-- **Inicio** = fecha en que pasó a `Asignado` (fallback: `created_at`).
+- **Inicio** = fecha de **carga de la factura/documentos** del ticket (`created_at`; en tickets
+  consolidados es la fecha del documento más antiguo cargado. Respaldo:
+  `fecha_creacion_expediente`). **Ya no** se usa la fecha de `Asignado`.
 - **Fin** = fecha en que llegó a `Liberación` (o `Liberado`); fallback: campo `fecha_liberacion`.
 - Se exige que exista la fecha de liberación (si no, el ticket **no** se cuenta).
 - `días = diasHabiles(inicio, fin)`.
@@ -419,9 +424,9 @@ Se promedian sobre **todos** los expedientes Dropship (global y por ruta):
 
 | Indicador | Módulo | Meta |
 |---|---|---|
-| Duración del expediente | Dropship Normal | < 3 días hábiles |
+| Duración del expediente (carga de factura → liberación) | Dropship Normal | < 3 días hábiles |
 | ETD → Notificado | Dropship Normal | ≤ 5 días hábiles |
-| Creación (Asignado → Liberado) | MCG | ≤ 2 días hábiles |
+| Creación (carga de factura → Liberado) | MCG | ≤ 2 días hábiles |
 | ETD → Notificado | MCG | < 2 días hábiles |
 | ETA estimada (completado ≤ ETA Real) | ZF | Completar en o antes de la ETA Real |
 | Tránsito corto (creación → cierre) | ZF | < 2 días hábiles |

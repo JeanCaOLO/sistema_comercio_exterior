@@ -6,6 +6,7 @@ import {
   PERMISOS_DEFAULT,
   cargarMatrizPermisos,
   guardarMatrizPermisos,
+  gruposDeModulos,
   cargarRolesAprobacionEtd,
   guardarRolesAprobacionEtd,
   ROLES_APROBACION_ETD_DEFAULT,
@@ -26,6 +27,7 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
   const [mensaje, setMensaje] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(null);
 
   const esAdmin = perfil?.roles?.includes('Administrador') ?? false;
+  const gruposModulos = gruposDeModulos();
 
   useEffect(() => {
     let activo = true;
@@ -190,10 +192,24 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
-            <tr className="bg-gray-50">
-              <th className="sticky left-0 bg-gray-50 text-left py-3 px-4 text-sm font-semibold text-gray-700 border-b border-gray-200 whitespace-nowrap min-w-[180px]">
+            <tr className="bg-white">
+              <th
+                rowSpan={2}
+                className="sticky left-0 z-10 bg-white text-left py-3 px-4 text-sm font-semibold text-gray-700 border-b border-gray-200 whitespace-nowrap min-w-[180px] align-bottom"
+              >
                 Rol
               </th>
+              {gruposModulos.map((grupo) => (
+                <th
+                  key={grupo.id}
+                  colSpan={grupo.modulos.length}
+                  className="border-b border-l border-gray-200 bg-teal-50/70 py-2 px-2 text-center text-[11px] font-bold uppercase tracking-widest text-teal-800 whitespace-nowrap"
+                >
+                  {grupo.nombre}
+                </th>
+              ))}
+            </tr>
+            <tr className="bg-gray-50">
               {MODULOS.map((modulo) => (
                 <th
                   key={modulo.id}
@@ -305,29 +321,41 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
       {/* Resumen por módulo */}
       <div className="mt-8">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Acceso por módulo</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {MODULOS.map((modulo) => {
-            const rolesConAcceso = ROLES.filter((r) => (matriz[r.nombre] || []).includes(modulo.id));
-            return (
-              <div key={modulo.id} className="p-4 bg-white border border-gray-200 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <i className={`${modulo.icon} text-teal-600`}></i>
-                  <span className="font-medium text-sm text-gray-900">{modulo.nombre}</span>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {rolesConAcceso.length > 0 ? (
-                    rolesConAcceso.map((r) => (
-                      <span key={r.nombre} className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.color}`}>
-                        {r.nombre}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs text-gray-400">Sin acceso asignado</span>
-                  )}
-                </div>
+        <div className="space-y-6">
+          {gruposModulos.map((grupo) => (
+            <div key={grupo.id}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-teal-800 whitespace-nowrap">
+                  {grupo.nombre}
+                </span>
+                <span className="flex-1 h-px bg-gray-200"></span>
               </div>
-            );
-          })}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {grupo.modulos.map((modulo) => {
+                  const rolesConAcceso = ROLES.filter((r) => (matriz[r.nombre] || []).includes(modulo.id));
+                  return (
+                    <div key={modulo.id} className="p-4 bg-white border border-gray-200 rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <i className={`${modulo.icon} text-teal-600`}></i>
+                        <span className="font-medium text-sm text-gray-900">{modulo.nombre}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {rolesConAcceso.length > 0 ? (
+                          rolesConAcceso.map((r) => (
+                            <span key={r.nombre} className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.color}`}>
+                              {r.nombre}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-gray-400">Sin acceso asignado</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

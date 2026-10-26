@@ -113,8 +113,13 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
     observaciones: '',
     etd: '', // Para Dropship
     etaReal: '', // Para ZF
+    reciboDelzofFecha: '', // Para ZF
+    reciboDelzofNumero: '', // Para ZF
     transitoCorto: false, // Para Dropship y ZF
     blCargado: false,
+    numeroBl: '',
+    numeroContenedor: '',
+    packingList: false,
     aplicaTLC: false,
     incidente: false,
     comentarioIncidente: '',
@@ -365,9 +370,14 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
             tipo_modulo: tipoModulo,
             etd: tipoModulo === 'dropship' && formData.etd ? formData.etd : null,
             eta_real: tipoModulo === 'zf' && formData.etaReal ? formData.etaReal : null,
+            recibo_delzof_fecha: tipoModulo === 'zf' && formData.reciboDelzofFecha ? formData.reciboDelzofFecha : null,
+            recibo_delzof_numero: tipoModulo === 'zf' && formData.reciboDelzofNumero.trim() ? formData.reciboDelzofNumero.trim() : null,
             transito_corto: formData.transitoCorto,
             ok_pais: false,
             bl_cargado: formData.blCargado,
+            numero_bl: formData.numeroBl.trim() || null,
+            numero_contenedor: formData.numeroContenedor.trim() || null,
+            packing_list_cargado: formData.packingList,
             aplica_tlc: formData.aplicaTLC,
             incidente: formData.incidente,
             comentario_incidente: formData.incidente ? formData.comentarioIncidente : null,
@@ -392,6 +402,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
         `Líneas OC: ${formData.lineasOC}`,
         `Responsable: ${formData.responsableCreacion}`,
         `EXP ID: ${formData.exp || 'No asignado'}`,
+        ...(tipoModulo === 'zf' ? [`Recibo Delzof: ${formData.reciboDelzofFecha || 'No registrado'}${formData.reciboDelzofNumero ? ' #' + formData.reciboDelzofNumero : ''}`] : []),
         `Transito Corto: ${formData.transitoCorto ? 'Sí' : 'No'}`,
         `BL Cargado: ${formData.blCargado ? 'Sí' : 'No'}`,
         `Aplica TLC: ${formData.aplicaTLC ? 'Sí' : 'No'}`,
@@ -484,8 +495,13 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
           observaciones: '',
           etd: '',
           etaReal: '',
+          reciboDelzofFecha: '',
+          reciboDelzofNumero: '',
           transitoCorto: false,
           blCargado: false,
+          numeroBl: '',
+          numeroContenedor: '',
+          packingList: false,
           aplicaTLC: false,
           incidente: false,
           comentarioIncidente: '',
@@ -797,20 +813,48 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                     </button>
                   </div>
                 
-                {/* Campo ETA Real solo para ZF */}
+                {/* Campos exclusivos de ZF: ETA Real y Recibo de Delzof */}
                 {tipoModulo === 'zf' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      ETA Real
-                    </label>
-                    <input
-                      type="date"
-                      name="etaReal"
-                      value={formData.etaReal}
-                      onChange={handleChange}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    />
-                  </div>
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        ETA Real
+                      </label>
+                      <input
+                        type="date"
+                        name="etaReal"
+                        value={formData.etaReal}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Fecha de Recibo de Delzof
+                      </label>
+                      <input
+                        type="date"
+                        name="reciboDelzofFecha"
+                        value={formData.reciboDelzofFecha}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Fecha en que ZF recibió la carga (base del KPI ETA Variable − 7)</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        N° / Referencia del Recibo de Delzof
+                      </label>
+                      <input
+                        type="text"
+                        name="reciboDelzofNumero"
+                        value={formData.reciboDelzofNumero}
+                        onChange={handleChange}
+                        placeholder="Ej: REC-2025-00458"
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                      />
+                    </div>
+                  </>
                 )}
                 
                 <div className="md:col-span-2">
@@ -885,6 +929,53 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                       Marcaste BL cargado pero no adjuntaste documentos. Recuerda subir el BL antes de guardar.
                     </p>
                   )}
+                </div>
+
+                {/* N° de BL y N° de Contenedor — los alimenta el sistema de carga */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    N° de BL
+                    <span className="ml-2 text-xs font-normal text-gray-400">(automático)</span>
+                  </label>
+                  <div className="flex items-center gap-2 w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+                    <i className="ri-lock-line text-gray-400 text-sm"></i>
+                    <span className="text-sm text-gray-500">Se completa automáticamente</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    N° de Contenedor
+                    <span className="ml-2 text-xs font-normal text-gray-400">(automático)</span>
+                  </label>
+                  <div className="flex items-center gap-2 w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+                    <i className="ri-lock-line text-gray-400 text-sm"></i>
+                    <span className="text-sm text-gray-500">Se completa automáticamente</span>
+                  </div>
+                </div>
+
+                {/* Packing List cargado */}
+                <div className="md:col-span-2">
+                  <div className={`flex items-center gap-4 rounded-lg p-4 border ${formData.packingList ? 'bg-teal-50 border-teal-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className="flex-1">
+                      <label className="block text-sm font-semibold text-gray-800 mb-1">
+                        Packing List cargado
+                      </label>
+                      <p className="text-xs text-gray-500">Marca esta opción si el packing list ya está adjunto</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, packingList: !prev.packingList }))}
+                      className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                        formData.packingList ? 'bg-teal-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          formData.packingList ? 'translate-x-8' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Checkbox Aplica TLC */}

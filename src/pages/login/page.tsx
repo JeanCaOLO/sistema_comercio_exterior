@@ -62,7 +62,7 @@ export default function Login() {
             <i className="ri-shield-user-line text-3xl text-white"></i>
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Iniciar Sesión</h1>
-          <p className="text-gray-500 mt-2">Sistema de Gestión de Expedientes</p>
+          <p className="text-gray-500 mt-2">Gestión de Comercio Exterior</p>
         </div>
 
         {error && (

@@ -1,17 +1,10 @@
 import { formatearFechaCorta } from '../../../lib/fechas';
 import { descargarExcel } from '../../../lib/exportar';
+import type { FilaCreacionExpediente } from '../../../lib/kpisCreacion';
 
 // ── Tipos de detalle para el desglose de POs MCG ──
-export interface FilaCreacionMcg {
-  id: string;
-  po_tiquetera: string;
-  exp_id: string;
-  solicitante: string;
-  fechaAsignado: string;
-  fechaLiberacion: string;
-  dias: number;
-  cumpleMeta: boolean;
-}
+// El conteo de creación arranca en la carga de la factura, no en la asignación.
+export type FilaCreacionMcg = FilaCreacionExpediente;
 
 export interface FilaEtdMcg {
   id: string;
@@ -38,7 +31,7 @@ export default function ModalDetalleMcg({ tipo, filas, total, cumplen, noCumplen
   const esCreacion = tipo === 'creacion';
   const titulo = esCreacion ? 'Detalle Creación de Expediente MCG' : 'Detalle ETD → Notificado MCG';
   const subtitulo = esCreacion
-    ? 'POs Dropship marcadas con MCG — días entre la asignación y cuando llega al estado de liberación'
+    ? 'POs Dropship marcadas con MCG — días hábiles entre la carga de la factura y la llegada al estado de liberación'
     : 'POs Dropship marcadas con MCG — días entre su ETD y la fecha de Notificado';
 
   const descargar = () => {
@@ -48,9 +41,9 @@ export default function ModalDetalleMcg({ tipo, filas, total, cumplen, noCumplen
         'PO/Tiquetera': f.po_tiquetera,
         'EXP ID': f.exp_id || '-',
         'Solicitante': f.solicitante,
-        'Asignado': formatearFechaCorta(f.fechaAsignado),
+        'Carga de Factura': formatearFechaCorta(f.fechaCargaDocumentos),
         'Fecha Liberación': formatearFechaCorta(f.fechaLiberacion),
-        'Días (Asignado → Liberación)': f.dias,
+        'Días (Factura → Liberación)': f.dias,
         'Cumple Meta (≤2 días)': f.cumpleMeta ? 'Sí' : 'No'
       }));
       descargarExcel(`reporte-mcg-creacion-${new Date().toISOString().split('T')[0]}.xlsx`, filasExcel);
@@ -127,7 +120,7 @@ export default function ModalDetalleMcg({ tipo, filas, total, cumplen, noCumplen
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">EXP ID</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Solicitante</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">
-                  {esCreacion ? 'Asignado' : 'ETD'}
+                  {esCreacion ? 'Carga de Factura' : 'ETD'}
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">
                   {esCreacion ? 'Fecha Liberación' : 'Fecha Notificado'}
@@ -146,7 +139,7 @@ export default function ModalDetalleMcg({ tipo, filas, total, cumplen, noCumplen
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{f.solicitante}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                       {esCreacion
-                        ? formatearFechaCorta((f as FilaCreacionMcg).fechaAsignado)
+                        ? formatearFechaCorta((f as FilaCreacionMcg).fechaCargaDocumentos)
                         : formatearFechaCorta((f as FilaEtdMcg).etd)}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
