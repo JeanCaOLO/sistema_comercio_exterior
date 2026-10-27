@@ -23,9 +23,41 @@ export const TODOS_ESTADOS = Array.from(new Set([...ESTADOS_DROPSHIP, ...ESTADOS
 
 export const ITEMS_PER_PAGE = 25;
 
+// Opciones del filtro "Días s/ Factura". Los valores numéricos son el umbral:
+// el expediente entra cuando supera ese número de días hábiles.
+export const OPCIONES_DIAS_FACTURA: { value: string; label: string }[] = [
+  { value: 'Todos', label: 'Todos' },
+  { value: '2', label: 'Más de 2 días' },
+  { value: '3', label: 'Más de 3 días' },
+  { value: '5', label: 'Más de 5 días' },
+  { value: '7', label: 'Más de 7 días' },
+  { value: 'custom', label: 'Personalizado…' },
+  { value: 'sin', label: 'Sin factura registrada' },
+];
+
+// Etiqueta legible del filtro activo (para el resumen de filtros)
+export const describirFiltroDiasFactura = (valor: string, minimo: number): string => {
+  if (valor === 'Todos') return '';
+  if (valor === 'sin') return 'Sin factura registrada';
+  if (valor === 'custom') return `Más de ${minimo} ${minimo === 1 ? 'día' : 'días'}`;
+  return `Más de ${valor} días`;
+};
+
 // Filtrado completo en memoria sobre el dataset ya cargado.
-export const filtrarExpedientes = (expedientes: Expediente[], filtros: FiltrosLista): Expediente[] => {
-  const { searchTerm, filterPersona, filterPrioridad, filterEstado, filterTipoModulo } = filtros;
+export const filtrarExpedientes = (
+  expedientes: Expediente[],
+  filtros: FiltrosLista,
+  ahora: Date = new Date()
+): Expediente[] => {
+  const {
+    searchTerm,
+    filterPersona,
+    filterPrioridad,
+    filterEstado,
+    filterTipoModulo,
+    filterDiasFactura,
+    diasFacturaMin,
+  } = filtros;
   let filtered = [...expedientes];
 
   if (searchTerm) {
@@ -63,6 +95,22 @@ export const filtrarExpedientes = (expedientes: Expediente[], filtros: FiltrosLi
     filtered = filtered.filter((exp) => exp.tipo_modulo === filterTipoModulo);
   }
 
+  if (filterDiasFactura !== 'Todos') {
+    const umbral =
+      filterDiasFactura === 'custom'
+        ? Number.isFinite(diasFacturaMin)
+          ? diasFacturaMin
+          : 3
+        : Number(filterDiasFactura);
+
+    filtered = filtered.filter((exp) => {
+      const calculo = calcularDiasDesdeCargaFactura(exp, ahora);
+      if (filterDiasFactura === 'sin') return calculo === null;
+      if (!calculo) return false;
+      return calculo.dias > umbral;
+    });
+  }
+
   return filtered;
 };
 
@@ -71,7 +119,8 @@ export const hayFiltrosActivos = (filtros: FiltrosLista): boolean =>
   filtros.filterPersona !== 'Todos' ||
   filtros.filterPrioridad !== 'Todos' ||
   filtros.filterEstado !== 'Todos' ||
-  filtros.filterTipoModulo !== 'Todos';
+  filtros.filterTipoModulo !== 'Todos' ||
+  filtros.filterDiasFactura !== 'Todos';
 
 // Mismo cálculo que el dashboard para que los días coincidan siempre
 export const calcularDiasHabilesReales = (fechaInicio: string, fechaFin: string): number =>

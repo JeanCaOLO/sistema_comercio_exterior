@@ -32,6 +32,8 @@ export function useListaExpedientes() {
   const [filterPrioridad, setFilterPrioridad] = useState('Todos');
   const [filterEstado, setFilterEstado] = useState('Todos');
   const [filterTipoModulo, setFilterTipoModulo] = useState('Todos');
+  const [filterDiasFactura, setFilterDiasFactura] = useState('Todos');
+  const [diasFacturaMin, setDiasFacturaMin] = useState(3);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -148,16 +150,42 @@ export function useListaExpedientes() {
   // Volver a la primera página cuando cambian los filtros
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterPersona, filterPrioridad, filterEstado, filterTipoModulo]);
+  }, [
+    searchTerm,
+    filterPersona,
+    filterPrioridad,
+    filterEstado,
+    filterTipoModulo,
+    filterDiasFactura,
+    diasFacturaMin,
+  ]);
 
   const filtros = useMemo(
-    () => ({ searchTerm, filterPersona, filterPrioridad, filterEstado, filterTipoModulo }),
-    [searchTerm, filterPersona, filterPrioridad, filterEstado, filterTipoModulo]
+    () => ({
+      searchTerm,
+      filterPersona,
+      filterPrioridad,
+      filterEstado,
+      filterTipoModulo,
+      filterDiasFactura,
+      diasFacturaMin,
+    }),
+    [
+      searchTerm,
+      filterPersona,
+      filterPrioridad,
+      filterEstado,
+      filterTipoModulo,
+      filterDiasFactura,
+      diasFacturaMin,
+    ]
   );
 
+  // currentTime entra como dependencia porque el cálculo de días de los
+  // expedientes abiertos avanza con el reloj.
   const filteredExpedientes = useMemo(
-    () => filtrarExpedientes(expedientes, filtros),
-    [expedientes, filtros]
+    () => filtrarExpedientes(expedientes, filtros, currentTime),
+    [expedientes, filtros, currentTime]
   );
 
   const hayFiltros = hayFiltrosActivos(filtros);
@@ -348,6 +376,10 @@ export function useListaExpedientes() {
     setFilterEstado,
     filterTipoModulo,
     setFilterTipoModulo,
+    filterDiasFactura,
+    setFilterDiasFactura,
+    diasFacturaMin,
+    setDiasFacturaMin,
     hayFiltros,
 
     // paginación

@@ -29,6 +29,10 @@ export default function ListaExpedientes() {
     setFilterEstado,
     filterTipoModulo,
     setFilterTipoModulo,
+    filterDiasFactura,
+    setFilterDiasFactura,
+    diasFacturaMin,
+    setDiasFacturaMin,
     hayFiltros,
     currentPage,
     setCurrentPage,
@@ -104,6 +108,10 @@ export default function ListaExpedientes() {
         onPrioridadChange={setFilterPrioridad}
         filterEstado={filterEstado}
         onEstadoChange={setFilterEstado}
+        filterDiasFactura={filterDiasFactura}
+        onDiasFacturaChange={setFilterDiasFactura}
+        diasFacturaMin={diasFacturaMin}
+        onDiasFacturaMinChange={setDiasFacturaMin}
         filteredCount={filteredExpedientes.length}
         totalCount={expedientes.length}
         currentPage={currentPage}

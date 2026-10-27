@@ -9,12 +9,15 @@ interface KpiCreacion {
   diasPromedio: number;
 }
 
+// Mismo contrato que el KPI de creación MCG (cumplen / noCumplen /
+// porcentajeCumplimiento / diasPromedio). Antes se declaraba con otros nombres
+// (dentroRango / porcentajeOk / promedioDias) y por eso las tarjetas quedaban vacías.
 interface KpiEtd {
   totalEvaluados: number;
-  dentroRango: number;
-  fueraRango: number;
-  porcentajeOk: number;
-  promedioDias: number;
+  cumplen: number;
+  noCumplen: number;
+  porcentajeCumplimiento: number;
+  diasPromedio: number;
 }
 
 interface SeccionKpisMcgProps {
@@ -66,10 +69,10 @@ export default function SeccionKpisMcg({
 
   const badgeEtd: BadgeIndicador | null = sinDatosEtd
     ? null
-    : etd.fueraRango > 0
+    : etd.noCumplen > 0
     ? {
         tono: 'alerta',
-        texto: `${etd.fueraRango} expediente${etd.fueraRango !== 1 ? 's' : ''} fuera de rango`,
+        texto: `${etd.noCumplen} expediente${etd.noCumplen !== 1 ? 's' : ''} fuera de rango`,
         subtexto: `Meta: < ${metaEtdDias} días hábiles`
       }
     : { tono: 'ok', texto: 'Todo en orden', subtexto: '100% cumple la meta' };
@@ -152,16 +155,19 @@ export default function SeccionKpisMcg({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <TarjetaDesglose
             etiqueta="Cumplimiento Global"
-            valor={etd.porcentajeOk}
+            valor={etd.porcentajeCumplimiento}
             sufijo="%"
-            valorClass={colorPorcentaje(etd.porcentajeOk, sinDatosEtd)}
-            barra={{ porcentaje: etd.porcentajeOk, colorClass: colorBarra(etd.porcentajeOk) }}
+            valorClass={colorPorcentaje(etd.porcentajeCumplimiento, sinDatosEtd)}
+            barra={{
+              porcentaje: etd.porcentajeCumplimiento,
+              colorClass: colorBarra(etd.porcentajeCumplimiento)
+            }}
             footer={`${etd.totalEvaluados} expedientes evaluados`}
           />
 
           <TarjetaDesglose
             etiqueta="Dentro del Rango"
-            valor={etd.dentroRango}
+            valor={etd.cumplen}
             sufijo="exp."
             valorClass="text-teal-600"
             linea={{ icono: 'ri-checkbox-circle-fill', texto: `< ${metaEtdDias} días`, colorClass: 'text-teal-700' }}
@@ -170,22 +176,22 @@ export default function SeccionKpisMcg({
 
           <TarjetaDesglose
             etiqueta="Fuera del Rango"
-            valor={etd.fueraRango}
+            valor={etd.noCumplen}
             sufijo="exp."
-            valorClass={etd.fueraRango > 0 ? 'text-red-600' : 'text-gray-400'}
+            valorClass={etd.noCumplen > 0 ? 'text-red-600' : 'text-gray-400'}
             linea={{
               icono: 'ri-error-warning-fill',
               texto: `≥ ${metaEtdDias} días`,
-              colorClass: etd.fueraRango > 0 ? 'text-red-700' : 'text-gray-400'
+              colorClass: etd.noCumplen > 0 ? 'text-red-700' : 'text-gray-400'
             }}
             nota="Haz clic para ver el detalle"
-            resaltado={etd.fueraRango > 0}
+            resaltado={etd.noCumplen > 0}
             onClick={onVerDetalleEtd}
           />
 
           <TarjetaDesglose
             etiqueta="Promedio"
-            valor={etd.promedioDias}
+            valor={etd.diasPromedio}
             sufijo="días"
             valorClass="text-gray-800"
             linea={{ icono: 'ri-bar-chart-box-line', texto: 'Promedio del período', colorClass: 'text-gray-600' }}

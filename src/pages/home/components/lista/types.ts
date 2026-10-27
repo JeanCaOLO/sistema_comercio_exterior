@@ -9,4 +9,8 @@ export interface FiltrosLista {
   filterPrioridad: string;
   filterEstado: string;
   filterTipoModulo: string;
+  // 'Todos' | '2' | '3' | '5' | '7' | 'custom' | 'sin'
+  filterDiasFactura: string;
+  // Umbral en días hábiles cuando filterDiasFactura === 'custom'
+  diasFacturaMin: number;
 }

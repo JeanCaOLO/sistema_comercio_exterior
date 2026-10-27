@@ -576,4 +576,14 @@ El comportamiento quedó idéntico: filtros por fecha de asignación, comparativ
 
 ---
 
+## ⏳ Filtro por días desde la carga de factura en la Lista (245)
+
+245. **Nuevo filtro "Días s/ Factura" en la Lista de Expedientes** — Se agregó un filtro que permite ver únicamente los tickets que llevan **más de X días hábiles desde la carga de la factura**, usando exactamente la misma regla de la columna "Días s/ Factura" y de los KPIs de creación (en tickets cerrados el reloj se detiene en la liberación).
+- **Opciones rápidas:** Más de 2, Más de 3, Más de 5 y Más de 7 días.
+- **Personalizado:** permite escribir cualquier umbral de días hábiles.
+- **Sin factura registrada:** muestra los tickets que todavía no tienen fecha de carga de factura.
+- El filtro **se combina con los demás** (búsqueda, módulo, persona, prioridad, estado), vuelve a la **página 1** al aplicarse y aparece como **chip ámbar** en el resumen con un clic para quitarlo. Los contadores de resultados se recalculan al instante.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*
