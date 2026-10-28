@@ -1,4 +1,4 @@
-// KPI · Indicador de Duración Mínima de Expedientes (carga de factura → liberación).
+// KPI · Medidor de Duración Mínima de Expedientes (carga de factura → liberación).
 // Se muestra como MEDIDOR (gauge) para leer el cumplimiento de un vistazo.
 
 import type { KpiDuracion } from './types';
@@ -123,7 +123,7 @@ export default function TarjetaDuracionMinima({ kpi, onVerReporte, onVerNoCumple
           </div>
           <div>
             <h3 className="text-xl font-bold text-gray-900">
-              Indicador de Duración Mínima de Expedientes
+              Medidor de Duración Mínima de Expedientes
             </h3>
             <p className="text-sm text-gray-600">
               Meta: cada expediente debe durar menos de <strong>3 días hábiles</strong> desde la{' '}

@@ -1,4 +1,4 @@
-// KPI · Liberado dentro de ETD + 3 días hábiles (solo Dropship).
+// KPI · Indicador de creación de expedientes ETD + 3 días hábiles (solo Dropship).
 
 import { useMemo, useState } from 'react';
 import PanelIndicador, { BadgeIndicador } from '@/pages/home/components/PanelIndicador';
@@ -86,7 +86,7 @@ export default function KpiEtdLiberacion({ resultado, metaDias }: Props) {
       <PanelIndicador
         icono="ri-ship-line"
         tono={tono}
-        titulo={`Liberado dentro de ETD + ${metaDias} días hábiles`}
+        titulo={`Indicador de creación de expedientes ETD+${metaDias}`}
         meta={
           <>
             Cada PO Dropship debe llegar al estado <strong>Liberado</strong> a más tardar{' '}
