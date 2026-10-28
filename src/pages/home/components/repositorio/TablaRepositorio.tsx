@@ -33,9 +33,16 @@ const FilaRepositorio = memo(({
 
   return (
     <Fragment>
-      <tr className="hover:bg-gray-50 transition-colors">
+      <tr
+        onClick={() => onEditar(registro)}
+        className="group hover:bg-amber-50/40 transition-colors cursor-pointer"
+        title="Clic para editar este registro"
+      >
         <td className="px-4 py-3">
-          <div className="text-sm font-semibold text-gray-900">{registro.po_tiquetera}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-gray-900">{registro.po_tiquetera}</span>
+            <i className="ri-edit-line text-xs text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+          </div>
         </td>
         <td className="px-3 py-3 whitespace-nowrap">
           <span className="text-xs text-gray-500 font-mono">{registro.exp_id}</span>
@@ -83,7 +90,10 @@ const FilaRepositorio = memo(({
           {docCount > 0 ? (
             <button
               type="button"
-              onClick={() => onToggleExpandir(registro.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExpandir(registro.id);
+              }}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
             >
               <i className={expandida ? 'ri-arrow-up-s-line text-xs' : 'ri-arrow-down-s-line text-xs'}></i>
@@ -107,7 +117,10 @@ const FilaRepositorio = memo(({
         <td className="px-3 py-3 text-center whitespace-nowrap">
           <button
             type="button"
-            onClick={() => onEditar(registro)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditar(registro);
+            }}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-amber-700 bg-amber-50 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors cursor-pointer whitespace-nowrap"
             title="Editar registro"
           >
@@ -118,7 +131,10 @@ const FilaRepositorio = memo(({
         <td className="px-3 py-3 text-center whitespace-nowrap">
           <button
             type="button"
-            onClick={() => onHistorial(registro)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onHistorial(registro);
+            }}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-gray-600 bg-gray-100 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
             title="Ver historial de modificaciones"
           >
@@ -130,7 +146,7 @@ const FilaRepositorio = memo(({
 
       {expandida && docCount > 0 && (
         <tr>
-          <td colSpan={18} className="px-4 py-0 bg-gray-50/60">
+          <td colSpan={18} className="px-4 py-0 bg-gray-50/60" onClick={(e) => e.stopPropagation()}>
             <div className="py-3 space-y-2">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Archivos ({docCount})</p>
               {docUrls.map((entry, idx) => (

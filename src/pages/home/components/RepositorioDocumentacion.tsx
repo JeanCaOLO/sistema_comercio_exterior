@@ -135,6 +135,11 @@ export default function RepositorioDocumentacion() {
             </div>
           </div>
 
+          <p className="text-xs text-gray-400 mb-2 flex items-center gap-1.5">
+            <i className="ri-cursor-line"></i>
+            Hacé clic en cualquier fila para editar el registro. Los botones de Historial y el desplegable de archivos siguen funcionando aparte.
+          </p>
+
           <TablaRepositorio
             registros={repo.registros}
             filasExpandidas={repo.filasExpandidas}

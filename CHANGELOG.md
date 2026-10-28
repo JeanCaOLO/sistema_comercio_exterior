@@ -598,4 +598,15 @@ Con datos reales, la mejora es notoria: los tickets que cumplían la meta pasaro
 
 ---
 
+---
+
+## 🖱️ Editar tocando la fila en el Repositorio de Documentación (247)
+
+247. **Ahora se puede abrir el editor haciendo clic en la fila de la PO** — En el **Repositorio de Documentación** había que apuntar al botón **Editar** de la derecha. Ahora **cualquier clic sobre la fila** (incluida la celda de la PO) abre directamente el modal de edición del registro.
+- Se agregó una **leyenda** arriba de la tabla avisando que la fila es clickeable.
+- La fila se resalta al pasar el mouse y aparece un **ícono de lápiz** junto a la PO como pista visual.
+- Los controles internos siguen funcionando igual y **no abren el editor por accidente**: los botones **Editar** e **Historial**, el desplegable de **archivos** y los enlaces de **Ver / Descargar** de cada documento.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*
