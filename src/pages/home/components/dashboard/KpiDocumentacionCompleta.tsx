@@ -1,34 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
-import PanelIndicador, { BadgeIndicador } from '@/pages/home/components/PanelIndicador';
+import { useEffect, useState } from 'react';
+import PanelIndicador, { BadgeIndicador, TonoIndicador } from '@/pages/home/components/PanelIndicador';
 import TarjetaDesglose from '@/pages/home/components/TarjetaDesglose';
-import { descargarExcel } from '@/lib/exportar';
+import DesgloseModuloDocumentacion from '@/pages/home/components/dashboard/DesgloseModuloDocumentacion';
+import ModalDetalleDocumentos from '@/pages/home/components/dashboard/ModalDetalleDocumentos';
 import {
   cargarKpiDocumentacionCompleta,
-  etiquetaModulo,
   RESULTADO_DOCUMENTACION_VACIO,
-  type FilaDocumentacionPo,
   type ResultadoDocumentacionCompleta
 } from '@/lib/kpisDocumentacion';
-
-type FiltroDetalle = 'todas' | 'dropship' | 'zf' | 'sin-expediente';
-
-const Marca = ({ activo }: { activo: boolean }) => (
-  <span
-    className={`inline-flex items-center justify-center w-7 h-7 rounded-full flex-shrink-0 ${
-      activo ? 'bg-teal-100 text-teal-700' : 'bg-red-50 text-red-400'
-    }`}
-  >
-    <i className={activo ? 'ri-checkbox-circle-fill text-lg' : 'ri-close-circle-line text-lg'}></i>
-  </span>
-);
 
 export default function KpiDocumentacionCompleta() {
   const [resultado, setResultado] = useState<ResultadoDocumentacionCompleta>(RESULTADO_DOCUMENTACION_VACIO);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [detalleAbierto, setDetalleAbierto] = useState(false);
-  const [filtro, setFiltro] = useState<FiltroDetalle>('todas');
-  const [busqueda, setBusqueda] = useState('');
+  const [detalle, setDetalle] = useState<'factura' | 'completa' | null>(null);
 
   const cargar = async () => {
     setCargando(true);
@@ -37,7 +22,7 @@ export default function KpiDocumentacionCompleta() {
       const data = await cargarKpiDocumentacionCompleta();
       setResultado(data);
     } catch (err: any) {
-      console.error('Error al cargar el indicador de factura sola:', err);
+      console.error('Error al cargar el indicador de documentación:', err);
       setError(err?.message || 'No se pudo cargar la información de documentación.');
       setResultado(RESULTADO_DOCUMENTACION_VACIO);
     } finally {
@@ -51,9 +36,10 @@ export default function KpiDocumentacionCompleta() {
 
   const sinEtapa = resultado.totalEtapa === 0;
   const sinDatos = sinEtapa || resultado.total === 0;
+  const sinCompletas = sinEtapa || resultado.totalCompletas === 0;
 
-  const tono = sinEtapa ? 'gray' : resultado.total > 0 ? 'amber' : 'teal';
-
+  // ── Indicador 1: POs con solo factura ──
+  const tono: TonoIndicador = sinEtapa ? 'gray' : resultado.total > 0 ? 'amber' : 'teal';
   const colorPct =
     tono === 'teal' ? 'text-teal-600' : tono === 'gray' ? 'text-gray-400' : 'text-amber-600';
   const colorBarra =
@@ -73,46 +59,30 @@ export default function KpiDocumentacionCompleta() {
         subtexto: 'Toda la etapa ya tiene otros documentos cargados'
       };
 
-  const filasFiltradas = useMemo(() => {
-    const term = busqueda.trim().toLowerCase();
-    return resultado.filas
-      .filter((f) => {
-        if (filtro === 'dropship') return (f.tipo_modulo || '').toLowerCase() === 'dropship';
-        if (filtro === 'zf') return (f.tipo_modulo || '').toLowerCase() === 'zf';
-        if (filtro === 'sin-expediente') return f.sinExpediente;
-        return true;
-      })
-      .filter((f) => {
-        if (!term) return true;
-        return (
-          f.po_tiquetera.toLowerCase().includes(term) ||
-          f.exp_id.toLowerCase().includes(term) ||
-          f.solicitante.toLowerCase().includes(term)
-        );
-      });
-  }, [busqueda, filtro, resultado.filas]);
+  // ── Indicador 2: POs con todos los documentos listos ──
+  const tonoCompletas: TonoIndicador = sinEtapa
+    ? 'gray'
+    : resultado.totalCompletas > 0
+    ? 'teal'
+    : 'amber';
+  const colorPctCompletas =
+    tonoCompletas === 'teal' ? 'text-teal-600' : tonoCompletas === 'gray' ? 'text-gray-400' : 'text-amber-600';
+  const colorBarraCompletas =
+    tonoCompletas === 'teal' ? 'bg-teal-500' : tonoCompletas === 'gray' ? 'bg-gray-300' : 'bg-amber-500';
 
-  const descargar = () => {
-    const filas = filasFiltradas.map((f) => ({
-      'PO': f.po_tiquetera,
-      'EXP ID': f.exp_id || '-',
-      'Módulo': etiquetaModulo(f.tipo_modulo),
-      'Origen': f.origen === 'ticket' ? 'Ticket creado' : 'Bandeja Documentación',
-      'Estado': f.estado,
-      'Expediente creado': f.sinExpediente ? 'No' : 'Sí',
-      'Solicitante': f.solicitante || '—',
-      'Factura': f.tieneFactura ? 'Sí' : 'No',
-      'BL': f.tieneBl ? 'Sí' : 'No',
-      'Packing List': f.tienePackingList ? 'Sí' : 'No',
-      'Contenedor': f.tieneContenedor ? 'Sí' : 'No',
-      'Documentos en el registro': f.cantidadDocumentos,
-      'Documentos pendientes': f.faltantes.length > 0 ? f.faltantes.join(', ') : '-'
-    }));
-    descargarExcel(
-      `reporte-pos-solo-factura-${new Date().toISOString().split('T')[0]}.xlsx`,
-      filas
-    );
-  };
+  const badgeCompletas: BadgeIndicador | null = sinEtapa
+    ? null
+    : resultado.totalCompletas > 0
+    ? {
+        tono: 'ok',
+        texto: `${resultado.totalCompletas} PO${resultado.totalCompletas !== 1 ? 's' : ''} con todo listo`,
+        subtexto: `${resultado.porcentajeCompletas}% de la etapa documentada`
+      }
+    : {
+        tono: 'alerta',
+        texto: 'Ninguna PO con documentación completa',
+        subtexto: 'Todavía hay requisitos pendientes en la etapa'
+      };
 
   return (
     <>
@@ -131,7 +101,7 @@ export default function KpiDocumentacionCompleta() {
         accion={{
           texto: 'Ver detalle de POs',
           icono: 'ri-file-chart-line',
-          onClick: () => setDetalleAbierto(true),
+          onClick: () => setDetalle('factura'),
           disabled: sinDatos
         }}
       >
@@ -153,7 +123,7 @@ export default function KpiDocumentacionCompleta() {
         {cargando ? (
           <div className="flex items-center gap-2 py-8 justify-center text-gray-500">
             <div className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
-            <span className="text-sm">Buscando POs con factura sola...</span>
+            <span className="text-sm">Buscando estado de la documentación...</span>
           </div>
         ) : (
           <>
@@ -183,7 +153,7 @@ export default function KpiDocumentacionCompleta() {
                 }}
                 nota="Haz clic para ver el detalle"
                 resaltado={resultado.total > 0}
-                onClick={sinDatos ? undefined : () => { setFiltro('todas'); setDetalleAbierto(true); }}
+                onClick={sinDatos ? undefined : () => setDetalle('factura')}
               />
 
               <TarjetaDesglose
@@ -216,51 +186,16 @@ export default function KpiDocumentacionCompleta() {
                 }}
                 nota={resultado.sinExpediente > 0 ? 'Haz clic para ver el detalle' : undefined}
                 notaClass="text-orange-600"
-                onClick={resultado.sinExpediente > 0 ? () => { setFiltro('sin-expediente'); setDetalleAbierto(true); } : undefined}
+                onClick={resultado.sinExpediente > 0 ? () => setDetalle('factura') : undefined}
               />
             </div>
 
-            <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <i className="ri-truck-line text-gray-500"></i>
-                    <span className="text-xs font-semibold text-gray-700 truncate">Dropship</span>
-                  </div>
-                  <span className="text-xs font-bold text-gray-800 whitespace-nowrap">{resultado.porModulo.dropship} PO</span>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <i className="ri-earth-line text-gray-500"></i>
-                    <span className="text-xs font-semibold text-gray-700 truncate">Zona Franca</span>
-                  </div>
-                  <span className="text-xs font-bold text-gray-800 whitespace-nowrap">{resultado.porModulo.zf} PO</span>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <i className="ri-ticket-2-line text-gray-500"></i>
-                    <span className="text-xs font-semibold text-gray-700 truncate">Vía ticket creado</span>
-                  </div>
-                  <span className="text-xs font-bold text-gray-800 whitespace-nowrap">{resultado.porOrigen.ticket} PO</span>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <i className="ri-inbox-line text-gray-500"></i>
-                    <span className="text-xs font-semibold text-gray-700 truncate">Vía bandeja</span>
-                  </div>
-                  <span className="text-xs font-bold text-gray-800 whitespace-nowrap">{resultado.porOrigen.bandeja} PO</span>
-                </div>
-              </div>
-            </div>
+            <DesgloseModuloDocumentacion
+              dropship={resultado.porModulo.dropship}
+              zf={resultado.porModulo.zf}
+              ticket={resultado.porOrigen.ticket}
+              bandeja={resultado.porOrigen.bandeja}
+            />
 
             {!sinEtapa && resultado.total === 0 && (
               <div className="mt-4 flex items-start gap-2 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3">
@@ -275,178 +210,186 @@ export default function KpiDocumentacionCompleta() {
         )}
       </PanelIndicador>
 
-      {detalleAbierto && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0 gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">POs con Solo Factura Cargada</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  POs en etapa de documentación con factura y ningún otro documento cargado
+      {/* =========== Indicador complementario: documentación completa =========== */}
+      <PanelIndicador
+        icono="ri-file-shield-2-line"
+        tono={tonoCompletas}
+        titulo="POs con Todos los Documentos Listos"
+        meta={
+          <>
+            POs en etapa de documentación que ya tienen la
+            <strong> factura, el BL, el packing list y el número de contenedor cargados</strong>,
+            es decir con el juego documental completo
+          </>
+        }
+        badge={badgeCompletas}
+        accion={{
+          texto: 'Ver detalle de POs',
+          icono: 'ri-file-chart-line',
+          onClick: () => setDetalle('completa'),
+          disabled: sinCompletas
+        }}
+      >
+        {cargando ? (
+          <div className="flex items-center gap-2 py-8 justify-center text-gray-500">
+            <div className="w-5 h-5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+            <span className="text-sm">Revisando POs con documentación completa...</span>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+              <TarjetaDesglose
+                etiqueta="% de la Etapa Documentada"
+                valor={sinEtapa ? '—' : resultado.porcentajeCompletas}
+                sufijo={sinEtapa ? undefined : '%'}
+                valorClass={colorPctCompletas}
+                barra={sinEtapa ? null : { porcentaje: resultado.porcentajeCompletas, colorClass: colorBarraCompletas }}
+                footer={
+                  sinEtapa
+                    ? 'No hay POs en etapa de documentación'
+                    : `${resultado.totalCompletas} de ${resultado.totalEtapa} PO${resultado.totalEtapa !== 1 ? 's' : ''} con todo listo`
+                }
+              />
+
+              <TarjetaDesglose
+                etiqueta="POs con Todo Listo"
+                valor={resultado.totalCompletas}
+                sufijo="PO"
+                valorClass={resultado.totalCompletas > 0 ? 'text-teal-600' : 'text-gray-400'}
+                linea={{
+                  icono: resultado.totalCompletas > 0 ? 'ri-checkbox-circle-fill' : 'ri-error-warning-fill',
+                  texto:
+                    resultado.totalCompletas > 0
+                      ? 'Factura + BL + packing list + contenedor'
+                      : 'Ninguna PO completó los cuatro requisitos',
+                  colorClass: resultado.totalCompletas > 0 ? 'text-teal-700' : 'text-amber-700'
+                }}
+                nota={resultado.totalCompletas > 0 ? 'Haz clic para ver el detalle' : undefined}
+                resaltado={resultado.totalCompletas === 0 && !sinEtapa}
+                onClick={sinCompletas ? undefined : () => setDetalle('completa')}
+              />
+
+              <TarjetaDesglose
+                etiqueta="Documentos Cargados"
+                valor={resultado.documentosListos}
+                sufijo="docs"
+                valorClass="text-gray-800"
+                linea={{ icono: 'ri-file-check-line', texto: 'Cuatro requisitos por cada PO lista', colorClass: 'text-gray-600' }}
+                footer="Factura, BL, packing list y contenedor"
+              />
+
+              <TarjetaDesglose
+                etiqueta="Universo de la Etapa"
+                valor={resultado.totalEtapa}
+                sufijo="PO"
+                valorClass="text-gray-800"
+                linea={{ icono: 'ri-inbox-archive-line', texto: 'Tickets no asignados + bandeja', colorClass: 'text-gray-600' }}
+                footer="Base sobre la que se mide el indicador"
+              />
+
+              <TarjetaDesglose
+                etiqueta="Listas sin Expediente"
+                valor={resultado.completasSinExpediente}
+                sufijo="PO"
+                valorClass={resultado.completasSinExpediente > 0 ? 'text-orange-600' : 'text-gray-800'}
+                linea={{
+                  icono: 'ri-user-received-2-line',
+                  texto: 'Documentación completa sin expediente',
+                  colorClass: resultado.completasSinExpediente > 0 ? 'text-orange-700' : 'text-gray-600'
+                }}
+                nota={resultado.completasSinExpediente > 0 ? 'Haz clic para ver el detalle' : undefined}
+                notaClass="text-orange-600"
+                onClick={resultado.completasSinExpediente > 0 ? () => setDetalle('completa') : undefined}
+              />
+            </div>
+
+            <DesgloseModuloDocumentacion
+              dropship={resultado.porModuloCompletas.dropship}
+              zf={resultado.porModuloCompletas.zf}
+              ticket={resultado.porOrigenCompletas.ticket}
+              bandeja={resultado.porOrigenCompletas.bandeja}
+            />
+
+            {!sinEtapa && resultado.totalCompletas === 0 && (
+              <div className="mt-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                <i className="ri-information-line text-amber-600 text-lg flex-shrink-0"></i>
+                <p className="text-xs text-amber-800">
+                  Ninguna de las {resultado.totalEtapa} POs en etapa tiene el juego documental completo:
+                  todavía falta factura, BL, packing list o número de contenedor en todas ellas.
                 </p>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={descargar}
-                  disabled={filasFiltradas.length === 0}
-                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <i className="ri-download-2-line"></i>
-                  Descargar Excel
-                </button>
-                <button
-                  onClick={() => setDetalleAbierto(false)}
-                  className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                >
-                  <i className="ri-close-line text-2xl text-gray-500"></i>
-                </button>
-              </div>
-            </div>
+            )}
+          </>
+        )}
+      </PanelIndicador>
 
-            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex-shrink-0">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-amber-600">{resultado.total}</p>
-                  <p className="text-xs text-gray-500">POs con factura sola</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-red-600">{resultado.documentosPendientes}</p>
-                  <p className="text-xs text-gray-500">Documentos por completar</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-orange-600">{resultado.sinExpediente}</p>
-                  <p className="text-xs text-gray-500">Con factura sin expediente</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-800">{resultado.porModulo.dropship}</p>
-                  <p className="text-xs text-gray-500">Dropship</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-800">{resultado.porModulo.zf}</p>
-                  <p className="text-xs text-gray-500">Zona Franca</p>
-                </div>
-              </div>
+      <ModalDetalleDocumentos
+        abierto={detalle === 'factura'}
+        onCerrar={() => setDetalle(null)}
+        titulo="POs con Solo Factura Cargada"
+        subtitulo="POs en etapa de documentación con factura y ningún otro documento cargado"
+        filas={resultado.filas}
+        nombreArchivo={`reporte-pos-solo-factura-${new Date().toISOString().split('T')[0]}.xlsx`}
+        tono="amber"
+        resumen={
+          <>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-amber-600">{resultado.total}</p>
+              <p className="text-xs text-gray-500">POs con factura sola</p>
             </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-red-600">{resultado.documentosPendientes}</p>
+              <p className="text-xs text-gray-500">Documentos por completar</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-orange-600">{resultado.sinExpediente}</p>
+              <p className="text-xs text-gray-500">Con factura sin expediente</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-800">{resultado.porModulo.dropship}</p>
+              <p className="text-xs text-gray-500">Dropship</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-800">{resultado.porModulo.zf}</p>
+              <p className="text-xs text-gray-500">Zona Franca</p>
+            </div>
+          </>
+        }
+      />
 
-            <div className="px-6 py-3 border-b border-gray-200 flex flex-wrap items-center gap-3 flex-shrink-0">
-              <div className="flex gap-2">
-                {(['todas', 'dropship', 'zf', 'sin-expediente'] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFiltro(f)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                      filtro === f
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {f === 'todas'
-                      ? `Todas (${resultado.total})`
-                      : f === 'dropship'
-                      ? `Dropship (${resultado.porModulo.dropship})`
-                      : f === 'zf'
-                      ? `ZF (${resultado.porModulo.zf})`
-                      : `Sin expediente (${resultado.sinExpediente})`}
-                  </button>
-                ))}
-              </div>
-              <div className="relative flex-1 min-w-[220px] max-w-sm ml-auto">
-                <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                <input
-                  type="text"
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                  placeholder="Buscar PO, EXP ID o solicitante..."
-                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                />
-              </div>
+      <ModalDetalleDocumentos
+        abierto={detalle === 'completa'}
+        onCerrar={() => setDetalle(null)}
+        titulo="POs con Todos los Documentos Listos"
+        subtitulo="POs en etapa de documentación con factura, BL, packing list y contenedor cargados"
+        filas={resultado.filasCompletas}
+        nombreArchivo={`reporte-pos-documentacion-completa-${new Date().toISOString().split('T')[0]}.xlsx`}
+        tono="teal"
+        resumen={
+          <>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-teal-600">{resultado.totalCompletas}</p>
+              <p className="text-xs text-gray-500">POs con todo listo</p>
             </div>
-
-            <div className="overflow-y-auto flex-1">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">PO</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Módulo / Origen</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Estado</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Expediente</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Factura</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">BL</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Packing List</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Contenedor</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Documentos pendientes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filasFiltradas.map((fila: FilaDocumentacionPo) => (
-                    <tr key={fila.id} className="hover:bg-amber-50/40 transition-colors">
-                      <td className="px-4 py-3">
-                        <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">{fila.po_tiquetera}</p>
-                        <p className="text-xs text-gray-500 whitespace-nowrap">{fila.exp_id || 'Sin EXP ID'}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
-                            fila.tipo_modulo?.toLowerCase() === 'dropship'
-                              ? 'bg-teal-100 text-teal-800'
-                              : fila.tipo_modulo?.toLowerCase() === 'zf'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          {etiquetaModulo(fila.tipo_modulo)}
-                        </span>
-                        <p className="text-[11px] text-gray-500 mt-1 whitespace-nowrap">
-                          {fila.origen === 'ticket' ? 'Ticket creado' : 'Bandeja Documentación'}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{fila.estado}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {fila.sinExpediente ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-full text-[11px] font-semibold">
-                            <i className="ri-user-received-2-line"></i> Sin expediente
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-full text-[11px] font-semibold">
-                            <i className="ri-checkbox-circle-line"></i> Creado
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center"><Marca activo={fila.tieneFactura} /></td>
-                      <td className="px-4 py-3 text-center"><Marca activo={fila.tieneBl} /></td>
-                      <td className="px-4 py-3 text-center"><Marca activo={fila.tienePackingList} /></td>
-                      <td className="px-4 py-3 text-center"><Marca activo={fila.tieneContenedor} /></td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1 max-w-[240px]">
-                          {fila.faltantes.map((doc) => (
-                            <span
-                              key={doc}
-                              className="inline-block px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-full text-[11px] font-medium whitespace-nowrap"
-                            >
-                              {doc}
-                            </span>
-                          ))}
-                        </div>
-                        <p className="text-[11px] text-gray-500 mt-1">
-                          {fila.cantidadDocumentos} documento{fila.cantidadDocumentos !== 1 ? 's' : ''} en el registro
-                        </p>
-                      </td>
-                    </tr>
-                  ))}
-                  {filasFiltradas.length === 0 && (
-                    <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
-                        <i className="ri-inbox-line text-4xl mb-2"></i>
-                        <p className="text-sm">No hay POs para mostrar con este filtro</p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-800">{resultado.documentosListos}</p>
+              <p className="text-xs text-gray-500">Documentos cargados</p>
             </div>
-          </div>
-        </div>
-      )}
+            <div className="text-center">
+              <p className="text-2xl font-bold text-orange-600">{resultado.completasSinExpediente}</p>
+              <p className="text-xs text-gray-500">Listas sin expediente</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-800">{resultado.porModuloCompletas.dropship}</p>
+              <p className="text-xs text-gray-500">Dropship</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-800">{resultado.porModuloCompletas.zf}</p>
+              <p className="text-xs text-gray-500">Zona Franca</p>
+            </div>
+          </>
+        }
+      />
     </>
   );
 }

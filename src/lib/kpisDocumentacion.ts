@@ -37,6 +37,8 @@ export interface FilaDocumentacionPo {
   tienePackingList: boolean;
   tieneContenedor: boolean;
   soloFactura: boolean;
+  /** La PO ya tiene los cuatro requisitos: factura, BL, packing list y contenedor. */
+  completa: boolean;
   /** La PO tiene factura cargada pero todavía no generó expediente. */
   sinExpediente: boolean;
   faltantes: string[];
@@ -61,6 +63,20 @@ export interface ResultadoDocumentacionCompleta {
   soloFacturaSinExpediente: number;
   porModulo: { dropship: number; zf: number; sinModulo: number };
   porOrigen: { ticket: number; bandeja: number };
+
+  // ── Indicador complementario: POs con TODOS los documentos listos ──
+  /** POs en etapa que ya tienen factura, BL, packing list y contenedor. */
+  filasCompletas: FilaDocumentacionPo[];
+  /** Cantidad de POs con todos los documentos listos. */
+  totalCompletas: number;
+  /** Qué porcentaje de la etapa ya está con documentación completa. */
+  porcentajeCompletas: number;
+  /** Documentos efectivamente cargados en esas POs (4 requisitos por PO). */
+  documentosListos: number;
+  /** POs con documentación completa que todavía no generaron expediente. */
+  completasSinExpediente: number;
+  porModuloCompletas: { dropship: number; zf: number; sinModulo: number };
+  porOrigenCompletas: { ticket: number; bandeja: number };
 }
 
 export const RESULTADO_DOCUMENTACION_VACIO: ResultadoDocumentacionCompleta = {
@@ -73,7 +89,14 @@ export const RESULTADO_DOCUMENTACION_VACIO: ResultadoDocumentacionCompleta = {
   sinExpediente: 0,
   soloFacturaSinExpediente: 0,
   porModulo: { dropship: 0, zf: 0, sinModulo: 0 },
-  porOrigen: { ticket: 0, bandeja: 0 }
+  porOrigen: { ticket: 0, bandeja: 0 },
+  filasCompletas: [],
+  totalCompletas: 0,
+  porcentajeCompletas: 0,
+  documentosListos: 0,
+  completasSinExpediente: 0,
+  porModuloCompletas: { dropship: 0, zf: 0, sinModulo: 0 },
+  porOrigenCompletas: { ticket: 0, bandeja: 0 }
 };
 
 const texto = (valor: unknown): string =>
@@ -125,6 +148,9 @@ function filasDesdeRegistro(
   const soloFactura =
     tieneFactura && !tieneBl && !tienePackingList && !tieneContenedor;
 
+  // "Completa" = ya cumplió los cuatro requisitos documentales.
+  const completa = tieneFactura && tieneBl && tienePackingList && tieneContenedor;
+
   const faltantes: string[] = [];
   if (!tieneFactura) faltantes.push('Factura');
   if (!tieneBl) faltantes.push('BL');
@@ -157,6 +183,7 @@ function filasDesdeRegistro(
     tienePackingList,
     tieneContenedor,
     soloFactura,
+    completa,
     sinExpediente,
     faltantes
   }));
@@ -195,6 +222,30 @@ export function calcularDocumentacionCompleta(
     { ticket: 0, bandeja: 0 }
   );
 
+  // ── Indicador complementario: documentación completa ──
+  const filasCompletas = todasLasFilas.filter((f) => f.completa);
+  const totalCompletas = filasCompletas.length;
+
+  const porModuloCompletas = filasCompletas.reduce(
+    (acc, fila) => {
+      const mod = (fila.tipo_modulo || '').toLowerCase();
+      if (mod === 'dropship') acc.dropship += 1;
+      else if (mod === 'zf') acc.zf += 1;
+      else acc.sinModulo += 1;
+      return acc;
+    },
+    { dropship: 0, zf: 0, sinModulo: 0 }
+  );
+
+  const porOrigenCompletas = filasCompletas.reduce(
+    (acc, fila) => {
+      if (fila.origen === 'ticket') acc.ticket += 1;
+      else acc.bandeja += 1;
+      return acc;
+    },
+    { ticket: 0, bandeja: 0 }
+  );
+
   return {
     filas,
     total,
@@ -205,7 +256,14 @@ export function calcularDocumentacionCompleta(
     sinExpediente: todasLasFilas.filter((f) => f.tieneFactura && f.sinExpediente).length,
     soloFacturaSinExpediente: filas.filter((f) => f.sinExpediente).length,
     porModulo,
-    porOrigen
+    porOrigen,
+    filasCompletas,
+    totalCompletas,
+    porcentajeCompletas: Math.round((totalCompletas / totalEtapa) * 100),
+    documentosListos: totalCompletas * 4,
+    completasSinExpediente: filasCompletas.filter((f) => f.sinExpediente).length,
+    porModuloCompletas,
+    porOrigenCompletas
   };
 }
 
