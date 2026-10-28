@@ -11,11 +11,12 @@ import SeccionKpisMcg from '@/pages/home/components/SeccionKpisMcg';
 import TopMotivosEspera from '@/pages/home/components/TopMotivosEspera';
 import KpiTiempoFacturacion from './KpiTiempoFacturacion';
 import KpiLiberadoEta15 from './KpiLiberadoEta15';
+import KpiEtdLiberacion from './KpiEtdLiberacion';
 import TarjetaDuracionMinima from './TarjetaDuracionMinima';
 import TarjetaAsignadoNotificado from './TarjetaAsignadoNotificado';
 import { META_ETD_DIAS, META_MCG_ETD_DIAS, type DashboardData } from './useDashboard';
 import { META_MCG_CREACION_DIAS } from '@/lib/kpisCreacion';
-import { META_FACTURACION_DIAS, DIAS_ANTES_ETA } from '@/lib/kpisDropship';
+import { META_FACTURACION_DIAS, DIAS_ANTES_ETA, META_ETD_LIBERACION_DIAS } from '@/lib/kpisDropship';
 import {
   descargarReporteAsignadoNotificado,
   descargarReporteDuracion,
@@ -57,6 +58,11 @@ export default function SeccionDropship({ datos }: DashboardProps) {
         onDescargar={() =>
           descargarReporteDuracion(datos.expedientesReporte, datos.reporteFiltro)
         }
+      />
+
+      <KpiEtdLiberacion
+        resultado={datos.kpiEtdLiberacion}
+        metaDias={META_ETD_LIBERACION_DIAS}
       />
 
       <ModalDetalleEtdNotificado

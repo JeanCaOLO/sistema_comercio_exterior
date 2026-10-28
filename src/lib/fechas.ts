@@ -123,3 +123,29 @@ export const diasHabilesEntre = (fechaInicio: string | Date, fechaFin: string | 
   }
   return dias;
 };
+
+/**
+ * Suma (o resta) días hábiles a una fecha y devuelve 'YYYY-MM-DD'.
+ * Excluye fines de semana y feriados de Costa Rica.
+ */
+export const sumarDiasHabiles = (fecha: string, dias: number): string => {
+  const base = parseFechaSegura(fecha);
+  if (Number.isNaN(base.getTime())) return '';
+
+  const cursor = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  let restantes = Math.abs(Math.round(dias));
+  const paso = dias >= 0 ? 1 : -1;
+
+  while (restantes > 0) {
+    cursor.setDate(cursor.getDate() + paso);
+    const diaSemana = cursor.getDay();
+    if (diaSemana !== 0 && diaSemana !== 6 && !esFeriado(cursor)) {
+      restantes--;
+    }
+  }
+
+  const año = cursor.getFullYear();
+  const mes = String(cursor.getMonth() + 1).padStart(2, '0');
+  const dia = String(cursor.getDate()).padStart(2, '0');
+  return `${año}-${mes}-${dia}`;
+};

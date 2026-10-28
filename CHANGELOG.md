@@ -609,4 +609,82 @@ Con datos reales, la mejora es notoria: los tickets que cumplían la meta pasaro
 
 ---
 
+---
+
+## 🎯 ETA Real en Dropship y KPI "Liberado después de ETA − 15" (248)
+
+248. **El panel "Liberado después de ETA − 15 días" no podía tener datos: los Dropship nunca guardaban ETA Real** — El indicador se veía siempre en cero y el botón "Ver cuáles son" quedaba deshabilitado. No era un error de cálculo: en la base de datos **0 de 860** expedientes Dropship tenían `eta_real`, porque el campo **solo se pedía y se guardaba en Zona Franca** (en Dropship se forzaba a vacío). Tampoco había ETA en Carga de Documentos CAA. Ahora:
+- **La ETA Real se puede cargar en Dropship**: se movió el campo al bloque común del **formulario de creación** (visible para Dropship y ZF) y se habilitó en la **edición** desde **Gestión Dropship/ZF** y desde la **Lista de Expedientes**. El valor ya **no se fuerza a nulo** al guardar.
+- **El cálculo cierra el reloj en la liberación real**: `calcularKpiEta15` ahora toma la **llegada real al estado "Liberación"** desde `expedientes_tiempos_estados`, con respaldo en el historial de cambios y, solo si no hay traza, en `fecha_liberacion`. Así el indicador deja de medir la notificación (esa columna se sobrescribe al pasar a Notificado / Visto Listo), igual que se corrigió en el resto de KPIs.
+- **El panel explica el estado**: cuando todavía no hay POs con ETA Real, muestra un **aviso ámbar** indicando cuántos expedientes Dropship faltan cargar ese dato, en lugar de cuatro tarjetas vacías.
+- **Ya no aparece "ETA Real" como exclusivo de ZF** en el detalle del expediente: ahora se muestra para ambos módulos, con la aclaración de que sin ese dato la PO no entra al indicador.
+
+En la base quedan **14 POs Dropship liberadas con ETD pero 0 con ETA**; el indicador empezará a poblarse a medida que se carguen las ETAs en los tickets existentes y nuevos. Se actualizó `KPIS_CALCULO.md` con la nueva sección **A.14**.
+
+---
+
+## 📄 El indicador de Documentación ahora mide solo las POs con factura y nada más (249)
+
+249. **"Documentación Completa por PO" pasó a ser "POs con Solo Factura Cargada"** — El indicador contaba **todas** las POs en etapa de documentación y las marcaba completas o incompletas según los 4 requisitos (factura, BL, packing list y contenedor). Eso inflaba el conteo de incompletas, porque incluía POs que **todavía no tenían ningún documento cargado**. Ahora el indicador **solo toma en cuenta las POs que tienen la factura cargada y ningún otro documento**:
+- Las POs **sin factura** ya no se cuentan (todavía no entraron al flujo).
+- Las POs que **ya sumaron** BL, packing list o número de contenedor tampoco (ya avanzaron).
+- Lo que queda es el grupo que **realmente está esperando** el resto de la documentación.
+
+**Qué muestra ahora el panel:**
+- **% de la etapa con factura sola**, sobre el total de POs en etapa de documentación.
+- **POs con solo factura** (clic para abrir el detalle).
+- **Documentos por completar** (BL + packing list + contenedor de cada PO).
+- **Universo de la etapa**, más el desglose por módulo (Dropship / ZF) y por origen (ticket creado / bandeja).
+- El **detalle** lista esas POs con PO, EXP ID, módulo, origen, estado, el estado de los 4 documentos y los pendientes concretos, con filtro por módulo, buscador y **descarga a Excel**. Si no hay ninguna PO con factura sola, el panel lo **explica con un aviso** en lugar de mostrar ceros sueltos.
+
+Con datos reales, el universo pasa de **~222 POs "incompletas"** a **~129 POs con factura sola** en la bandeja de documentación. Se actualizó `KPIS_CALCULO.md` con la nueva sección **A.15**.
+
+---
+
+## 🧭 Estado de Expedientes al inicio del Dashboard (250)
+
+250. **El estado de los expedientes es ahora lo primero que se ve** — La tarjeta **"Estado de Expedientes"** (las barras por estado con las pestañas General / Dropship / ZF) estaba al final del dashboard, dentro de **Análisis General**, así que había que bajar mucho para verla. Ahora es el **primer bloque del Dashboard**, justo debajo del filtro de período, con un encabezado propio (**"Expedientes · Estado Actual"**) que indica el total de expedientes del período. Al ocupar todo el ancho, las barras se reparten en **dos columnas** para que la lectura sea más compacta, y al reducir la pantalla se apilan en una sola. La tarjeta **ya no se repite** en la sección de Análisis General, que quedó con la distribución por dificultad, el top de solicitantes y los tiempos promedio entre estados.
+
+---
+
+## 📄 POs con factura sin expediente visible en Documentación (251)
+
+251. **Las POs que tienen factura cargada pero todavía no generaron expediente ahora se ven y se cuentan** — Dentro del indicador de **Documentación**, las POs que están en la **bandeja** con la factura cargada pero que todavía **no fueron consolidadas en un expediente** (su EXP ID sigue como *"Por Asignar"*) quedaban mezcladas dentro del total y no se podían distinguir. Ahora:
+- Se agregó la tarjeta **"Factura sin Expediente"**, que cuenta cuántas POs tienen factura cargada y **ningún expediente creado** todavía. Al hacer clic abre el detalle filtrado a ese grupo.
+- El **detalle** suma la columna **"Expediente"** (Creado / Sin expediente) y un **filtro directo "Sin expediente"**, junto a los de Dropship y ZF.
+- El **Excel** incluye la columna **"Expediente creado"** (Sí / No).
+- El criterio de **factura sola** no cambió: siguen siendo POs con factura y **sin BL, sin packing list y sin contenedor**.
+
+Con datos reales, la bandeja tiene **186 registros**, de los cuales **157 tienen la factura marcada** y **146 están con factura sola**; **ninguno de esos registros tiene ya un expediente creado**, así que el nuevo grupo expone ese trabajo pendiente de consolidación.
+
+---
+
+## 🚦 Duración Mínima ahora se lee como un medidor (252)
+
+252. **El indicador de Duración Mínima pasó a mostrarse como medidor (gauge)** — Se reemplazaron las barras planas por un **medidor semicircular**: un arco que se llena hasta el % de cumplimiento, con un **marcador** en el valor exacto y el **número grande al centro**. Al costado quedan las tres métricas de siempre (**cumplen**, **no cumplen** y **duración promedio**), y el pie del medidor indica cuántos expedientes se evaluaron en el período. El arco se pinta en **verde (≥80%)**, **ámbar (≥50%)** o **rojo (<50%)**, y cuando no hay expedientes evaluables queda en gris con el mensaje correspondiente. Se mantienen el botón **"Ver reporte completo de cumplimiento"**, el acceso directo al detalle de los que **no cumplen** y la alerta pulsante cuando hay expedientes fuera de rango.
+
+---
+
+## 🚢 Nuevo indicador: Liberado dentro de ETD + 3 días hábiles (253)
+
+253. **Nuevo KPI "Liberado dentro de ETD + 3 días hábiles" (Dropship)** — Se agregó un indicador nuevo en la sección **Dropship** que mide el tramo que faltaba: **desde el ETD hasta la llegada real al estado Liberado**. La regla pedida: **el máximo para estar liberado es ETD + 3 días hábiles**.
+- **Universo:** expedientes **Dropship normal** (excluye MCG) **con ETD** cargado.
+- **Inicio del reloj:** la fecha **ETD**. **Fin:** la **llegada real a "Liberación"** (histórico de estados, con respaldo en el historial de cambios). Si se libera el mismo día del ETD o antes, la duración es **0** y **cumple**.
+- **Días:** hábiles (sin fines de semana ni feriados de Costa Rica). La **fecha límite** se calcula sumando **3 días hábiles al ETD** y se muestra en el detalle de cada PO.
+- **Qué muestra:** % de cumplimiento del plazo, POs **liberadas a tiempo**, POs **liberadas tarde** (clic para ver el detalle) y los **días hábiles promedio** contra el plazo. El panel indica además cuántas POs **con ETD aún no se liberaron** y cuántas **no tienen ETD** cargado.
+- **Detalle por PO:** PO, EXP ID, solicitante, estado, **ETD**, **fecha límite**, **fecha de liberación**, días hábiles, **días excedidos** y cumplimiento, con filtro *Todas / A tiempo / Tarde* y **descarga a Excel**.
+
+Con datos reales, hay **697 expedientes Dropship con ETD** y **642 ya liberados**, así que el indicador **arranca con datos desde el primer día** (a diferencia del de ETA, que depende de que se carguen las ETAs). Se actualizó `KPIS_CALCULO.md` con la nueva sección **A.16**.
+
+---
+
+## 🧹 Dashboard más limpio y con selector de módulo (254)
+
+254. **Se quitaron bloques que no aportaban y se agregó la vista por módulo** — Con el dashboard ya cargado de indicadores, se hizo una limpieza y se agregó control de alcance:
+- **Fuera del dashboard:** las tarjetas **Alta Prioridad**, **Carga de Trabajo (min)** y **Volumen de Líneas OC** (que además venían casi siempre en cero o con variaciones de -99% que no aportaban), y el gráfico **Distribución por Dificultad** (que mostraba 100% en una sola categoría). En **Expedientes · Visión General** quedan **Total Solicitudes** y **Pendientes en Documentación**; en **Análisis General** queda **Top Solicitantes** a todo el ancho y los tiempos promedio entre estados.
+- **Filtros de período rediseñados:** pasaron de una tarjeta alta con título, párrafo y campos apilados a una **barra compacta de una sola línea**: etiqueta corta con ícono, **botones de período tipo pill** dentro de un contenedor gris suave, **rango de fechas** con flecha entre inicio y fin, **Aplicar** como acción principal y **Limpiar** como ícono de restablecer. La aclaración de que el rango usa la fecha de asignación quedó como nota fina debajo, y los errores de rango se muestran justo ahí.
+- **Nuevo selector "Analizar" (Todos / Dropship / Zona Franca):** arriba a la derecha del título, con ícono y **contador de expedientes** de cada alcance. Al elegir **Dropship** se oculta la sección de Zona Franca; al elegir **Zona Franca** se oculta la de Dropship. Los **KPIs compartidos** (Estado de Expedientes, Visión General, Documentación y Análisis General) **siempre quedan visibles**. El selector además **sincroniza la tarjeta de Estados**, así no queda un tab distinto al alcance elegido.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

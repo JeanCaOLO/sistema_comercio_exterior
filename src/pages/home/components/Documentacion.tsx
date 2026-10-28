@@ -18,10 +18,10 @@ export default function Documentacion() {
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 flex items-center justify-center bg-amber-100 rounded-lg">
-            <i className="ri-folder-open-line text-amber-700 text-xl"></i>
+            <i className="ri-inbox-archive-line text-amber-700 text-xl"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Documentación</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Bandeja</h1>
             <p className="text-gray-500 text-sm">Documentos cargados desde CAA — selecciona y genera tickets al módulo que necesites</p>
           </div>
         </div>

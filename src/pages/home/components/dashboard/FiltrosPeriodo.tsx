@@ -1,4 +1,4 @@
-// Barra de filtros de período del Dashboard.
+// Barra de filtros de período del Dashboard (compacta, integrada al header).
 
 import { PERIODOS } from './utils';
 
@@ -14,6 +14,9 @@ interface Props {
   onLimpiar: () => void;
 }
 
+const inputFecha =
+  'h-9 px-2.5 border border-gray-200 rounded-md bg-white text-sm text-gray-700 outline-none cursor-pointer focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20';
+
 export default function FiltrosPeriodo({
   fechaInicio,
   fechaFin,
@@ -26,73 +29,93 @@ export default function FiltrosPeriodo({
   onLimpiar,
 }: Props) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-1">Filtros de Período</h3>
-      <p className="text-sm text-gray-500 mb-4 flex items-center gap-1.5">
-        <i className="ri-information-line text-teal-600"></i>
-        El rango se aplica según la{' '}
-        <strong className="font-semibold text-gray-700">fecha de asignación</strong> de cada PO (solo
-        se cuentan las POs ya asignadas).
-      </p>
+    <div className="mb-6">
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <div className="flex items-center gap-2.5">
+            <span className="w-9 h-9 flex items-center justify-center rounded-lg bg-teal-50 text-teal-600">
+              <i className="ri-calendar-2-line text-base"></i>
+            </span>
+            <div className="leading-tight">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                Período
+              </p>
+              <p className="text-sm font-semibold text-gray-800 whitespace-nowrap">
+                Rango de análisis
+              </p>
+            </div>
+          </div>
 
-      {errorFiltros && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
-          <i className="ri-error-warning-line text-red-600"></i>
-          <span className="text-sm text-red-700 font-medium">{errorFiltros}</span>
-        </div>
-      )}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1 flex-wrap">
+            {PERIODOS.map((periodo) => (
+              <button
+                key={periodo.clave}
+                onClick={() => onSeleccionarPeriodo(periodo.clave)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                  periodoActivo === periodo.clave
+                    ? 'bg-white text-teal-700 border border-teal-200'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {periodo.etiqueta}
+              </button>
+            ))}
+          </div>
 
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-wrap gap-2">
-          {PERIODOS.map((periodo) => (
-            <button
-              key={periodo.clave}
-              onClick={() => onSeleccionarPeriodo(periodo.clave)}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                periodoActivo === periodo.clave
-                  ? 'bg-teal-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {periodo.etiqueta}
-            </button>
-          ))}
-        </div>
+          <div className="hidden xl:block h-8 w-px bg-gray-200"></div>
 
-        <div className="flex-1 flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[140px]">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Fecha Inicio</label>
+          <div className="flex items-center gap-2">
             <input
               type="date"
               value={fechaInicio}
               onChange={(e) => onFechaInicio(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+              aria-label="Fecha inicio"
+              className={inputFecha}
             />
-          </div>
-          <div className="flex-1 min-w-[140px]">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Fecha Fin</label>
+            <i className="ri-arrow-right-line text-gray-400 text-sm"></i>
             <input
               type="date"
               value={fechaFin}
               onChange={(e) => onFechaFin(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+              aria-label="Fecha fin"
+              className={inputFecha}
             />
           </div>
-          <button
-            onClick={onAplicar}
-            className="px-6 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors cursor-pointer whitespace-nowrap"
-          >
-            <i className="ri-filter-line mr-2"></i>
-            Aplicar
-          </button>
-          <button
-            onClick={onLimpiar}
-            className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors cursor-pointer whitespace-nowrap"
-          >
-            <i className="ri-refresh-line mr-2"></i>
-            Limpiar
-          </button>
+
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <button
+              onClick={onAplicar}
+              className="h-9 px-4 flex items-center gap-1.5 bg-teal-600 text-white rounded-md text-sm font-medium hover:bg-teal-700 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <i className="ri-filter-3-line text-base"></i>
+              Aplicar
+            </button>
+            <button
+              onClick={onLimpiar}
+              title="Restablecer al mes actual"
+              aria-label="Restablecer al mes actual"
+              className="h-9 w-9 flex items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors cursor-pointer"
+            >
+              <i className="ri-refresh-line text-base"></i>
+            </button>
+          </div>
         </div>
+
+        {errorFiltros && (
+          <div className="mt-3 bg-red-50 border border-red-200 rounded-md px-3 py-2 flex items-center gap-2">
+            <i className="ri-error-warning-line text-red-600 text-sm"></i>
+            <span className="text-xs text-red-700 font-medium">{errorFiltros}</span>
+          </div>
+        )}
+
+        <p className="mt-2.5 flex items-start gap-1.5 text-[11px] text-gray-500 leading-relaxed">
+          <i className="ri-information-line text-teal-600 mt-px"></i>
+          <span>
+            El rango se aplica según la{' '}
+            <span className="font-medium text-gray-700">fecha de asignación</span> de cada PO (solo
+            se cuentan las POs ya asignadas).
+          </span>
+        </p>
       </div>
     </div>
   );

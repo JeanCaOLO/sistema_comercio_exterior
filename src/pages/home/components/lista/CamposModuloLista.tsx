@@ -1,5 +1,5 @@
 // Campos propios de cada módulo dentro del detalle del expediente.
-// Dropship: ETD, Finiquito, MCG, Incidente. ZF: ETA Real y Recibo de Delzof.
+// Dropship: ETD, ETA Real, Finiquito, MCG, Incidente. ZF: ETA Real y Recibo de Delzof.
 
 import { formatearFecha } from '@/lib/fechas';
 import type { Expediente } from './types';
@@ -109,6 +109,22 @@ export default function CamposModuloLista({
         ) : (
           <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
             {expediente.etd ? formatearFecha(expediente.etd) : 'No especificado'}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">ETA Real</label>
+        {editMode ? (
+          <input
+            type="date"
+            value={expediente.eta_real || ''}
+            onChange={(e) => onChange('eta_real', e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+          />
+        ) : (
+          <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
+            {expediente.eta_real ? formatearFecha(expediente.eta_real) : 'No especificado'}
           </p>
         )}
       </div>

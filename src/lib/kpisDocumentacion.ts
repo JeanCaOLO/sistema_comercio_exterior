@@ -2,10 +2,19 @@ import { supabase } from './supabase';
 import { parseDocEntries, parsePOs, esFactura, esPackingList } from './documentos';
 
 // ════════════════════════════════════════════════════════════
-// KPI · Documentación completa (Factura + BL + Packing List + Contenedor)
-// Se evalúa sobre las POs que están en la ETAPA DE DOCUMENTACIÓN:
+// KPI · POs con SOLO factura cargada
+//
+// Universo evaluado: POs que están en la ETAPA DE DOCUMENTACIÓN
 //  - tickets ya creados que siguen en "No Asignado" / "Documentación"
 //  - filas que siguen en la bandeja del módulo Documentación (documentos_caa)
+//
+// Pero el indicador SOLO toma en cuenta las POs que tienen la factura
+// cargada y NINGÚN otro documento (sin BL, sin packing list y sin número
+// de contenedor). Es decir: factura sola, con el resto pendiente.
+//
+// Además se marca aparte a las POs que tienen la factura cargada pero que
+// TODAVÍA NO generaron su expediente (siguen en la bandeja con "Por Asignar"):
+// antes quedaban mezcladas y no se veían como grupo propio.
 // ════════════════════════════════════════════════════════════
 
 export const ESTADOS_ETAPA_DOCUMENTACION = ['No Asignado', 'Documentación'];
@@ -22,36 +31,49 @@ export interface FilaDocumentacionPo {
   origen: OrigenDocumentacion;
   numeroBl: string;
   numeroContenedor: string;
+  cantidadDocumentos: number;
   tieneFactura: boolean;
   tieneBl: boolean;
   tienePackingList: boolean;
   tieneContenedor: boolean;
-  completa: boolean;
+  soloFactura: boolean;
+  /** La PO tiene factura cargada pero todavía no generó expediente. */
+  sinExpediente: boolean;
   faltantes: string[];
 }
 
 export interface ResultadoDocumentacionCompleta {
+  /** POs con factura cargada y ningún otro documento. */
   filas: FilaDocumentacionPo[];
+  /** Cantidad de POs con solo factura (universo del indicador). */
   total: number;
-  completas: number;
-  incompletas: number;
-  porcentaje: number;
+  /** POs que están en etapa de documentación (contexto). */
+  totalEtapa: number;
+  /** Qué porcentaje de la etapa está con factura sola. */
+  porcentajeEtapa: number;
+  /** Documentos por completar: cada PO debe sumar BL + packing list + contenedor. */
+  documentosPendientes: number;
+  /** POs en etapa que ya tienen la factura cargada (con o sin otros documentos). */
   conFactura: number;
-  conBl: number;
-  conPackingList: number;
-  conContenedor: number;
+  /** POs con factura cargada que todavía no generaron expediente. */
+  sinExpediente: number;
+  /** De las POs con solo factura, cuántas aún no tienen expediente creado. */
+  soloFacturaSinExpediente: number;
+  porModulo: { dropship: number; zf: number; sinModulo: number };
+  porOrigen: { ticket: number; bandeja: number };
 }
 
 export const RESULTADO_DOCUMENTACION_VACIO: ResultadoDocumentacionCompleta = {
   filas: [],
   total: 0,
-  completas: 0,
-  incompletas: 0,
-  porcentaje: 0,
+  totalEtapa: 0,
+  porcentajeEtapa: 0,
+  documentosPendientes: 0,
   conFactura: 0,
-  conBl: 0,
-  conPackingList: 0,
-  conContenedor: 0
+  sinExpediente: 0,
+  soloFacturaSinExpediente: 0,
+  porModulo: { dropship: 0, zf: 0, sinModulo: 0 },
+  porOrigen: { ticket: 0, bandeja: 0 }
 };
 
 const texto = (valor: unknown): string =>
@@ -83,7 +105,7 @@ interface DocumentoOrigen {
 
 /**
  * Convierte un registro (ticket o fila de la bandeja) en filas por PO.
- * Se separan las POs individuales para que el KPI cuente POs, no filas.
+ * Se separan las POs individuales para que el indicador cuente POs, no filas.
  */
 function filasDesdeRegistro(
   registro: DocumentoOrigen,
@@ -99,13 +121,22 @@ function filasDesdeRegistro(
   const tieneBl = Boolean(registro.bl_cargado) || tieneTexto(numeroBl);
   const tieneContenedor = tieneTexto(numeroContenedor);
 
+  // "Solo factura" = hay factura y no se cargó ningún otro documento.
+  const soloFactura =
+    tieneFactura && !tieneBl && !tienePackingList && !tieneContenedor;
+
   const faltantes: string[] = [];
   if (!tieneFactura) faltantes.push('Factura');
   if (!tieneBl) faltantes.push('BL');
   if (!tienePackingList) faltantes.push('Packing List');
   if (!tieneContenedor) faltantes.push('Contenedor');
 
-  const completa = faltantes.length === 0;
+  const cantidadDocumentos = entradas.length;
+
+  // Sin expediente: la PO viene de la bandeja y todavía no fue consolidada
+  // en un expediente (el EXP ID queda vacío o como "Por Asignar").
+  const expIdTexto = texto(registro.exp_id);
+  const sinExpediente = expIdTexto === '' || /^por\s*asignar$/i.test(expIdTexto);
 
   const pos = parsePOs(registro.po_tiquetera);
   const posFinales = pos.length > 0 ? pos : ['—'];
@@ -113,41 +144,68 @@ function filasDesdeRegistro(
   return posFinales.map((po, index) => ({
     id: `${registro.id}-${index}`,
     po_tiquetera: po,
-    exp_id: texto(registro.exp_id),
+    exp_id: expIdTexto,
     solicitante: texto(registro.solicitante),
     estado: texto(registro.estado_expediente) || estadoPorDefecto,
     tipo_modulo: registro.tipo_modulo || '',
     origen,
     numeroBl,
     numeroContenedor,
+    cantidadDocumentos,
     tieneFactura,
     tieneBl,
     tienePackingList,
     tieneContenedor,
-    completa,
+    soloFactura,
+    sinExpediente,
     faltantes
   }));
 }
 
-/** Calcula totales y porcentajes a partir de las filas por PO. */
+/**
+ * Calcula los totales del indicador.
+ * Recibe TODAS las filas de la etapa y devuelve únicamente las de factura sola.
+ */
 export function calcularDocumentacionCompleta(
-  filas: FilaDocumentacionPo[]
+  todasLasFilas: FilaDocumentacionPo[]
 ): ResultadoDocumentacionCompleta {
+  const totalEtapa = todasLasFilas.length;
+  const filas = todasLasFilas.filter((f) => f.soloFactura);
   const total = filas.length;
-  if (total === 0) return RESULTADO_DOCUMENTACION_VACIO;
 
-  const completas = filas.filter((f) => f.completa).length;
+  if (totalEtapa === 0) return RESULTADO_DOCUMENTACION_VACIO;
+
+  const porModulo = filas.reduce(
+    (acc, fila) => {
+      const mod = (fila.tipo_modulo || '').toLowerCase();
+      if (mod === 'dropship') acc.dropship += 1;
+      else if (mod === 'zf') acc.zf += 1;
+      else acc.sinModulo += 1;
+      return acc;
+    },
+    { dropship: 0, zf: 0, sinModulo: 0 }
+  );
+
+  const porOrigen = filas.reduce(
+    (acc, fila) => {
+      if (fila.origen === 'ticket') acc.ticket += 1;
+      else acc.bandeja += 1;
+      return acc;
+    },
+    { ticket: 0, bandeja: 0 }
+  );
 
   return {
     filas,
     total,
-    completas,
-    incompletas: total - completas,
-    porcentaje: Math.round((completas / total) * 100),
-    conFactura: filas.filter((f) => f.tieneFactura).length,
-    conBl: filas.filter((f) => f.tieneBl).length,
-    conPackingList: filas.filter((f) => f.tienePackingList).length,
-    conContenedor: filas.filter((f) => f.tieneContenedor).length
+    totalEtapa,
+    porcentajeEtapa: Math.round((total / totalEtapa) * 100),
+    documentosPendientes: total * 3,
+    conFactura: todasLasFilas.filter((f) => f.tieneFactura).length,
+    sinExpediente: todasLasFilas.filter((f) => f.tieneFactura && f.sinExpediente).length,
+    soloFacturaSinExpediente: filas.filter((f) => f.sinExpediente).length,
+    porModulo,
+    porOrigen
   };
 }
 
@@ -156,7 +214,7 @@ const COLUMNAS_DOCUMENTACION =
 
 /**
  * Trae las POs en etapa de documentación (tickets no asignados + bandeja)
- * y devuelve el resultado del KPI.
+ * y devuelve el resultado del indicador de factura sola.
  */
 export async function cargarKpiDocumentacionCompleta(): Promise<ResultadoDocumentacionCompleta> {
   const [resTickets, resBandeja] = await Promise.all([

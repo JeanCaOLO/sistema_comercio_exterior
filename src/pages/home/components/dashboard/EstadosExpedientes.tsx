@@ -9,6 +9,8 @@ interface Props {
   estadoDataZF: EstadoData;
   vista: VistaEstados;
   onVista: (vista: VistaEstados) => void;
+  /** Cuando la tarjeta ocupa todo el ancho, las barras se reparten en 2 columnas. */
+  anchoCompleto?: boolean;
 }
 
 const TABS: { clave: VistaEstados; etiqueta: string }[] = [
@@ -23,7 +25,12 @@ export default function EstadosExpedientes({
   estadoDataZF,
   vista,
   onVista,
+  anchoCompleto = false,
 }: Props) {
+  const grillaBarras = anchoCompleto
+    ? 'grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-4'
+    : 'space-y-4';
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
@@ -46,7 +53,7 @@ export default function EstadosExpedientes({
       </div>
 
       {vista === 'general' && (
-        <div className="space-y-4">
+        <div className={grillaBarras}>
           <ProgressBar label="Asignado" value={estadoData.asignado} total={estadoData.total} color="bg-indigo-500" />
           <ProgressBar label="En Proceso" value={estadoData.enProceso} total={estadoData.total} color="bg-amber-500" />
           <ProgressBar label="Espera de Respuesta" value={estadoData.esperaRespuesta} total={estadoData.total} color="bg-orange-400" />
@@ -55,7 +62,7 @@ export default function EstadosExpedientes({
           <ProgressBar label="Facturación" value={estadoData.facturacion} total={estadoData.total} color="bg-violet-500" />
           <ProgressBar label="Notificado" value={estadoData.notificado} total={estadoData.total} color="bg-green-500" />
           <ProgressBar label="Completado" value={estadoData.completado} total={estadoData.total} color="bg-emerald-500" />
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className={`mt-2 pt-4 border-t border-gray-200 ${anchoCompleto ? 'lg:col-span-2' : ''}`}>
             <div className="text-sm text-gray-600">
               Total de expedientes: <span className="font-semibold text-gray-900">{estadoData.total}</span>
             </div>
@@ -64,7 +71,7 @@ export default function EstadosExpedientes({
       )}
 
       {vista === 'dropship' && (
-        <div className="space-y-4">
+        <div className={grillaBarras}>
           <ProgressBar label="Asignado" value={estadoDataDropship.asignado} total={estadoDataDropship.total} color="bg-indigo-500" />
           <ProgressBar label="En Proceso" value={estadoDataDropship.enProceso} total={estadoDataDropship.total} color="bg-amber-500" />
           <ProgressBar label="Espera de Respuesta" value={estadoDataDropship.esperaRespuesta} total={estadoDataDropship.total} color="bg-orange-400" />
@@ -72,7 +79,7 @@ export default function EstadosExpedientes({
           <ProgressBar label="Liberación" value={estadoDataDropship.liberado} total={estadoDataDropship.total} color="bg-teal-500" />
           <ProgressBar label="Facturación" value={estadoDataDropship.facturacion} total={estadoDataDropship.total} color="bg-violet-500" />
           <ProgressBar label="Notificado" value={estadoDataDropship.notificado} total={estadoDataDropship.total} color="bg-green-500" />
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className={`mt-2 pt-4 border-t border-gray-200 ${anchoCompleto ? 'lg:col-span-2' : ''}`}>
             <div className="text-sm text-gray-600">
               Total Dropship: <span className="font-semibold text-gray-900">{estadoDataDropship.total}</span>
             </div>
@@ -81,12 +88,12 @@ export default function EstadosExpedientes({
       )}
 
       {vista === 'zf' && (
-        <div className="space-y-4">
+        <div className={grillaBarras}>
           <ProgressBar label="Asignado" value={estadoDataZF.asignado} total={estadoDataZF.total} color="bg-indigo-500" />
           <ProgressBar label="En Proceso" value={estadoDataZF.enProceso} total={estadoDataZF.total} color="bg-amber-500" />
           <ProgressBar label="Espera de Respuesta" value={estadoDataZF.esperaRespuesta} total={estadoDataZF.total} color="bg-orange-400" />
           <ProgressBar label="Completado" value={estadoDataZF.completado} total={estadoDataZF.total} color="bg-emerald-500" />
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className={`mt-2 pt-4 border-t border-gray-200 ${anchoCompleto ? 'lg:col-span-2' : ''}`}>
             <div className="text-sm text-gray-600">
               Total ZF: <span className="font-semibold text-gray-900">{estadoDataZF.total}</span>
             </div>

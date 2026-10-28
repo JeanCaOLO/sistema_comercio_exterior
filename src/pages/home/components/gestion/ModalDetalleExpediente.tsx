@@ -762,27 +762,29 @@ export default function ModalDetalleExpediente({
               )}
             </div>
 
-            {/* ETA Real y Recibo de Delzof — solo ZF */}
+            {/* ETA Real — Dropship y ZF (base del KPI Liberado vs ETA) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">ETA Real</label>
+              {editMode ? (
+                <input
+                  type="date"
+                  value={expediente.eta_real || ''}
+                  onChange={(e) => onChange('eta_real', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+                />
+              ) : (
+                <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
+                  {expediente.eta_real ? formatearFecha(expediente.eta_real) : 'No especificado'}
+                </p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                Fecha real de arribo. Sin este dato el expediente no entra al indicador de ETA.
+              </p>
+            </div>
+
+            {/* Recibo de Delzof — solo ZF */}
             {esZf && (
               <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">ETA Real</label>
-                  {editMode ? (
-                    <input
-                      type="date"
-                      value={expediente.eta_real || ''}
-                      onChange={(e) => onChange('eta_real', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                    />
-                  ) : (
-                    <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-                      {expediente.eta_real
-                        ? formatearFecha(expediente.eta_real)
-                        : 'No especificado'}
-                    </p>
-                  )}
-                </div>
-
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 md:col-span-2">
                   <div className="flex items-center gap-2 mb-3">
                     <i className="ri-receipt-line text-amber-600 text-base"></i>

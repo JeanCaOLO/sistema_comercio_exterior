@@ -364,7 +364,7 @@ export default function GestionExpedientes({
           tipoModulo === 'dropship' ? (selectedExpediente.finiquito ?? false) : false,
         mcg: tipoModulo === 'dropship' ? (selectedExpediente.mcg ?? false) : false,
         etd: tipoModulo === 'dropship' ? selectedExpediente.etd || null : null,
-        eta_real: tipoModulo === 'zf' ? selectedExpediente.eta_real || null : null,
+        eta_real: selectedExpediente.eta_real || null,
         recibo_delzof_fecha:
           tipoModulo === 'zf' ? selectedExpediente.recibo_delzof_fecha || null : null,
         recibo_delzof_numero:

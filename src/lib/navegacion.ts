@@ -46,7 +46,7 @@ export const GRUPOS_NAVEGACION: GrupoNavegacion[] = [
           { id: 'lista-expedientes', label: 'Lista de Expedientes', icon: 'ri-file-list-3-line' },
           { id: 'reportes', label: 'Reporte de Expedientes', icon: 'ri-bar-chart-box-line' },
           { id: 'carga-caa', label: 'Carga CAA', icon: 'ri-file-upload-line' },
-          { id: 'documentacion', label: 'Documentación', icon: 'ri-folder-open-line' },
+          { id: 'documentacion', label: 'Bandeja', icon: 'ri-inbox-archive-line' },
           { id: 'repositorio', label: 'Repositorio Docs', icon: 'ri-archive-line' },
           { id: 'facturas', label: 'Facturas', icon: 'ri-bill-line' },
         ],

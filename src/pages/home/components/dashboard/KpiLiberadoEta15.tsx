@@ -66,6 +66,26 @@ export default function KpiLiberadoEta15({ resultado, diasAntesEta }: KpiLiberad
           disabled: sinDatos
         }}
       >
+        {sinDatos && (
+          <div className="mb-5 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <div className="w-8 h-8 flex items-center justify-center rounded-full bg-amber-100 flex-shrink-0">
+              <i className="ri-calendar-check-line text-amber-600 text-base"></i>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                Todavía no hay POs Dropship con ETA Real cargada
+              </p>
+              <p className="text-xs text-amber-700 mt-1">
+                Este indicador se calcula con la ETA Real de cada expediente. Cargala al crear el
+                ticket o desde el detalle del expediente (Gestión y Lista) y la PO empieza a
+                evaluarse automáticamente. Hoy hay{' '}
+                <strong>{resultado.sinEta}</strong> PO{resultado.sinEta !== 1 ? 's' : ''} Dropship
+                sin ese dato.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <TarjetaDesglose
             etiqueta={`Liberadas tarde (después de ETA − ${diasAntesEta})`}

@@ -4,8 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   calcularKpiFacturacion,
   calcularKpiEta15,
+  calcularKpiEtdLiberacion,
+  META_ETD_LIBERACION_DIAS,
   type ResultadoFacturacion,
   type ResultadoEta15,
+  type ResultadoEtdLiberacion,
 } from '@/lib/kpisDropship';
 import {
   calcularKpiDuracionMinima,
@@ -92,6 +95,18 @@ const ETA15_VACIA: ResultadoEta15 = {
   sinEta: 0,
 };
 
+const ETD_LIBERACION_VACIA: ResultadoEtdLiberacion = {
+  filas: [],
+  total: 0,
+  cumplen: 0,
+  noCumplen: 0,
+  porcentaje: 0,
+  promedio: 0,
+  porcentajeMeta: 0,
+  pendientes: 0,
+  sinEtd: 0,
+};
+
 export function useDashboard() {
   // ── Filtros de período ──
   const [fechaInicio, setFechaInicio] = useState('');
@@ -100,6 +115,8 @@ export function useDashboard() {
   const [rangoPersonalizado, setRangoPersonalizado] = useState<RangoFechas | null>(null);
   const [errorFiltros, setErrorFiltros] = useState('');
   const [vistaEstados, setVistaEstados] = useState<VistaEstados>('general');
+  // Alcance del dashboard: todos los KPIs, solo Dropship o solo Zona Franca
+  const [vistaModulo, setVistaModulo] = useState<VistaEstados>('general');
 
   // ── Datos generales ──
   const [expedientes, setExpedientes] = useState<any[]>([]);
@@ -135,6 +152,8 @@ export function useDashboard() {
   const [showReporteEtd, setShowReporteEtd] = useState(false);
   const [kpiFacturacion, setKpiFacturacion] = useState<ResultadoFacturacion>(FACTURACION_VACIA);
   const [kpiEta15, setKpiEta15] = useState<ResultadoEta15>(ETA15_VACIA);
+  const [kpiEtdLiberacion, setKpiEtdLiberacion] =
+    useState<ResultadoEtdLiberacion>(ETD_LIBERACION_VACIA);
 
   // ── KPIs MCG ──
   const [kpiMcgCreacion, setKpiMcgCreacion] = useState<KpiMcgResumen>(crearKpiMcgVacio());
@@ -192,6 +211,7 @@ export function useDashboard() {
     setEtdDetalle([]);
     setKpiFacturacion(FACTURACION_VACIA);
     setKpiEta15(ETA15_VACIA);
+    setKpiEtdLiberacion(ETD_LIBERACION_VACIA);
     setKpiDsPromedioNotificado(0);
     setKpiAsignadoNotificado({ totalEvaluados: 0, promedioDias: 0 });
     setAsignadoNotificadoDetalle([]);
@@ -397,6 +417,7 @@ export function useDashboard() {
       setKpiZfPromedioCompletado(await calcularPromedioCreacionCompletado(expZF));
 
       await calcularKPIDuracionMinima(expNormal);
+      setKpiEtdLiberacion(await calcularKpiEtdLiberacion(expNormal, META_ETD_LIBERACION_DIAS));
 
       const mcg = await calcularKpisMcg(expMcg, META_MCG_CREACION_DIAS, META_MCG_ETD_DIAS);
       setKpiMcgCreacion(mcg.creacion);
@@ -409,7 +430,7 @@ export function useDashboard() {
       setAsignadoNotificadoDetalle(asignado.detalle);
 
       setKpiFacturacion(await calcularKpiFacturacion(expNormal));
-      setKpiEta15(calcularKpiEta15(expNormal));
+      setKpiEta15(await calcularKpiEta15(expNormal));
 
       try {
         setKpisZF(await cargarKpisZf(expZF));
@@ -465,6 +486,12 @@ export function useDashboard() {
     () => expedientes.filter((e) => esDropship(e) && e.transito_corto === true).length,
     [expedientes]
   );
+
+  // ── Acción de alcance por módulo (sincroniza la tarjeta de estados) ──
+  const seleccionarModulo = useCallback((vista: VistaEstados) => {
+    setVistaModulo(vista);
+    setVistaEstados(vista);
+  }, []);
 
   // ── Acciones de período ──
   const seleccionarPeriodo = useCallback((periodo: string) => {
@@ -526,6 +553,8 @@ export function useDashboard() {
     documentosPendientes,
     vistaEstados,
     setVistaEstados,
+    vistaModulo,
+    seleccionarModulo,
 
     // tiempos
     filtroModuloTiempos,
@@ -548,6 +577,7 @@ export function useDashboard() {
     setShowReporteEtd,
     kpiFacturacion,
     kpiEta15,
+    kpiEtdLiberacion,
     entregadosDropship,
     transitoCortoDropship,
 

@@ -369,7 +369,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
             fecha_apertura: new Date().toISOString(),
             tipo_modulo: tipoModulo,
             etd: tipoModulo === 'dropship' && formData.etd ? formData.etd : null,
-            eta_real: tipoModulo === 'zf' && formData.etaReal ? formData.etaReal : null,
+            eta_real: formData.etaReal ? formData.etaReal : null,
             recibo_delzof_fecha: tipoModulo === 'zf' && formData.reciboDelzofFecha ? formData.reciboDelzofFecha : null,
             recibo_delzof_numero: tipoModulo === 'zf' && formData.reciboDelzofNumero.trim() ? formData.reciboDelzofNumero.trim() : null,
             transito_corto: formData.transitoCorto,
@@ -402,6 +402,7 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
         `Líneas OC: ${formData.lineasOC}`,
         `Responsable: ${formData.responsableCreacion}`,
         `EXP ID: ${formData.exp || 'No asignado'}`,
+        `ETA Real: ${formData.etaReal || 'No registrada'}`,
         ...(tipoModulo === 'zf' ? [`Recibo Delzof: ${formData.reciboDelzofFecha || 'No registrado'}${formData.reciboDelzofNumero ? ' #' + formData.reciboDelzofNumero : ''}`] : []),
         `Transito Corto: ${formData.transitoCorto ? 'Sí' : 'No'}`,
         `BL Cargado: ${formData.blCargado ? 'Sí' : 'No'}`,
@@ -813,21 +814,26 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
                     </button>
                   </div>
                 
-                {/* Campos exclusivos de ZF: ETA Real y Recibo de Delzof */}
+                {/* ETA Real — aplica a Dropship y ZF (base del KPI Liberado vs ETA) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    ETA Real
+                  </label>
+                  <input
+                    type="date"
+                    name="etaReal"
+                    value={formData.etaReal}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Fecha real de arribo de la carga. Es la base del indicador Liberado después de ETA − 15 días.
+                  </p>
+                </div>
+
+                {/* Campos exclusivos de ZF: Recibo de Delzof */}
                 {tipoModulo === 'zf' && (
                   <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        ETA Real
-                      </label>
-                      <input
-                        type="date"
-                        name="etaReal"
-                        value={formData.etaReal}
-                        onChange={handleChange}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                      />
-                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Fecha de Recibo de Delzof

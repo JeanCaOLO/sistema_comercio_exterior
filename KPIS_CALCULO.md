@@ -101,6 +101,10 @@ Si `total = 0`, todos los porcentajes quedan en `0`.
 
 ## A.4 Estado de Expedientes (barras de progreso)
 
+> **Ubicación:** es el **primer bloque del Dashboard** (va justo debajo del filtro de período, antes
+> de las tarjetas de solicitudes). Allí se muestra a ancho completo, con las barras repartidas en
+> dos columnas; en la vista de una columna se apilan.
+
 Agrupa por `estado_expediente` usando la función `contarEstados`. Los estados considerados:
 
 | Grupo | Estados que lo alimentan |
@@ -155,6 +159,10 @@ cumpleMeta  = díasDuración < 3
 díasPromedio  = round( suma(díasDuración) / totalEvaluados * 10 ) / 10
 ```
 - Semáforo del panel: ≥80% verde, ≥50% ámbar, <50% rojo.
+- **Se muestra como MEDIDOR (gauge):** un arco semicircular con un marcador en el valor de
+  cumplimiento y el número grande al centro, más las tres métricas al costado (cumplen, no cumplen
+  y duración promedio). El arco se dibuja con un degradado cónico (0% a la izquierda, 100% a la
+  derecha).
 - El reporte interno se puede filtrar por `Todos / Cumplen / No cumplen` y exportar a Excel.
 
 ---
@@ -318,6 +326,114 @@ cantidad por categoría = nº de tickets que caen en esa categoría
 
 ---
 
+## A.14 Liberado después de ETA − 15 días  *(Dropship Normal)*
+
+**Meta: la PO debe quedar liberada en o antes de su ETA Real menos 15 días.**
+
+- Universo: expedientes Dropship **normal** (excluye MCG) **con ETA Real** (`eta_real`) **y con liberación registrada**.
+- **Referencia** = `etaLimite = eta_real − 15 días` (días naturales).
+- **Fecha de liberación** = **llegada real al estado `Liberación`** (`expedientes_tiempos_estados`;
+  respaldo: historial de cambios de estado y, si no hay traza, el campo `fecha_liberacion`).
+  > ⚠️ **No usar directamente `expedientes.fecha_liberacion`**: se sobrescribe al pasar el ticket a
+  > **Notificado / Visto Listo**, por lo que el indicador mediría la notificación en lugar de la liberación.
+- Se comparan solo las **fechas** (se descarta la hora).
+
+```txt
+cumple = fechaLiberacion <= etaLimite
+diasAtraso = cumple ? 0 : round( (fechaLiberacion − etaLimite) / 86400000 )   // días naturales
+% Tarde = round( tarde / totalEvaluados * 100 )
+atrasoPromedio = round( suma(diasAtraso de las tarde) / nº tarde * 10 ) / 10
+```
+
+- **Sin ETA Real**: los expedientes Dropship sin `eta_real` **no se evalúan** y se informan en la
+  tarjeta **"Sin ETA Real"**. La captura de la ETA Real está habilitada **para Dropship y ZF** en
+  la creación del ticket y en la edición desde **Gestión** y **Lista de Expedientes**.
+  > Histórico: antes de habilitar el campo, Dropship **nunca** guardaba ETA Real (0 de 860), por lo
+  > que el panel siempre mostraba cero. El indicador se llena a medida que se cargan las ETAs.
+- La lógica vive en `src/lib/kpisDropship.ts` (`calcularKpiEta15`) y la interfaz en
+  `KpiLiberadoEta15.tsx`.
+
+---
+
+## A.15 Documentación — POs con Solo Factura Cargada
+
+Indicador de la sección **Documentación** del Dashboard.
+
+- **Universo de la etapa** = POs que están en etapa de documentación:
+  - expedientes en estado **`No Asignado`** o **`Documentación`**, y
+  - filas de la bandeja del módulo Documentación (`documentos_caa`).
+- **Universo del indicador** = de esa etapa, **solo** las POs que tienen la **factura cargada y
+  ningún otro documento**: sin BL, sin packing list y sin número de contenedor.
+  Las POs sin factura **no** se cuentan (todavía no entraron al flujo) y las que ya sumaron
+  cualquier otro documento **tampoco** (ya avanzaron).
+
+```txt
+soloFactura = tieneFactura AND NOT tieneBl AND NOT tienePackingList AND NOT tieneContenedor
+
+total                = nº de POs con soloFactura
+totalEtapa           = nº de POs en la etapa de documentación
+% de la etapa        = round( total / totalEtapa * 100 )
+documentosPendientes = total * 3        // BL + packing list + contenedor de cada PO
+```
+
+- **Cómo se detecta cada documento** (por PO, usando `parseDocEntries`):
+  - Factura: alguna entrada de `doc` con `tipo = 'factura'`.
+  - Packing List: `packing_list_cargado = true` o una entrada con `tipo = 'packing_list'`.
+  - BL: `bl_cargado = true` o `numero_bl` con texto.
+  - Contenedor: `numero_contenedor` con texto.
+- Se cuenta **por PO**: si un registro tiene varias POs (separadas por `/`), se divide y cada PO
+  cuenta por separado.
+- **POs con factura y SIN expediente creado**: además de las POs de tickets ya creados, el universo
+  incluye las filas de la **bandeja de Documentación** que todavía no generaron expediente
+  (`exp_id` vacío o `"Por Asignar"`). Se cuentan aparte en la tarjeta **"Factura sin Expediente"**
+  (`sinExpediente`) y tienen su propio filtro en el detalle, para que no queden invisibles dentro
+  del total de la etapa.
+- El detalle muestra PO, módulo, origen (ticket / bandeja), estado, **expediente creado sí/no**, el
+  visto bueno de cada uno de los 4 documentos y los documentos pendientes. Se puede filtrar por
+  módulo (Dropship / ZF), por **sin expediente**, buscar por PO, EXP ID o solicitante, y exportar a Excel.
+- La lógica vive en `src/lib/kpisDocumentacion.ts` (`cargarKpiDocumentacionCompleta`) y la
+  interfaz en `KpiDocumentacionCompleta.tsx`.
+
+> Histórico: antes el indicador evaluaba **todas** las POs de la etapa contra los 4 documentos y
+> las marcaba "completas / incompletas", lo que inflaba el conteo de incompletas (incluía POs sin
+> ningún documento cargado). Ahora solo mide el grupo **factura sola**, que es el que realmente
+> está esperando el resto de la documentación.
+
+---
+
+---
+
+## A.16 Liberado dentro de ETD + 3 días hábiles  *(Dropship Normal)*
+
+**Meta: la PO debe llegar al estado `Liberación` a más tardar 3 días hábiles después de su ETD.**
+
+- Universo: expedientes Dropship **normal** (excluye MCG) **con ETD** cargado.
+- **Inicio del reloj** = `etd` (fecha estimada de salida).
+- **Fin del reloj** = **llegada real al estado `Liberación`** (`expedientes_tiempos_estados`;
+  respaldo: historial de cambios; si no hay traza, `fecha_liberacion`).
+- **Fecha límite** = `sumarDiasHabiles(etd, 3)` (solo días L-V, sin feriados de CR).
+- `días = diasHabiles(etd, liberación)`. Si se libera el mismo día del ETD o antes → `0` y cumple.
+
+```txt
+cumple          = días <= 3
+fechaLimite     = sumarDiasHabiles(etd, 3)
+diasExcedidos   = max(0, días - 3)
+% Cumplimiento  = round( cumplen / totalEvaluados * 100 )
+días promedio   = round( suma(días) / totalEvaluados * 10 ) / 10
+porcentajeMeta  = min(100, round(3 / promedio * 100))
+```
+
+- **POs aún no liberadas** (con ETD pero sin llegada a Liberación) **no se evalúan** y se informan
+  en la tarjeta como **"con ETD sin liberar"** (`pendientes`).
+- **POs sin ETD** quedan fuera del cálculo y se informan como `sinEtd` (al cargarles el ETD entran
+  solas al indicador).
+- Semáforo: ≥80% verde, ≥50% ámbar, <50% rojo. El panel abre un detalle por PO con ETD, fecha
+  límite, fecha de liberación, días, días excedidos y cumplimiento, filtrable y exportable a Excel.
+- La lógica vive en `src/lib/kpisDropship.ts` (`calcularKpiEtdLiberacion`) y la interfaz en
+  `KpiEtdLiberacion.tsx`.
+
+---
+
 # PARTE B — REPORTES
 
 > Los reportes filtran por **fecha de solicitud** (`fecha_solicitud`, fallback `created_at`),
@@ -431,11 +547,13 @@ Se promedian sobre **todos** los expedientes Dropship (global y por ruta):
 | Indicador | Módulo | Meta |
 |---|---|---|
 | Duración del expediente (carga de factura → liberación) | Dropship Normal | < 3 días hábiles |
+| Liberado después del ETD (ETD → liberación) | Dropship Normal | ≤ 3 días hábiles |
 | ETD → Notificado | Dropship Normal | ≤ 5 días hábiles |
 | Creación (carga de factura → Liberado) | MCG | ≤ 2 días hábiles |
 | ETD → Notificado | MCG | < 2 días hábiles |
 | ETA estimada (completado ≤ ETA Real) | ZF | Completar en o antes de la ETA Real |
 | Tránsito corto (creación → cierre) | ZF | < 2 días hábiles |
+| Liberado después de ETA − 15 días | Dropship Normal | Liberar en o antes de ETA − 15 días |
 | Aging "crítico" | Todos | > 7 días |
 
 ---
