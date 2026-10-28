@@ -175,8 +175,8 @@ export const calcularTiempoTranscurrido = (
 };
 
 // ── Días desde la carga de la factura (misma regla que los KPIs de creación) ──
-// Si el expediente ya cerró, el reloj se detiene en la liberación; si sigue
-// abierto, cuenta contra hoy. Se calculan días hábiles.
+// Si el expediente ya cerró, el reloj se detiene en la llegada real al estado
+// Liberación; si sigue abierto, cuenta contra hoy. Se calculan días hábiles.
 export interface DiasDesdeFactura {
   dias: number;
   enCurso: boolean;
@@ -190,8 +190,11 @@ export const calcularDiasDesdeCargaFactura = (
   const fechaCarga = fechaCargaDocumentos(expediente);
   if (!fechaCarga) return null;
 
-  const cerrado = esEstadoFinal(expediente) && !!expediente.fecha_liberacion;
-  const fechaFin = cerrado ? (expediente.fecha_liberacion as string) : ahora.toISOString();
+  // La columna fecha_liberacion se sobrescribe al pasar a Notificado, así que
+  // el fin confiable es la llegada real al estado Liberación.
+  const finLiberacion = expediente.fecha_liberacion_real || expediente.fecha_liberacion;
+  const cerrado = esEstadoFinal(expediente) && !!finLiberacion;
+  const fechaFin = cerrado ? (finLiberacion as string) : ahora.toISOString();
 
   return {
     dias: calcularDiasHabilesReales(fechaCarga, fechaFin),

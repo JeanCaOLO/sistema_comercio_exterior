@@ -586,4 +586,16 @@ El comportamiento quedó idéntico: filtros por fecha de asignación, comparativ
 
 ---
 
+## 🎯 Corrección: la duración mínima medía hasta la notificación (246)
+
+246. **El Indicador de Duración Mínima ya mide la liberación real** — El KPI mostraba duraciones infladas y POs que "no cuadraban": por ejemplo un ticket cargado el 15 de octubre y liberado el 19 aparecía con **3 días** y en alerta, cuando en realidad tardó **2 días hábiles**. La causa era la fecha de cierre utilizada:
+- El cálculo cerraba con la columna **`expedientes.fecha_liberacion`**, pero esa columna **no guarda la llegada al estado "Liberación"**: se sobrescribe cuando el ticket pasa a su estado final (**Notificado / Visto Listo**). En los datos revisados, en **704 de 780** tickets esa fecha coincidía con la de **Notificado**, y solo en 9 con la liberación real. Eso sumaba de más los días de Recepción de Carga y Facturación.
+- Ahora el fin del reloj es la **llegada real al estado "Liberación"**, tomada de **`expedientes_tiempos_estados`**, con respaldo en el **historial de cambios** y, solo si no existe traza, en la fecha de cierre.
+- El mismo criterio se aplicó al **KPI MCG · Creación de Expediente** y a la **columna "Días s/ Factura"** y su **filtro** en la Lista de Expedientes, para que todo el sistema cuente igual.
+- El detalle del reporte ahora muestra, junto a los **días hábiles**, la cantidad de **días naturales** entre carga de factura y liberación, para que la fecha y la duración cuadren a simple vista. El Excel agrega la columna **"Días naturales"** y la **fuente** de la fecha de cierre.
+
+Con datos reales, la mejora es notoria: los tickets que cumplían la meta pasaron de **138 a 234** sobre el mismo universo de 846 expedientes Dropship.
+
+---
+
 *Documento generado automáticamente — resumen acumulado de cambios del proyecto*

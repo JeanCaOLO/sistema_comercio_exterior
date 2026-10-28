@@ -140,8 +140,14 @@ Agrupa por `estado_expediente` usando la función `contarEstados`. Los estados c
 - **Inicio del conteo** = fecha de **carga de la factura/documentos** del ticket
   (`created_at`; en tickets consolidados guarda la fecha del documento más antiguo cargado.
   Respaldo: `fecha_creacion_expediente`). **Ya no** se usa la fecha de `Asignado`.
-- **Fin del conteo** = `fecha_liberacion`; si aún está en curso, se usa **el momento actual**.
-- `díasDuración = diasHabiles(inicio, fin)`.
+- **Fin del conteo** = **llegada real al estado `Liberación`** (`expedientes_tiempos_estados`; respaldo:
+  historial de cambios de estado y, si no hay traza, el campo `fecha_liberacion`). Si aún está en
+  curso, se usa **el momento actual**.
+  > ⚠️ **No usar directamente `expedientes.fecha_liberacion`**: esa columna se sobrescribe al pasar
+  > el ticket a **Notificado / Visto Listo**, por lo que cerraba el reloj más tarde y los días
+  > salían inflados (medía carga de factura → notificación, no → liberación).
+- `díasDuración = diasHabiles(inicio, fin)`. El detalle muestra además los **días naturales**
+  (`diasNaturales`) para que la fecha y la duración cuadren a simple vista.
 
 ```txt
 cumpleMeta  = díasDuración < 3

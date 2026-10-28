@@ -173,8 +173,8 @@ export function useDashboard() {
       });
   }, []);
 
-  const calcularKPIDuracionMinima = useCallback((listaExpedientes: any[]) => {
-    const resultado = calcularKpiDuracionMinima(listaExpedientes, META_DURACION_DIAS);
+  const calcularKPIDuracionMinima = useCallback(async (listaExpedientes: any[]) => {
+    const resultado = await calcularKpiDuracionMinima(listaExpedientes, META_DURACION_DIAS);
     setKpiDuracion({
       totalEvaluados: resultado.totalEvaluados,
       cumplen: resultado.cumplen,
@@ -396,7 +396,7 @@ export function useDashboard() {
       setKpiDsPromedioNotificado(await calcularPromedioCreacionNotificado(expNormal));
       setKpiZfPromedioCompletado(await calcularPromedioCreacionCompletado(expZF));
 
-      calcularKPIDuracionMinima(expNormal);
+      await calcularKPIDuracionMinima(expNormal);
 
       const mcg = await calcularKpisMcg(expMcg, META_MCG_CREACION_DIAS, META_MCG_ETD_DIAS);
       setKpiMcgCreacion(mcg.creacion);

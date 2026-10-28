@@ -137,10 +137,16 @@ export default function ModalDetalleDuracion({
                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{formatearFechaCorta(exp.fechaCargaDocumentos)}</td>
                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                     {exp.fechaFin ? formatearFechaCorta(exp.fechaFin) : <span className="text-amber-600 font-medium">En curso</span>}
+                    {exp.fechaFin && !exp.finReal && (
+                      <span className="block text-[10px] text-gray-400">sin traza de estado</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`text-sm font-bold ${exp.cumpleMeta ? 'text-teal-700' : 'text-red-600'}`}>
                       {exp.diasDuracion} días
+                    </span>
+                    <span className="block text-[10px] text-gray-400">
+                      {exp.diasNaturales} naturales
                     </span>
                     {!exp.fechaFin && <span className="block text-xs text-gray-400">en curso</span>}
                   </td>

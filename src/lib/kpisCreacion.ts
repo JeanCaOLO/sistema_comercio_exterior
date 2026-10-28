@@ -1,4 +1,4 @@
-import { diasHabilesEntre } from './fechas';
+import { diasHabilesEntre, parseFechaSegura } from './fechas';
 import { consultarPorIds } from './consultas';
 
 // ════════════════════════════════════════════════════════════
@@ -23,6 +23,69 @@ export const fechaCargaDocumentos = (exp: any): string =>
   exp?.created_at || exp?.fecha_creacion_expediente || '';
 
 // ────────────────────────────────────────────────────────────
+// Fecha REAL de llegada al estado "Liberación"
+//
+// ⚠️ La columna `expedientes.fecha_liberacion` NO guarda la llegada al
+// estado Liberación: se sobrescribe cuando el ticket pasa a su estado
+// final (Notificado / Visto Listo). Usarla como fin del KPI alargaba la
+// duración y hacía que las POs no cuadraran con sus fechas reales.
+// La fuente correcta es `expedientes_tiempos_estados`.
+// ────────────────────────────────────────────────────────────
+export const ESTADOS_LIBERACION = ['Liberación', 'Liberacion', 'Liberado', 'LIBERADO'];
+
+/** Mapa expediente_id → fecha ISO de llegada a Liberación. */
+export async function cargarFechasLiberacion(ids: string[]): Promise<Record<string, string>> {
+  const fechas: Record<string, string> = {};
+  if (!ids || ids.length === 0) return fechas;
+
+  const tiempos = await consultarPorIds(
+    'expedientes_tiempos_estados',
+    'expediente_id, fecha_inicio',
+    'expediente_id',
+    ids,
+    (consulta) => consulta.in('estado_nuevo', ESTADOS_LIBERACION)
+  );
+
+  tiempos.forEach((t: any) => {
+    if (!t.fecha_inicio) return;
+    if (!fechas[t.expediente_id] || t.fecha_inicio < fechas[t.expediente_id]) {
+      fechas[t.expediente_id] = t.fecha_inicio;
+    }
+  });
+
+  // Respaldo: historial de cambios de estado
+  const faltantes = ids.filter((id) => !fechas[id]);
+  if (faltantes.length > 0) {
+    const historial = await consultarPorIds(
+      'expedientes_historial',
+      'expediente_id, fecha_cambio',
+      'expediente_id',
+      faltantes,
+      (consulta) =>
+        consulta.eq('campo_modificado', 'Estado').in('valor_nuevo', ESTADOS_LIBERACION)
+    );
+    historial.forEach((h: any) => {
+      if (!h.fecha_cambio) return;
+      if (!fechas[h.expediente_id] || h.fecha_cambio < fechas[h.expediente_id]) {
+        fechas[h.expediente_id] = h.fecha_cambio;
+      }
+    });
+  }
+
+  return fechas;
+}
+
+/** Diferencia en días naturales (para mostrar junto a los días hábiles). */
+const diasNaturales = (inicio: string | Date, fin: string | Date): number => {
+  const a = typeof inicio === 'string' ? parseFechaSegura(inicio) : new Date(inicio);
+  const b = typeof fin === 'string' ? parseFechaSegura(fin) : new Date(fin);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+  const iniDia = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const finDia = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.max(0, Math.round((finDia.getTime() - iniDia.getTime()) / 86400000));
+};
+
+// ────────────────────────────────────────────────────────────
 // KPI · Duración mínima (< 3 días hábiles) — solo Dropship
 // Carga de documentos → liberación (o ahora si sigue en curso)
 // ────────────────────────────────────────────────────────────
@@ -35,9 +98,13 @@ export interface FilaDuracionMinima {
   solicitante: string;
   responsable_creacion: string;
   diasDuracion: number;
+  /** Diferencia en días naturales entre carga de factura y liberación. */
+  diasNaturales: number;
   cumpleMeta: boolean;
   fechaCargaDocumentos: string;
   fechaFin: string | null;
+  /** true si el fin es la llegada real a Liberación (fuente confiable). */
+  finReal: boolean;
 }
 
 export interface ResultadoDuracionMinima {
@@ -60,17 +127,19 @@ const RESULTADO_DURACION_VACIO: ResultadoDuracionMinima = {
 
 /**
  * Calcula la duración de los expedientes Dropship desde la carga de sus
- * documentos (factura) hasta su liberación.
+ * documentos (factura) hasta su llegada REAL al estado Liberación.
  */
-export function calcularKpiDuracionMinima(
+export async function calcularKpiDuracionMinima(
   listaExpedientes: any[],
   metaDias: number = META_DURACION_DIAS
-): ResultadoDuracionMinima {
+): Promise<ResultadoDuracionMinima> {
   const expDropship = (listaExpedientes || []).filter(
     (exp) => (exp.tipo_modulo || '').toLowerCase() === 'dropship'
   );
 
   if (expDropship.length === 0) return { ...RESULTADO_DURACION_VACIO };
+
+  const fechasLiberacion = await cargarFechasLiberacion(expDropship.map((e) => e.id));
 
   const ahora = new Date();
   const filas: FilaDuracionMinima[] = [];
@@ -79,7 +148,9 @@ export function calcularKpiDuracionMinima(
     const inicio = fechaCargaDocumentos(exp);
     if (!inicio) return;
 
-    const fin: string | Date = exp.fecha_liberacion ? exp.fecha_liberacion : ahora;
+    // Prioridad: llegada real a Liberación → columna (estado final) → hoy
+    const finReal = fechasLiberacion[exp.id] || null;
+    const fin: string | Date = finReal || exp.fecha_liberacion || ahora;
     const dias = diasHabilesEntre(inicio, fin);
 
     filas.push({
@@ -91,9 +162,11 @@ export function calcularKpiDuracionMinima(
       solicitante: exp.solicitante,
       responsable_creacion: exp.responsable_creacion,
       diasDuracion: redondear(dias),
+      diasNaturales: diasNaturales(inicio, fin),
       cumpleMeta: dias < metaDias,
       fechaCargaDocumentos: inicio,
-      fechaFin: exp.fecha_liberacion || null
+      fechaFin: finReal || exp.fecha_liberacion || null,
+      finReal: Boolean(finReal)
     });
   });
 
@@ -158,25 +231,8 @@ export async function calcularKpiCreacionExpediente(
 
   const ids = expMcg.map((e) => e.id);
 
-  // Fecha real de llegada a liberación (registro de tiempos por estado)
-  const tiemposLiberacion = await consultarPorIds(
-    'expedientes_tiempos_estados',
-    'expediente_id, fecha_inicio',
-    'expediente_id',
-    ids,
-    (consulta) => consulta.in('estado_nuevo', ['Liberación', 'Liberacion', 'Liberado', 'LIBERADO'])
-  );
-
-  const fechaLiberacionPorExp: Record<string, string> = {};
-  tiemposLiberacion.forEach((t: any) => {
-    if (!t.fecha_inicio) return;
-    if (
-      !fechaLiberacionPorExp[t.expediente_id] ||
-      t.fecha_inicio < fechaLiberacionPorExp[t.expediente_id]
-    ) {
-      fechaLiberacionPorExp[t.expediente_id] = t.fecha_inicio;
-    }
-  });
+  // Fecha real de llegada a liberación (tiempos por estado + historial)
+  const fechaLiberacionPorExp = await cargarFechasLiberacion(ids);
 
   const filas: FilaCreacionExpediente[] = [];
 

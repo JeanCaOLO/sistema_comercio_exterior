@@ -25,8 +25,10 @@ export const descargarReporteDuracion = (
       Solicitante: e.solicitante,
       Responsable: e.responsable_creacion,
       'Carga de Factura': formatearFechaCorta(e.fechaCargaDocumentos),
-      Finalizado: e.fechaFin ? formatearFechaCorta(e.fechaFin) : 'En curso',
+      Fuente: e.finReal ? 'Estado Liberación' : e.fechaFin ? 'Fecha de cierre' : 'En curso',
+      Liberación: e.fechaFin ? formatearFechaCorta(e.fechaFin) : 'En curso',
       'Días (Factura → Liberación)': e.diasDuracion,
+      'Días naturales': e.diasNaturales,
       'Cumple Meta (<3 días)': e.cumpleMeta ? 'Sí' : 'No',
     }));
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
 import { cargarRutasActivas, type RutaLogistica } from '@/lib/rutas';
 import { parseDocEntries, type DocEntry } from '@/lib/documentos';
+import { cargarFechasLiberacion } from '@/lib/kpisCreacion';
 import type { Expediente } from './types';
 import {
   ITEMS_PER_PAGE,
@@ -79,27 +80,48 @@ export function useListaExpedientes() {
     setTimeout(() => setShowSuccess(false), 3000);
   }, []);
 
+  // El listado necesita la llegada real al estado Liberación (la columna
+  // fecha_liberacion se sobrescribe al notificar). Se resuelve en segundo plano
+  // para no retrasar el render.
+  const enriquecerLiberacion = useCallback(async (data: Expediente[]) => {
+    const ids = data.filter((exp) => exp.fecha_liberacion).map((exp) => exp.id);
+    if (ids.length === 0) return;
+    try {
+      const fechas = await cargarFechasLiberacion(ids);
+      if (Object.keys(fechas).length === 0) return;
+      setExpedientes((prev) =>
+        prev.map((exp) =>
+          fechas[exp.id] ? { ...exp, fecha_liberacion_real: fechas[exp.id] } : exp
+        )
+      );
+    } catch (error) {
+      console.error('Error al cargar fechas de liberación:', error);
+    }
+  }, []);
+
   const cargar = useCallback(async () => {
     try {
       setLoading(true);
       const data = await cargarExpedientes();
       setExpedientes(data);
+      void enriquecerLiberacion(data);
     } catch (error) {
       console.error('Error al cargar expedientes:', error);
       setExpedientes([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enriquecerLiberacion]);
 
   const recargaSilenciosa = useCallback(async () => {
     try {
       const data = await cargarExpedientes();
       setExpedientes(data);
+      void enriquecerLiberacion(data);
     } catch (error) {
       console.error('Error en recarga silenciosa:', error);
     }
-  }, []);
+  }, [enriquecerLiberacion]);
 
   const cargarRutasDisponibles = useCallback(async () => {
     const activas = await cargarRutasActivas();

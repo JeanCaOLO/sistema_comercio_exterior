@@ -28,6 +28,9 @@ export interface Expediente {
   updated_at?: string;
   fecha_apertura?: string;
   fecha_liberacion?: string;
+  /** Llegada real al estado "Liberación" (la columna fecha_liberacion se
+   *  sobrescribe al notificar, por eso se guarda aparte). */
+  fecha_liberacion_real?: string | null;
   tiempo_real_minutos?: number;
   dias_entrega_real?: number;
   transito_corto?: boolean;
