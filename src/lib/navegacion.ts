@@ -68,6 +68,13 @@ export const GRUPOS_NAVEGACION: GrupoNavegacion[] = [
           { id: 'etd-historial', label: 'Historial de Solicitudes', icon: 'ri-history-line' },
         ],
       },
+      {
+        titulo: 'Análisis de Carga',
+        items: [
+          { id: 'agente-carga', label: 'Análisis de Agente de Carga', icon: 'ri-ship-2-line' },
+          { id: 'control-fechas', label: 'Control de Fechas NEXT', icon: 'ri-calendar-check-line' },
+        ],
+      },
     ],
   },
 ];

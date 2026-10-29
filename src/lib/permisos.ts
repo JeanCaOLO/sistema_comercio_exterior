@@ -75,12 +75,12 @@ export const PERMISOS_DEFAULT: MatrizPermisos = {
   'Administrador': [
     'dashboard', 'gestion-dropship', 'gestion-zf', 'lista-expedientes',
     'reportes', 'carga-caa', 'documentacion', 'repositorio', 'facturas', 'configuracion',
-    'etd-solicitar', 'etd-aprobaciones', 'etd-historial', 'etd-dashboard'
+    'etd-solicitar', 'etd-aprobaciones', 'etd-historial', 'etd-dashboard', 'agente-carga', 'control-fechas'
   ],
   'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Bodega': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Documentos': ['dashboard', 'lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial'],
+  'Documentos': ['dashboard', 'lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial', 'agente-carga', 'control-fechas'],
   'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Solicitante': ['carga-caa', 'documentacion', 'repositorio', 'facturas'],
 };
