@@ -92,7 +92,7 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
     { 
       id: 'documentos', 
       nombre: 'Documentos', 
-      descripcion: 'Visualización de CCA, Repositorio Docs y Lista de Expedientes',
+      descripcion: 'Dashboard, Lista de Expedientes, CCA, Repositorio Docs y Facturas',
       color: 'bg-teal-100 text-teal-800 border-teal-300'
     },
     { 

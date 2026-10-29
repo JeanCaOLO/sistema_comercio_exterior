@@ -66,7 +66,7 @@ export const ROLES: Rol[] = [
   { nombre: 'Gestor Dropship', descripcion: 'Gestión de expedientes Dropship', color: 'bg-blue-100 text-blue-800' },
   { nombre: 'Gestor ZF', descripcion: 'Gestión de expedientes ZF', color: 'bg-green-100 text-green-800' },
   { nombre: 'Bodega', descripcion: 'Gestión de recepción y almacenamiento', color: 'bg-orange-100 text-orange-800' },
-  { nombre: 'Documentos', descripcion: 'Visualización de CCA, Repositorio Docs y Lista de Expedientes', color: 'bg-teal-100 text-teal-800' },
+  { nombre: 'Documentos', descripcion: 'Dashboard, Lista de Expedientes, CCA, Repositorio Docs y Facturas', color: 'bg-teal-100 text-teal-800' },
   { nombre: 'Expedientes', descripcion: 'Gestión de Dropship, ZF, Lista de Expedientes y Repositorio Docs', color: 'bg-indigo-100 text-indigo-800' },
   { nombre: 'Solicitante', descripcion: 'Solicitudes y carga de documentos', color: 'bg-rose-100 text-rose-800' },
 ];
@@ -80,13 +80,27 @@ export const PERMISOS_DEFAULT: MatrizPermisos = {
   'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Bodega': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Documentos': ['lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial'],
+  'Documentos': ['dashboard', 'lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial'],
   'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Solicitante': ['carga-caa', 'documentacion', 'repositorio', 'facturas'],
 };
 
 const CLAVE_PERMISOS = 'matriz_permisos';
 const CLAVE_APROBACION_ETD = 'roles_aprobacion_etd';
+
+// La columna `valor` de configuracion_sistema es de tipo texto, por lo que
+// Postgres devuelve el JSON como string. Esta función tolera ambos casos
+// (objeto ya parseado o string JSON) y devuelve null si no se puede leer.
+function parsearValorConfig(valor: unknown): unknown {
+  if (typeof valor !== 'string') return valor ?? null;
+  const texto = valor.trim();
+  if (!texto) return null;
+  try {
+    return JSON.parse(texto);
+  } catch {
+    return null;
+  }
+}
 
 // Roles que, de forma predeterminada, pueden aprobar/rechazar cambios de ETD Inicial.
 export const ROLES_APROBACION_ETD_DEFAULT: string[] = ['Administrador'];
@@ -99,10 +113,11 @@ export async function cargarRolesAprobacionEtd(): Promise<string[]> {
       .select('valor')
       .eq('clave', CLAVE_APROBACION_ETD)
       .maybeSingle();
-    if (error || !data || !Array.isArray(data.valor)) {
+    const valor = parsearValorConfig(data?.valor);
+    if (error || !data || !Array.isArray(valor)) {
       return [...ROLES_APROBACION_ETD_DEFAULT];
     }
-    return data.valor as string[];
+    return valor.filter((r): r is string => typeof r === 'string');
   } catch (error) {
     console.error('Error cargando roles de aprobación ETD:', error);
     return [...ROLES_APROBACION_ETD_DEFAULT];
@@ -121,7 +136,7 @@ export async function guardarRolesAprobacionEtd(roles: string[]): Promise<void> 
   if (existente) {
     const { error } = await supabase
       .from('configuracion_sistema')
-      .update({ valor: roles, updated_at: new Date().toISOString() })
+      .update({ valor: JSON.stringify(roles), updated_at: new Date().toISOString() })
       .eq('clave', CLAVE_APROBACION_ETD);
     if (error) throw error;
   } else {
@@ -129,7 +144,7 @@ export async function guardarRolesAprobacionEtd(roles: string[]): Promise<void> 
       .from('configuracion_sistema')
       .insert([{
         clave: CLAVE_APROBACION_ETD,
-        valor: roles,
+        valor: JSON.stringify(roles),
         descripcion: 'Roles autorizados a aprobar o rechazar cambios de ETD Inicial'
       }]);
     if (error) throw error;
@@ -169,11 +184,12 @@ export async function cargarMatrizPermisos(): Promise<MatrizPermisos> {
       .eq('clave', CLAVE_PERMISOS)
       .maybeSingle();
 
-    if (error || !data || !data.valor || typeof data.valor !== 'object') {
+    const valor = parsearValorConfig(data?.valor);
+    if (error || !valor || typeof valor !== 'object' || Array.isArray(valor)) {
       return { ...PERMISOS_DEFAULT };
     }
 
-    const guardado = data.valor as MatrizPermisos;
+    const guardado = valor as MatrizPermisos;
     // Construir un mapa de lo guardado con claves normalizadas para alinear con los roles actuales
     const mapaGuardado: Record<string, string[]> = {};
     Object.keys(guardado).forEach((clave) => {
@@ -204,7 +220,7 @@ export async function guardarMatrizPermisos(matriz: MatrizPermisos): Promise<voi
   if (existente) {
     const { error } = await supabase
       .from('configuracion_sistema')
-      .update({ valor: matriz, updated_at: new Date().toISOString() })
+      .update({ valor: JSON.stringify(matriz), updated_at: new Date().toISOString() })
       .eq('clave', CLAVE_PERMISOS);
     if (error) throw error;
   } else {
@@ -212,7 +228,7 @@ export async function guardarMatrizPermisos(matriz: MatrizPermisos): Promise<voi
       .from('configuracion_sistema')
       .insert([{
         clave: CLAVE_PERMISOS,
-        valor: matriz,
+        valor: JSON.stringify(matriz),
         descripcion: 'Matriz de permisos de módulos por rol'
       }]);
     if (error) throw error;
