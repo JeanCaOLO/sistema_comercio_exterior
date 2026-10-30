@@ -5,6 +5,7 @@ import {
   cargarComparativoVigente,
   compararCargas,
   etiquetaPeriodo,
+  filtrarPorAsignacion,
   formatearEntero,
   PAISES_INFO,
   PAISES_ORDEN,
@@ -16,6 +17,7 @@ import {
 } from '@/lib/agenteCarga';
 import TarjetasResumen from './TarjetasResumen';
 import IndicadorSinProveedor from './IndicadorSinProveedor';
+import FiltroAsignacion from './FiltroAsignacion';
 import TablaAsignacion from './TablaAsignacion';
 import ComparacionCarga from './ComparacionCarga';
 import DistribucionCarga from './DistribucionCarga';
@@ -48,6 +50,8 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
   const [seleccion, setSeleccion] = useState<SeleccionDetalle | null>(null);
   const [comparativoFilas, setComparativoFilas] = useState<FilaComparativo[]>([]);
   const [metaComparativo, setMetaComparativo] = useState<MetaComparativo | null>(null);
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -76,11 +80,17 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
     cargar();
   }, [cargar]);
 
-  const sinAsignar = useMemo(() => pos.filter((p) => p.proveedorServicio === SIN_PROVEEDOR).length, [pos]);
+  const filtrado = useMemo(() => filtrarPorAsignacion(pos, { desde, hasta }), [pos, desde, hasta]);
+  const posFiltradas = filtrado.pos;
+
+  const sinAsignar = useMemo(
+    () => posFiltradas.filter((p) => p.proveedorServicio === SIN_PROVEEDOR).length,
+    [posFiltradas]
+  );
 
   const sinAsignarPorPais = useMemo(() => {
     const mapa = new Map<string, number>();
-    pos.forEach((p) => {
+    posFiltradas.forEach((p) => {
       if (p.proveedorServicio !== SIN_PROVEEDOR) return;
       mapa.set(p.paisDestino, (mapa.get(p.paisDestino) || 0) + 1);
     });
@@ -88,11 +98,13 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
       .filter((pais) => mapa.has(pais))
       .map((pais) => ({ pais: pais as string, cantidad: mapa.get(pais) || 0 }))
       .sort((a, b) => b.cantidad - a.cantidad);
-  }, [pos]);
+  }, [posFiltradas]);
 
   const posBase = useMemo(
-    () => (incluirSinAsignar ? pos : pos.filter((p) => p.proveedorServicio !== SIN_PROVEEDOR)),
-    [pos, incluirSinAsignar]
+    () => (incluirSinAsignar
+      ? posFiltradas
+      : posFiltradas.filter((p) => p.proveedorServicio !== SIN_PROVEEDOR)),
+    [posFiltradas, incluirSinAsignar]
   );
 
   const analisis = useMemo(
@@ -100,10 +112,17 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
     [posBase]
   );
 
-  const periodoLabel = useMemo(
-    () => etiquetaPeriodo(meta?.cargadoAt || new Date().toISOString()),
-    [meta]
-  );
+  const periodoLabel = useMemo(() => {
+    if (desde || hasta) {
+      const formato = (valor: string) => {
+        if (!valor) return '—';
+        const [anio, mes, dia] = valor.split('-');
+        return `${dia}/${mes}/${anio}`;
+      };
+      return `${formato(desde)} a ${formato(hasta)}`;
+    }
+    return etiquetaPeriodo(meta?.cargadoAt || new Date().toISOString());
+  }, [desde, hasta, meta]);
 
   const comparativo = useMemo(
     () => compararCargas(posBase, comparativoFilas, metaComparativo),
@@ -114,7 +133,7 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
     if (!seleccion) return null;
     const { proveedorServicio, pais } = seleccion;
     // Las POs sin proveedor no están en la base filtrada, se toman del universo completo.
-    const universo = proveedorServicio === SIN_PROVEEDOR ? pos : posBase;
+    const universo = proveedorServicio === SIN_PROVEEDOR ? posFiltradas : posBase;
     const filtradas = universo.filter((p) => {
       const coincideProveedor = !proveedorServicio || p.proveedorServicio === proveedorServicio;
       const coincidePais = !pais || p.paisDestino === pais;
@@ -128,7 +147,7 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
       subtitulo: `${formatearEntero(filtradas.length)} POs · ${periodoLabel}`,
       pos: filtradas,
     };
-  }, [seleccion, pos, posBase, periodoLabel]);
+  }, [seleccion, posFiltradas, posBase, periodoLabel]);
 
   const abrirDetalle = (proveedorServicio: string, pais: string | null) => {
     setSeleccion({ proveedorServicio, pais });
@@ -143,7 +162,7 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
             <i className="ri-ship-2-line text-white text-xl"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Análisis de Agente de Carga</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Análisis Asignación Agente de Carga</h1>
             <p className="text-sm text-gray-500 mt-0.5 max-w-2xl">
               Carga el Excel de POs y obtén la asignación por Proveedor de Servicio y País Destino.
               El archivo trae el histórico completo, así que cada carga reemplaza la anterior.
@@ -186,7 +205,7 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
           <i className="ri-loader-4-line animate-spin text-3xl text-teal-600"></i>
           <p className="mt-3 text-sm text-gray-500">Cargando el análisis guardado...</p>
         </div>
-      ) : pos.length === 0 || !analisis ? (
+      ) : pos.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 px-6 py-14 text-center">
           <div className="w-16 h-16 mx-auto flex items-center justify-center rounded-full bg-teal-50 text-teal-600">
             <i className="ri-file-excel-2-line text-3xl"></i>
@@ -229,11 +248,59 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
         </div>
       ) : (
         <>
+          <FiltroAsignacion
+            desde={desde}
+            hasta={hasta}
+            onDesde={setDesde}
+            onHasta={setHasta}
+            onLimpiar={() => {
+              setDesde('');
+              setHasta('');
+            }}
+            totalPos={pos.length}
+            enRango={posFiltradas.length}
+            sinFecha={filtrado.sinFecha}
+            fueraRango={filtrado.fueraRango}
+            activo={filtrado.activo}
+          />
+
+          {!analisis ? (
+            <div className="bg-white rounded-xl border border-gray-200 px-6 py-14 text-center">
+              <div className="w-16 h-16 mx-auto flex items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                <i className="ri-calendar-close-line text-3xl"></i>
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900 mt-4">
+                {posFiltradas.length === 0
+                  ? 'No hay POs en el periodo seleccionado'
+                  : 'Todas las POs del periodo están sin proveedor asignado'}
+              </h2>
+              <p className="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
+                {posFiltradas.length === 0
+                  ? 'Ajustá las fechas Desde y Hasta, o volvé a Todo el histórico para ver la carga completa.'
+                  : 'Las POs del periodo no tienen Proveedor de Servicio. Podés incluirlas para ver la distribución por país destino.'}
+              </p>
+              <button
+                onClick={() => {
+                  if (posFiltradas.length === 0) {
+                    setDesde('');
+                    setHasta('');
+                    return;
+                  }
+                  setIncluirSinAsignar(true);
+                }}
+                className="mt-5 px-5 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <i className={`${posFiltradas.length === 0 ? 'ri-history-line' : 'ri-eye-line'} mr-1.5`}></i>
+                {posFiltradas.length === 0 ? 'Ver todo el histórico' : 'Incluir POs sin proveedor'}
+              </button>
+            </div>
+          ) : (
+            <>
           <TarjetasResumen analisis={analisis} />
 
           <IndicadorSinProveedor
             sinAsignar={sinAsignar}
-            total={pos.length}
+            total={posFiltradas.length}
             porPais={sinAsignarPorPais}
             incluirSinAsignar={incluirSinAsignar}
             onToggle={() => setIncluirSinAsignar((v) => !v)}
@@ -251,11 +318,21 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
             onCargarExcel={() => setModalCarga(true)}
           />
 
-          <ComparacionCarga
-            comparativo={comparativo}
-            periodoActual={periodoLabel}
-            onVerDetalle={abrirDetalle}
-          />
+          {filtrado.activo ? (
+            <div className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex items-start gap-2">
+              <i className="ri-information-line text-gray-400 mt-0.5"></i>
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                La comparación con la carga anterior se calcula sobre el histórico completo, así que se oculta
+                mientras hay un periodo seleccionado. Tocá “Todo el histórico” para verla.
+              </p>
+            </div>
+          ) : (
+            <ComparacionCarga
+              comparativo={comparativo}
+              periodoActual={periodoLabel}
+              onVerDetalle={abrirDetalle}
+            />
+          )}
 
           <DistribucionCarga analisis={analisis} onVerDetalle={abrirDetalle} />
 
@@ -279,6 +356,8 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
               <i className="ri-upload-2-line mr-1.5"></i>Cargar Excel
             </button>
           </div>
+            </>
+          )}
         </>
       )}
 

@@ -71,7 +71,7 @@ export const GRUPOS_NAVEGACION: GrupoNavegacion[] = [
       {
         titulo: 'Análisis de Carga',
         items: [
-          { id: 'agente-carga', label: 'Análisis de Agente de Carga', icon: 'ri-ship-2-line' },
+          { id: 'agente-carga', label: 'Análisis Asignación Agente de Carga', icon: 'ri-ship-2-line' },
           { id: 'control-fechas', label: 'Control de Fechas NEXT', icon: 'ri-calendar-check-line' },
         ],
       },

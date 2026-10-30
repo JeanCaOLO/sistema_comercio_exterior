@@ -20,6 +20,7 @@ import ParametrosControl from './ParametrosControl';
 import ResumenReporte from './ResumenReporte';
 import ReglasEtapa from './ReglasEtapa';
 import ModalCargarControl from './ModalCargarControl';
+import PanelEnvioReporte from './PanelEnvioReporte';
 
 interface AnalisisControlFechasProps {
   usuario: string;
@@ -282,6 +283,8 @@ export default function AnalisisControlFechas({ usuario }: AnalisisControlFechas
           </div>
 
           <PanelHallazgos resultado={resultado} tabActiva={tab} onTab={setTab} />
+
+          <PanelEnvioReporte resultado={resultado} meta={meta} usuario={usuario} />
 
           <ResumenReporte resumen={resumen} />
 

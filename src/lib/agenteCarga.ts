@@ -35,6 +35,8 @@ export interface PoCarga {
   montoTotal: number | null;
   etdInicial: string | null;
   etaInicial: string | null;
+  /** Fecha de asignación del agente de carga (columna del Excel). */
+  fechaAsignacion: string | null;
 }
 
 export interface MetaCarga {
@@ -242,6 +244,13 @@ const COLUMNAS_BUSCADAS: Record<string, string[]> = {
   montoTotal: ['monto total'],
   etdInicial: ['etd inicial'],
   etaInicial: ['eta inicial'],
+  fechaAsignacion: [
+    'fecha asignacion agente de carga',
+    'fecha de asignacion agente de carga',
+    'fecha asignacion carga',
+    'fecha asignacion agente',
+    'fecha asignacion',
+  ],
 };
 
 function indiceColumna(encabezados: string[], candidatos: string[]): number {
@@ -321,6 +330,11 @@ export async function parsearArchivoExcel(archivo: File): Promise<ResultadoParse
   if (indices.rutaLogistica < 0 && indices.puertoArribo < 0) {
     advertencias.push('No se detectaron columnas de destino; todas las POs quedaron en "OTROS".');
   }
+  if (indices.fechaAsignacion < 0) {
+    advertencias.push(
+      'No se detectó la columna "Fecha Asignación Agente de Carga", así que el filtro por periodo de asignación va a quedar sin fechas.'
+    );
+  }
   if (hojaElegida.nombre !== 'POs Activas') {
     advertencias.push(`La hoja usada fue "${hojaElegida.nombre}".`);
   }
@@ -359,6 +373,7 @@ export async function parsearArchivoExcel(archivo: File): Promise<ResultadoParse
       montoTotal: aNumero(valor(fila, 'montoTotal')),
       etdInicial: aFechaIso(valor(fila, 'etdInicial')),
       etaInicial: aFechaIso(valor(fila, 'etaInicial')),
+      fechaAsignacion: aFechaIso(valor(fila, 'fechaAsignacion')),
     });
   });
 
@@ -370,6 +385,53 @@ export async function parsearArchivoExcel(archivo: File): Promise<ResultadoParse
 }
 
 // ------------------------- análisis -------------------------
+
+export interface RangoAsignacion {
+  desde: string;
+  hasta: string;
+}
+
+export interface ResultadoFiltroAsignacion {
+  pos: PoCarga[];
+  sinFecha: number;
+  fueraRango: number;
+  activo: boolean;
+}
+
+/**
+ * Filtra las POs por la Fecha Asignación Agente de Carga.
+ * Las POs sin esa fecha solo se conservan cuando no hay filtro activo.
+ */
+export function filtrarPorAsignacion(pos: PoCarga[], rango: RangoAsignacion): ResultadoFiltroAsignacion {
+  const desde = rango.desde || '';
+  const hasta = rango.hasta || '';
+  const activo = Boolean(desde || hasta);
+
+  if (!activo) return { pos, sinFecha: 0, fueraRango: 0, activo: false };
+
+  const dentro: PoCarga[] = [];
+  let sinFecha = 0;
+  let fueraRango = 0;
+
+  pos.forEach((p) => {
+    if (!p.fechaAsignacion) {
+      sinFecha += 1;
+      return;
+    }
+    const dia = p.fechaAsignacion.slice(0, 10);
+    if (desde && dia < desde) {
+      fueraRango += 1;
+      return;
+    }
+    if (hasta && dia > hasta) {
+      fueraRango += 1;
+      return;
+    }
+    dentro.push(p);
+  });
+
+  return { pos: dentro, sinFecha, fueraRango, activo: true };
+}
 
 export function analizarCarga(pos: PoCarga[], incluirSinAsignar = false): AnalisisAsignacion {
   const base = incluirSinAsignar ? pos : pos.filter((p) => p.proveedorServicio !== SIN_PROVEEDOR);
@@ -439,6 +501,7 @@ interface FilaSupabase {
   monto_total: number | null;
   etd_inicial: string | null;
   eta_inicial: string | null;
+  fecha_asignacion: string | null;
   archivo_origen: string;
   cargado_por: string;
   cargado_at: string;
@@ -756,7 +819,7 @@ export async function cargarCargaPorPeriodo(
   for (let desde = 0; ; desde += TAMANO_PAGINA) {
     const { data, error: errorFilas } = await supabase
       .from('agente_carga_pos')
-      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, monto_total, etd_inicial, eta_inicial, archivo_origen, cargado_por, cargado_at, periodo')
+      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, monto_total, etd_inicial, eta_inicial, fecha_asignacion, archivo_origen, cargado_por, cargado_at, periodo')
       .eq('carga_id', cargaId)
       .order('proveedor_servicio', { ascending: true })
       .range(desde, desde + TAMANO_PAGINA - 1);
@@ -780,6 +843,7 @@ export async function cargarCargaPorPeriodo(
     montoTotal: f.monto_total,
     etdInicial: f.etd_inicial,
     etaInicial: f.eta_inicial,
+    fechaAsignacion: f.fecha_asignacion,
   }));
 
   const primero = filas[0];
@@ -821,6 +885,7 @@ export async function guardarCargaPeriodo(
     monto_total: p.montoTotal,
     etd_inicial: p.etdInicial,
     eta_inicial: p.etaInicial,
+    fecha_asignacion: p.fechaAsignacion,
     archivo_origen: archivo,
     cargado_por: usuario,
     cargado_at: cargadoAt,
@@ -923,7 +988,7 @@ export async function cargarCargaVigente(): Promise<{ pos: PoCarga[]; meta: Meta
   for (let desde = 0; ; desde += TAMANO_PAGINA) {
     const { data, error } = await supabase
       .from('agente_carga_pos')
-      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, monto_total, etd_inicial, eta_inicial, archivo_origen, cargado_por, cargado_at')
+      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, monto_total, etd_inicial, eta_inicial, fecha_asignacion, archivo_origen, cargado_por, cargado_at')
       .eq('carga_id', metaVigente.cargaId)
       .order('proveedor_servicio', { ascending: true })
       .range(desde, desde + TAMANO_PAGINA - 1);
@@ -946,6 +1011,7 @@ export async function cargarCargaVigente(): Promise<{ pos: PoCarga[]; meta: Meta
     montoTotal: f.monto_total,
     etdInicial: f.etd_inicial,
     etaInicial: f.eta_inicial,
+    fechaAsignacion: f.fecha_asignacion,
   }));
 
   return {
@@ -1093,6 +1159,7 @@ export async function guardarCargaVigente(
     monto_total: p.montoTotal,
     etd_inicial: p.etdInicial,
     eta_inicial: p.etaInicial,
+    fecha_asignacion: p.fechaAsignacion,
     archivo_origen: archivo,
     cargado_por: usuario,
     cargado_at: cargadoAt,

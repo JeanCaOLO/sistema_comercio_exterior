@@ -49,6 +49,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
         'Ruta Logística': p.rutaLogistica,
         Etapa: p.etapa,
         'ETD Inicial': p.etdInicial || '',
+        'Fecha Asignación': p.fechaAsignacion || '',
         'Monto Total': p.montoTotal ?? '',
       }))
     );
@@ -100,7 +101,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
         </div>
 
         <div className="max-h-[60vh] overflow-auto">
-          <table className="w-full text-sm border-collapse min-w-[760px]">
+          <table className="w-full text-sm border-collapse min-w-[880px]">
             <thead className="sticky top-0 bg-gray-50 z-10">
               <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">PO</th>
@@ -108,6 +109,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">País</th>
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">Etapa</th>
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">ETD Inicial</th>
+                <th className="px-4 py-2.5 font-semibold whitespace-nowrap">Fecha Asignación</th>
                 <th className="px-4 py-2.5 font-semibold text-right whitespace-nowrap">Monto Total</th>
               </tr>
             </thead>
@@ -125,6 +127,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
                   </td>
                   <td className="px-4 py-2.5 text-gray-600 text-xs whitespace-nowrap">{p.etapa || '—'}</td>
                   <td className="px-4 py-2.5 text-gray-600 text-xs whitespace-nowrap">{p.etdInicial || '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-600 text-xs whitespace-nowrap">{p.fechaAsignacion || '—'}</td>
                   <td className="px-4 py-2.5 text-right text-gray-700 whitespace-nowrap">
                     {p.montoTotal ? formatearMoneda(p.montoTotal) : '—'}
                   </td>
@@ -132,7 +135,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
               ))}
               {filtradas.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
                     <i className="ri-inbox-line text-3xl mb-2 block"></i>
                     No hay POs que coincidan con la búsqueda.
                   </td>
