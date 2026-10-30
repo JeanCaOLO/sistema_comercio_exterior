@@ -7,9 +7,10 @@ interface CampanitaNotificacionesProps {
   usuarioId: string;
   usuarioNombre: string;
   usuarioEmail: string;
+  usuarioRoles?: string[];
 }
 
-export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usuarioEmail }: CampanitaNotificacionesProps) {
+export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usuarioEmail, usuarioRoles }: CampanitaNotificacionesProps) {
   const [abierto, setAbierto] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -22,7 +23,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
     cerrarToast,
     marcarLeida,
     marcarTodasLeidas,
-  } = useNotificaciones(usuarioId, usuarioEmail);
+  } = useNotificaciones(usuarioId, usuarioEmail, usuarioRoles);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

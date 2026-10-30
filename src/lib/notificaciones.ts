@@ -37,7 +37,32 @@ export const EMAILS_NOTIFICACION_GLOBAL = [
 export const EMAILS_SIN_TOAST = [
   'smcdonald@ologistics.com',
   'lchavala@ologistics.com',
+  'jmora@ologistics.com',
+  'jalvarez@ologistics.com',
 ];
+
+// Roles considerados administradores (se comparan normalizados, sin importar
+// mayúsculas, espacios ni separadores).
+const ROLES_ADMIN = ['admin', 'administrador'];
+
+// Indica si el listado de roles corresponde a un administrador.
+export function esRolAdministrador(roles?: string[] | null): boolean {
+  if (!roles || roles.length === 0) return false;
+  return roles.some((rol) => {
+    const normalizado = (rol || '').trim().toLowerCase().replace(/[_-]/g, ' ');
+    if (!normalizado) return false;
+    return ROLES_ADMIN.some((admin) => normalizado === admin || normalizado.includes(admin));
+  });
+}
+
+// Regla centralizada de los avisos emergentes (toasts):
+// los administradores y los correos de la lista no reciben toasts,
+// pero sí conservan todas sus notificaciones en la campana.
+export function debeSilenciarToast(email?: string | null, roles?: string[] | null): boolean {
+  const correo = (email || '').trim().toLowerCase();
+  if (correo && EMAILS_SIN_TOAST.includes(correo)) return true;
+  return esRolAdministrador(roles);
+}
 
 // Mapa de rutas logísticas → usuario(s) a notificar al cargar un documento + PO en Carga CAA
 export function getEmailsRutaCAA(ruta: string): string[] {

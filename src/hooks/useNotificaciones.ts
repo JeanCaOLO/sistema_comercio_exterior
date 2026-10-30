@@ -5,7 +5,7 @@ import {
   contarNoLeidas,
   marcarComoLeida,
   marcarTodasComoLeidas,
-  EMAILS_SIN_TOAST,
+  debeSilenciarToast,
   type Notificacion,
 } from '@/lib/notificaciones';
 
@@ -14,7 +14,7 @@ export interface ToastItem {
   notificacion: Notificacion;
 }
 
-export function useNotificaciones(usuarioId: string, email?: string) {
+export function useNotificaciones(usuarioId: string, email?: string, roles?: string[]) {
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [noLeidas, setNoLeidas] = useState(0);
   const [cargando, setCargando] = useState(true);
@@ -29,10 +29,15 @@ export function useNotificaciones(usuarioId: string, email?: string) {
     emailRef.current = email;
   }, [email]);
 
+  // Los administradores (y los correos de la lista) no reciben avisos
+  // emergentes; sus notificaciones siguen llegando a la campana.
+  const rolesRef = useRef<string[]>(roles || []);
+  useEffect(() => {
+    rolesRef.current = roles || [];
+  }, [roles]);
+
   const suprimirToast = useCallback(() => {
-    return emailRef.current
-      ? EMAILS_SIN_TOAST.includes(emailRef.current.toLowerCase())
-      : false;
+    return debeSilenciarToast(emailRef.current, rolesRef.current);
   }, []);
 
   const generarClave = (id: string) =>

@@ -207,7 +207,7 @@ export default function Home() {
             </span>
           </div>
           {usuarioId && (
-            <CampanitaNotificaciones usuarioId={usuarioId} usuarioNombre={userName} usuarioEmail={user.email || ''} />
+            <CampanitaNotificaciones usuarioId={usuarioId} usuarioNombre={userName} usuarioEmail={user.email || ''} usuarioRoles={userRoles} />
           )}
         </div>
 
