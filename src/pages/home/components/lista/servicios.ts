@@ -3,6 +3,7 @@
 import { supabase } from '@/lib/supabase';
 import { notificarComentario } from '@/lib/notificaciones';
 import { parseDocEntries, combinarEntradas, type DocEntry } from '@/lib/documentos';
+import { subirDocumento } from '@/lib/storageDocumentos';
 import type { Expediente } from './types';
 import { calcularDiasHabilesReales, calcularTiempoReal } from './utils';
 
@@ -152,26 +153,8 @@ const subirDocumentos = async (expedienteId: string, archivos: File[]): Promise<
   const urls: string[] = [];
 
   for (const file of archivos) {
-    const fileName = `${expedienteId}/${Date.now()}_${file.name}`;
-
-    const { error } = await supabase.storage
-      .from('expedientes-documentos')
-      .upload(fileName, file, { cacheControl: '3600', upsert: false });
-
-    if (error) {
-      if (error.message.includes('not found') || error.message.includes('does not exist')) {
-        throw new Error(
-          'El almacenamiento de documentos no está configurado. Por favor, cree un bucket llamado "expedientes-documentos" en Supabase Storage con acceso público.'
-        );
-      }
-      throw new Error(`Error al subir ${file.name}: ${error.message}`);
-    }
-
-    const { data: urlData } = supabase.storage
-      .from('expedientes-documentos')
-      .getPublicUrl(fileName);
-
-    if (urlData?.publicUrl) urls.push(urlData.publicUrl);
+    const url = await subirDocumento(file, { carpeta: expedienteId });
+    if (url) urls.push(url);
   }
 
   return urls;

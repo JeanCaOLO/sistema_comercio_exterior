@@ -6,14 +6,13 @@ import { supabase } from '@/lib/supabase';
 import { crearNotificacion } from '@/lib/notificaciones';
 import { consultarPorIds } from '@/lib/consultas';
 import { parseDocEntries, combinarEntradas, nombresFacturas, type DocEntry } from '@/lib/documentos';
+import { subirDocumento } from '@/lib/storageDocumentos';
 import {
   COLUMNAS_EXPEDIENTE,
   DIEZ_DIAS_MS,
   type Expediente,
   type TipoModulo,
 } from './types';
-
-const BUCKET_DOCUMENTOS = 'expedientes-documentos';
 
 /** Trae los expedientes del módulo con las columnas livianas del kanban. */
 export const consultarExpedientes = async (tipoModulo: TipoModulo): Promise<Expediente[]> => {
@@ -322,26 +321,8 @@ export const subirArchivosExpediente = async (
   const uploadedUrls: string[] = [];
 
   for (const file of files) {
-    const fileName = `${expedienteId}/${Date.now()}_${file.name}`;
-
-    const { error } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(fileName, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
-
-    if (error) {
-      if (error.message.includes('not found') || error.message.includes('does not exist')) {
-        throw new Error(
-          'El almacenamiento de documentos no está configurado. Por favor, cree un bucket llamado "expedientes-documentos" en Supabase Storage con acceso público.'
-        );
-      }
-      throw new Error(`Error al subir ${file.name}: ${error.message}`);
-    }
-
-    const { data: urlData } = supabase.storage.from(BUCKET_DOCUMENTOS).getPublicUrl(fileName);
-    if (urlData?.publicUrl) {
-      uploadedUrls.push(urlData.publicUrl);
-    }
+    const url = await subirDocumento(file, { carpeta: expedienteId });
+    if (url) uploadedUrls.push(url);
   }
 
   return uploadedUrls;

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { cargarRutasActivas, type RutaLogistica } from '../../../lib/rutas';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
+import { subirDocumento } from '@/lib/storageDocumentos';
 
 // Feriados de El Salvador
 const FERIADOS = [
@@ -282,38 +283,13 @@ export default function FormularioExpediente({ onClose, tipoModulo = 'dropship' 
     const uploadedUrls: string[] = [];
     
     try {
-      // Intentar subir archivos directamente
-      // El bucket "expedientes-documentos" debe existir previamente en Supabase Storage
+      // Subida con tolerancia a respuestas lentas del servicio de Storage
       for (const file of uploadedFiles) {
-        const fileName = `${expedienteId}/${Date.now()}_${file.name}`;
-        console.log('📤 Subiendo archivo:', fileName);
-        
-        const { data, error } = await supabase.storage
-          .from('expedientes-documentos')
-          .upload(fileName, file, {
-            cacheControl: '3600',
-            upsert: false
-          });
-
-        if (error) {
-          console.error('❌ Error al subir archivo:', error);
-          
-          // Si el error es porque el bucket no existe, dar instrucciones claras
-          if (error.message.includes('not found') || error.message.includes('does not exist')) {
-            throw new Error('El almacenamiento de documentos no está configurado. Por favor, cree un bucket llamado "expedientes-documentos" en Supabase Storage con acceso público.');
-          }
-          
-          throw new Error(`Error al subir ${file.name}: ${error.message}`);
-        }
-
-        // Obtener URL pública
-        const { data: urlData } = supabase.storage
-          .from('expedientes-documentos')
-          .getPublicUrl(fileName);
-
-        if (urlData?.publicUrl) {
-          uploadedUrls.push(urlData.publicUrl);
-          console.log('✅ Archivo subido:', urlData.publicUrl);
+        console.log('📤 Subiendo archivo:', file.name);
+        const url = await subirDocumento(file, { carpeta: expedienteId });
+        if (url) {
+          uploadedUrls.push(url);
+          console.log('✅ Archivo subido:', url);
         }
       }
     } catch (error: any) {
