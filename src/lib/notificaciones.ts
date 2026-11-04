@@ -1012,59 +1012,139 @@ export function esNotificacionFechas(tipo: string): boolean {
   return TIPOS_NOTIFICACION_FECHAS.includes(tipo);
 }
 
-export async function obtenerNotificaciones(usuarioId: string): Promise<Notificacion[]> {
-  try {
-    const { data, error } = await supabase
-      .from('notificaciones')
-      .select('*')
-      .eq('usuario_id', usuarioId)
-      .order('created_at', { ascending: false })
-      .limit(50);
+// ============================================================
+// RESILIENCIA DE RED
+// La campanita consulta periódicamente. Si el navegador pierde la
+// conexión un instante (o la pestaña queda en segundo plano), la
+// petición falla con "Failed to fetch". Eso no es un error real del
+// sistema: se reintenta en silencio y sin ensuciar la consola.
+// ============================================================
 
-    if (error) throw error;
-    return data || [];
-  } catch (err: any) {
-    console.error('[Notificaciones] Error al obtener:', err.message || err);
-    return [];
-  }
+export function conexionDisponible(): boolean {
+  if (typeof navigator === 'undefined') return true;
+  return navigator.onLine !== false;
 }
 
-export async function contarNoLeidas(usuarioId: string): Promise<number> {
-  try {
-    const { count, error } = await supabase
-      .from('notificaciones')
-      .select('*', { count: 'exact', head: true })
-      .eq('usuario_id', usuarioId)
-      .eq('leida', false);
+function esErrorDeRed(err: unknown): boolean {
+  if (!err) return false;
+  if (!conexionDisponible()) return true;
+  const texto = (
+    typeof err === 'string'
+      ? err
+      : (err as { message?: string }).message || ''
+  ).toLowerCase();
+  return (
+    texto.includes('failed to fetch') ||
+    texto.includes('fetch failed') ||
+    texto.includes('load failed') ||
+    texto.includes('networkerror') ||
+    texto.includes('network error') ||
+    texto.includes('err_internet_disconnected') ||
+    texto.includes('timeout') ||
+    texto.includes('aborted')
+  );
+}
 
-    if (error) throw error;
-    return count || 0;
-  } catch (err: any) {
-    console.error('[Notificaciones] Error al contar:', err.message || err);
-    return 0;
+const esperar = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Devuelve la lista de notificaciones o null si no se pudo consultar
+// por un problema de conexión (así no se borra lo que ya estaba en pantalla).
+export async function obtenerNotificaciones(usuarioId: string): Promise<Notificacion[] | null> {
+  if (!conexionDisponible()) return null;
+
+  let ultimoError: unknown = null;
+  for (let intento = 0; intento < 2; intento += 1) {
+    try {
+      const { data, error } = await supabase
+        .from('notificaciones')
+        .select('*')
+        .eq('usuario_id', usuarioId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      ultimoError = err;
+      if (intento === 0 && esErrorDeRed(err)) {
+        await esperar(700);
+      } else {
+        break;
+      }
+    }
   }
+
+  if (esErrorDeRed(ultimoError)) {
+    console.warn('[Notificaciones] Sin conexión momentánea al consultar. Se reintentará automáticamente.');
+  } else {
+    console.error('[Notificaciones] Error al obtener:', (ultimoError as Error)?.message || ultimoError);
+  }
+  return null;
+}
+
+// Devuelve el total sin leer o null si no se pudo consultar por conexión.
+export async function contarNoLeidas(usuarioId: string): Promise<number | null> {
+  if (!conexionDisponible()) return null;
+
+  let ultimoError: unknown = null;
+  for (let intento = 0; intento < 2; intento += 1) {
+    try {
+      const { count, error } = await supabase
+        .from('notificaciones')
+        .select('*', { count: 'exact', head: true })
+        .eq('usuario_id', usuarioId)
+        .eq('leida', false);
+
+      if (error) throw error;
+      return count || 0;
+    } catch (err) {
+      ultimoError = err;
+      if (intento === 0 && esErrorDeRed(err)) {
+        await esperar(700);
+      } else {
+        break;
+      }
+    }
+  }
+
+  if (esErrorDeRed(ultimoError)) {
+    console.warn('[Notificaciones] Sin conexión momentánea al contar. Se reintentará automáticamente.');
+  } else {
+    console.error('[Notificaciones] Error al contar:', (ultimoError as Error)?.message || ultimoError);
+  }
+  return null;
 }
 
 export async function marcarComoLeida(notificacionId: string): Promise<void> {
   try {
-    await supabase
+    const { error } = await supabase
       .from('notificaciones')
       .update({ leida: true })
       .eq('id', notificacionId);
+    if (error) throw error;
   } catch (err: any) {
-    console.error('[Notificaciones] Error al marcar leída:', err.message || err);
+    if (esErrorDeRed(err)) {
+      console.warn('[Notificaciones] No se pudo sincronizar la lectura (sin conexión).');
+    } else {
+      console.error('[Notificaciones] Error al marcar leída:', err.message || err);
+    }
   }
 }
 
 export async function marcarTodasComoLeidas(usuarioId: string): Promise<void> {
   try {
-    await supabase
+    const { error } = await supabase
       .from('notificaciones')
       .update({ leida: true })
       .eq('usuario_id', usuarioId)
       .eq('leida', false);
+    if (error) throw error;
   } catch (err: any) {
-    console.error('[Notificaciones] Error al marcar todas:', err.message || err);
+    if (esErrorDeRed(err)) {
+      console.warn('[Notificaciones] No se pudo sincronizar la lectura (sin conexión).');
+    } else {
+      console.error('[Notificaciones] Error al marcar todas:', err.message || err);
+    }
   }
 }
 
