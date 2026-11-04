@@ -7,6 +7,7 @@ import type { FilaEtdNotificado } from './ModalDetalleEtdNotificado';
 import type { FilaAsignadoNotificado } from './ModalDetalleAsignadoNotificado';
 import type { FilaSinEtd } from './ModalDetalleSinEtd';
 import type { FilaSinDatosEmbarque } from './ModalDetalleDatosEmbarque';
+import type { FilaPendienteOkPais } from './ModalDetallePendientesOkPais';
 
 const hoy = (): string => new Date().toISOString().split('T')[0];
 
@@ -89,4 +90,19 @@ export const descargarReporteSinDatosEmbarque = (filas: FilaSinDatosEmbarque[]):
   }));
 
   descargarExcel(`reporte-datos-embarque-pendientes-${hoy()}.xlsx`, datos);
+};
+
+export const descargarReportePendientesOkPais = (filas: FilaPendienteOkPais[]): void => {
+  const datos = filas.map((e) => ({
+    'PO/Tiquetera': e.po_tiquetera,
+    'EXP ID': e.exp_id || '-',
+    Módulo: e.tipo_modulo,
+    Solicitante: e.solicitante,
+    Estado: e.estado_expediente,
+    'Fecha Notificado': e.fechaNotificado ? formatearFechaCorta(e.fechaNotificado) : '—',
+    'Días de espera': e.diasEspera > 0 ? e.diasEspera : '—',
+    'Marca OK País': 'Pendiente',
+  }));
+
+  descargarExcel(`reporte-pendientes-ok-pais-${hoy()}.xlsx`, datos);
 };

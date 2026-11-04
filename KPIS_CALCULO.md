@@ -178,6 +178,20 @@ díasPromedio  = round( suma(díasDuración) / totalEvaluados * 10 ) / 10
 - **Total Entregados** = (Dropship en estado `Notificado`) + (Dropship en `Visto Listo`).
 - `% OK País = min(100, round(notificadoOkPais / totalEntregados * 100))`.
 
+### Detalle de POs pendientes de OK País
+- La tarjeta **Pendientes de OK País** es clickeable cuando el valor es mayor a `0` y abre el
+  listado de esas POs: **PO/Tiquetera, EXP ID, Módulo (Dropship / MCG), Solicitante, Estado,
+  Fecha Notificado y días de espera**.
+- **Días de espera** = días **naturales** entre `fecha_notificado` y hoy. Si el expediente no
+  tiene `fecha_notificado` registrada, se muestra `—` y no suma al conteo de "más de 7 días".
+- Colores de la espera: gris ≤ 3 días, ámbar 4–7 días, rojo > 7 días.
+- El listado se ordena de mayor a menor espera y se puede exportar a Excel
+  (`reporte-pendientes-ok-pais-*.xlsx`).
+- El conteo del detalle coincide con la tarjeta porque ambos usan el mismo universo:
+  Dropship (incluye MCG) entregado **sin** `ok_pais === true`.
+- La lógica vive en `useDashboard.ts` (`pendientesOkPaisDetalle`) y la interfaz en
+  `ModalDetallePendientesOkPais.tsx`.
+
 ---
 
 ## A.8 ETD → Notificado  *(Dropship Normal)*

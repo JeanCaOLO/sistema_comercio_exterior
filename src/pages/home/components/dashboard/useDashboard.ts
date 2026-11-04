@@ -21,6 +21,7 @@ import type { FilaEtdNotificado } from '@/pages/home/components/dashboard/ModalD
 import type { FilaAsignadoNotificado } from '@/pages/home/components/dashboard/ModalDetalleAsignadoNotificado';
 import type { FilaSinEtd } from '@/pages/home/components/dashboard/ModalDetalleSinEtd';
 import type { FilaSinDatosEmbarque } from '@/pages/home/components/dashboard/ModalDetalleDatosEmbarque';
+import type { FilaPendienteOkPais } from '@/pages/home/components/dashboard/ModalDetallePendientesOkPais';
 import {
   calcularKpiAsignadoNotificado,
   calcularKpiEtdNotificado,
@@ -148,6 +149,7 @@ export function useDashboard() {
   >([]);
   const [showReporteAsignadoNotificado, setShowReporteAsignadoNotificado] = useState(false);
   const [notificadoOkPais, setNotificadoOkPais] = useState(0);
+  const [showPendientesOkPais, setShowPendientesOkPais] = useState(false);
   const [sinEtdDetalle, setSinEtdDetalle] = useState<FilaSinEtd[]>([]);
   const [showSinEtdDetalle, setShowSinEtdDetalle] = useState(false);
   const [kpiEtdNotificado, setKpiEtdNotificado] = useState<KpiEtdNotificado>(KPI_ETD_VACIO);
@@ -491,6 +493,52 @@ export function useDashboard() {
     [expedientes]
   );
 
+  // POs Dropship ya entregadas (Notificado / Visto Listo) sin marca de cierre "OK País".
+  const pendientesOkPaisDetalle = useMemo<FilaPendienteOkPais[]>(() => {
+    const hoyMs = new Date(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      new Date().getDate()
+    ).getTime();
+
+    const filas: FilaPendienteOkPais[] = [];
+
+    expedientes.filter(esDropship).forEach((exp) => {
+      const entregado =
+        exp.estado_expediente === 'Notificado' || exp.estado_expediente === 'Visto Listo';
+      if (!entregado || exp.ok_pais === true) return;
+
+      const fechaNotificado = exp.fecha_notificado ? String(exp.fecha_notificado) : '';
+      let diasEspera = 0;
+      if (fechaNotificado) {
+        const partes = fechaNotificado.substring(0, 10).split('-');
+        if (partes.length === 3) {
+          const fecha = new Date(
+            Number(partes[0]),
+            Number(partes[1]) - 1,
+            Number(partes[2])
+          ).getTime();
+          if (!Number.isNaN(fecha)) {
+            diasEspera = Math.max(0, Math.round((hoyMs - fecha) / (1000 * 60 * 60 * 24)));
+          }
+        }
+      }
+
+      filas.push({
+        id: exp.id,
+        po_tiquetera: exp.po_tiquetera || '—',
+        exp_id: exp.exp_id || '',
+        solicitante: exp.solicitante || '',
+        estado_expediente: exp.estado_expediente || '—',
+        tipo_modulo: exp.mcg === true ? 'MCG' : 'Dropship',
+        fechaNotificado,
+        diasEspera,
+      });
+    });
+
+    return filas.sort((a, b) => b.diasEspera - a.diasEspera);
+  }, [expedientes]);
+
   // Cobertura de datos de embarque (BL, contenedor y fechas) en los Dropship del período.
   const datosEmbarque = useMemo<DatosEmbarqueDropship>(() => {
     const dropship = expedientes.filter(esDropship);
@@ -624,6 +672,9 @@ export function useDashboard() {
     showReporteAsignadoNotificado,
     setShowReporteAsignadoNotificado,
     notificadoOkPais,
+    pendientesOkPaisDetalle,
+    showPendientesOkPais,
+    setShowPendientesOkPais,
     sinEtdDetalle,
     showSinEtdDetalle,
     setShowSinEtdDetalle,

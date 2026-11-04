@@ -5,6 +5,7 @@ import ModalDetalleDuracion from './ModalDetalleDuracion';
 import ModalDetalleEtdNotificado from './ModalDetalleEtdNotificado';
 import ModalDetalleAsignadoNotificado from './ModalDetalleAsignadoNotificado';
 import ModalDetalleSinEtd from './ModalDetalleSinEtd';
+import ModalDetallePendientesOkPais from './ModalDetallePendientesOkPais';
 import ModalDetalleDatosEmbarque from './ModalDetalleDatosEmbarque';
 import TarjetaDatosEmbarque from './TarjetaDatosEmbarque';
 import ModalDetalleMcg from '@/pages/home/components/ModalDetalleMcg';
@@ -25,6 +26,7 @@ import {
   descargarReporteEtd,
   descargarReporteSinEtd,
   descargarReporteSinDatosEmbarque,
+  descargarReportePendientesOkPais,
 } from './reportes';
 
 type DashboardProps = {
@@ -108,6 +110,16 @@ export default function SeccionDropship({ datos }: DashboardProps) {
         totalDropship={datos.estadoDataDropship.total}
         expedientesSinEtd={datos.sinEtdDetalle.length}
         onVerDetalleSinEtd={() => datos.setShowSinEtdDetalle(true)}
+        onVerDetallePendientesOkPais={() => datos.setShowPendientesOkPais(true)}
+      />
+
+      {/* Modal detalle POs pendientes de OK País */}
+      <ModalDetallePendientesOkPais
+        abierto={datos.showPendientesOkPais}
+        filas={datos.pendientesOkPaisDetalle}
+        totalEntregados={datos.entregadosDropship}
+        onClose={() => datos.setShowPendientesOkPais(false)}
+        onDescargar={() => descargarReportePendientesOkPais(datos.pendientesOkPaisDetalle)}
       />
 
       {/* KPI: Tiempo de facturación Liberado → Notificado País */}

@@ -19,6 +19,7 @@ interface SeccionKpisDropshipProps {
   totalDropship: number;
   expedientesSinEtd: number;
   onVerDetalleSinEtd: () => void;
+  onVerDetallePendientesOkPais: () => void;
 }
 
 export default function SeccionKpisDropship({
@@ -30,7 +31,8 @@ export default function SeccionKpisDropship({
   transitoCorto,
   totalDropship,
   expedientesSinEtd,
-  onVerDetalleSinEtd
+  onVerDetalleSinEtd,
+  onVerDetallePendientesOkPais
 }: SeccionKpisDropshipProps) {
   const etd = kpiEtdNotificado;
 
@@ -103,8 +105,11 @@ export default function SeccionKpisDropship({
             valor={pendientesOkPais}
             sufijo="exp."
             valorClass="text-orange-600"
+            fondoClass={pendientesOkPais > 0 ? 'bg-orange-50/70' : 'bg-white'}
             linea={{ icono: 'ri-hourglass-line', texto: 'Entregados sin marca de cierre', colorClass: 'text-orange-700' }}
-            footer='Requieren marca de cierre "OK País"'
+            nota={pendientesOkPais > 0 ? 'Haz clic para ver las POs' : 'Todo entregado tiene OK País'}
+            notaClass={pendientesOkPais > 0 ? 'text-orange-700' : 'text-gray-400'}
+            onClick={pendientesOkPais > 0 ? onVerDetallePendientesOkPais : undefined}
           />
         </div>
       </PanelIndicador>
