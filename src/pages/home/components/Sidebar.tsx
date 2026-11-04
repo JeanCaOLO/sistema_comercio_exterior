@@ -54,15 +54,12 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
 
     return (
       <div key={grupo.id}>
-        {isCollapsed ? (
-          <div className="mx-2 my-2.5 h-px bg-gray-100"></div>
-        ) : (
+        {!isCollapsed && (
           <div className="flex items-center gap-2 px-3 pt-4 pb-2">
             <i className={`${grupo.icon} text-sm text-teal-600`}></i>
             <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500 whitespace-nowrap">
               {grupo.nombre}
             </span>
-            <span className="flex-1 h-px bg-gray-100"></span>
           </div>
         )}
         <div className="space-y-1">
@@ -110,7 +107,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
       </div>
 
       {/* Módulos */}
-      <nav className="flex-1 px-3 py-3 overflow-y-auto">
+      <nav className="flex-1 px-3 py-3 overflow-y-auto overflow-x-hidden">
         {GRUPOS_NAVEGACION.map(renderGrupo)}
       </nav>
 

@@ -6,11 +6,18 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 // función de lunes a viernes a las 8:00 a.m. (hora Costa Rica),
 // envía los correos pendientes con GmailApp y avisa el resultado.
 // No se publica ningún Web App: el script es el que "llama" aquí.
+//
+// DEDUPLICACIÓN: antes de enviar, el script RECLAMA cada correo.
+// El reclamo es un candado con vencimiento: mientras un correo está
+// reclamado, ninguna otra corrida lo recibe ni lo puede reenviar.
+// Si la corrida se cae antes de enviar, el reclamo vence solo y el
+// correo vuelve a estar disponible. Si ya se envió, se marca y no
+// se vuelve a entregar nunca más.
 // ============================================================
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cola-token',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cola-token, x-cola-worker',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
@@ -19,6 +26,12 @@ const CLAVE_CONFIG = 'control_fechas_correo';
 // En modo "un correo por PO" una sola carga puede dejar decenas de correos
 // pendientes (una PO = un correo), así que se entregan todos en la corrida.
 const MAX_PENDIENTES = 250;
+const MAX_RECLAMO = 500;
+/** Minutos que un correo queda reclamado antes de volver a estar disponible. */
+const MINUTOS_RECLAMO = 120;
+
+const COLUMNAS_CORREO =
+  'id, seccion, modo, remitente, para, cc, asunto, cuerpo_html, cuerpo_texto, adjunto_nombre, adjunto_mime, adjunto_base64, total_pos, creado_at, intentos, reclamado_at, reclamado_por';
 
 function json(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -38,6 +51,21 @@ function aListaPos(valor: unknown): string[] {
     }
   }
   return [];
+}
+
+function aEntero(valor: unknown, defecto: number, minimo: number, maximo: number): number {
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return defecto;
+  return Math.min(maximo, Math.max(minimo, Math.trunc(numero)));
+}
+
+/** Filtro PostgREST: libre (sin reclamo) o con el reclamo vencido. */
+function filtroDisponible(corte: string): string {
+  return `reclamado_at.is.null,reclamado_at.lt.${corte}`;
+}
+
+function fechaCorte(minutos: number): string {
+  return new Date(Date.now() - minutos * 60_000).toISOString();
 }
 
 Deno.serve(async (req: Request) => {
@@ -87,13 +115,97 @@ Deno.serve(async (req: Request) => {
 
     const accion = String(cuerpo.accion || 'pendientes');
 
+    // ---------------------------------------------------------
+    // RECLAMAR: entrega los correos y los bloquea para esta corrida.
+    // Es lo que usa el script antes de mandar nada por Gmail.
+    // ---------------------------------------------------------
+    if (accion === 'reclamar') {
+      const worker = String(cuerpo.worker || req.headers.get('x-cola-worker') || 'apps-script');
+      const limite = aEntero(cuerpo.limite, MAX_PENDIENTES, 1, MAX_RECLAMO);
+      const minutos = aEntero(cuerpo.minutos, MINUTOS_RECLAMO, 5, 1440);
+      const corte = fechaCorte(minutos);
+
+      const { data: candidatos, error: errorCandidatos } = await supabase
+        .from('control_fechas_cola_correos')
+        .select('id')
+        .eq('estado', 'pendiente')
+        .or(filtroDisponible(corte))
+        .order('creado_at', { ascending: true })
+        .limit(limite);
+
+      if (errorCandidatos) return json({ ok: false, error: errorCandidatos.message });
+
+      const ids = ((candidatos || []) as unknown as { id: string }[]).map((fila) => fila.id);
+      if (ids.length === 0) {
+        return json({
+          ok: true,
+          total: 0,
+          worker,
+          minutos_reclamo: minutos,
+          pendientes: [],
+          mensaje: 'No hay correos pendientes.',
+        });
+      }
+
+      // El UPDATE solo toma las filas que siguen libres: si otra corrida las
+      // reclamó un instante antes, la condición ya no coincide y no se entregan
+      // dos veces. Es lo que evita el reenvío al día siguiente.
+      const marca = new Date().toISOString();
+      const reclamados: Record<string, unknown>[] = [];
+      let primerError = '';
+
+      for (let i = 0; i < ids.length; i += 100) {
+        const lote = ids.slice(i, i + 100);
+        const { data, error } = await supabase
+          .from('control_fechas_cola_correos')
+          .update({ reclamado_at: marca, reclamado_por: worker })
+          .in('id', lote)
+          .eq('estado', 'pendiente')
+          .or(filtroDisponible(corte))
+          .select(COLUMNAS_CORREO);
+
+        if (error) {
+          primerError = error.message;
+          break;
+        }
+        if (data) reclamados.push(...(data as unknown as Record<string, unknown>[]));
+      }
+
+      if (reclamados.length === 0) {
+        return json({
+          ok: false,
+          error: primerError || 'Otro proceso tomó los correos pendientes. Reintentá en un minuto.',
+          total: 0,
+          worker,
+          pendientes: [],
+        });
+      }
+
+      reclamados.sort((a, b) => String(a.creado_at || '').localeCompare(String(b.creado_at || '')));
+
+      return json({
+        ok: true,
+        total: reclamados.length,
+        worker,
+        minutos_reclamo: minutos,
+        expira_at: new Date(Date.now() + minutos * 60_000).toISOString(),
+        pendientes: reclamados,
+      });
+    }
+
+    // ---------------------------------------------------------
+    // PENDIENTES: solo lectura (compatibilidad). No reclama nada,
+    // así que ya no entrega correos que otra corrida está enviando.
+    // ---------------------------------------------------------
     if (accion === 'pendientes') {
+      const corte = fechaCorte(MINUTOS_RECLAMO);
       const { data, error } = await supabase
         .from('control_fechas_cola_correos')
         .select(
-          'id, seccion, modo, remitente, para, cc, asunto, cuerpo_html, cuerpo_texto, adjunto_nombre, adjunto_mime, adjunto_base64, total_pos, creado_at'
+          'id, seccion, modo, remitente, para, cc, asunto, cuerpo_html, cuerpo_texto, adjunto_nombre, adjunto_mime, adjunto_base64, total_pos, creado_at, intentos'
         )
         .eq('estado', 'pendiente')
+        .or(filtroDisponible(corte))
         .order('creado_at', { ascending: true })
         .limit(MAX_PENDIENTES);
 
@@ -102,6 +214,28 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, total: pendientes.length, pendientes });
     }
 
+    // ---------------------------------------------------------
+    // LIBERAR: suelta el reclamo sin enviar (para reintentar después).
+    // ---------------------------------------------------------
+    if (accion === 'liberar') {
+      const id = String(cuerpo.id || '');
+      if (!id) return json({ ok: false, error: 'Falta el id del correo.' });
+
+      const { error } = await supabase
+        .from('control_fechas_cola_correos')
+        .update({ reclamado_at: null, reclamado_por: null })
+        .eq('id', id)
+        .eq('estado', 'pendiente');
+
+      if (error) return json({ ok: false, error: error.message });
+      return json({ ok: true, mensaje: 'Correo liberado: queda disponible para la próxima corrida.' });
+    }
+
+    // ---------------------------------------------------------
+    // MARCAR: registra el resultado del envío. Es idempotente:
+    // si el correo ya estaba enviado, no vuelve a registrar el envío
+    // ni vuelve a marcar las POs como reportadas.
+    // ---------------------------------------------------------
     if (accion === 'marcar') {
       const id = String(cuerpo.id || '');
       if (!id) return json({ ok: false, error: 'Falta el id del correo.' });
@@ -111,7 +245,9 @@ Deno.serve(async (req: Request) => {
 
       const { data: fila, error: errorFila } = await supabase
         .from('control_fechas_cola_correos')
-        .select('id, carga_id, seccion, modo, remitente, para, cc, asunto, adjunto_nombre, total_pos, pos, intentos')
+        .select(
+          'id, estado, carga_id, seccion, modo, remitente, para, cc, asunto, adjunto_nombre, total_pos, pos, intentos, reclamado_por'
+        )
         .eq('id', id)
         .maybeSingle();
 
@@ -120,6 +256,7 @@ Deno.serve(async (req: Request) => {
 
       const registro = fila as unknown as {
         id: string;
+        estado: string;
         carga_id: string | null;
         seccion: string;
         modo: string;
@@ -131,7 +268,16 @@ Deno.serve(async (req: Request) => {
         total_pos: number | null;
         pos: unknown;
         intentos: number | null;
+        reclamado_por: string | null;
       };
+
+      if (registro.estado === 'enviado') {
+        return json({
+          ok: true,
+          duplicado: true,
+          mensaje: 'Ese correo ya estaba marcado como enviado: no se registró de nuevo.',
+        });
+      }
 
       await supabase
         .from('control_fechas_cola_correos')
@@ -140,6 +286,8 @@ Deno.serve(async (req: Request) => {
           intentos: Number(registro.intentos || 0) + 1,
           error: ok ? null : mensaje,
           enviado_at: ok ? new Date().toISOString() : null,
+          reclamado_at: null,
+          reclamado_por: null,
         })
         .eq('id', registro.id);
 
@@ -174,7 +322,10 @@ Deno.serve(async (req: Request) => {
         enviado_por: registro.remitente,
       });
 
-      return json({ ok: true, mensaje: ok ? 'Correo marcado como enviado.' : 'Error registrado.' });
+      return json({
+        ok: true,
+        mensaje: ok ? 'Correo marcado como enviado.' : 'Error registrado: no se reintenta.',
+      });
     }
 
     if (accion === 'estado') {
@@ -183,6 +334,13 @@ Deno.serve(async (req: Request) => {
         .select('id', { count: 'exact', head: true })
         .eq('estado', 'pendiente');
 
+      const { count: reclamados } = await supabase
+        .from('control_fechas_cola_correos')
+        .select('id', { count: 'exact', head: true })
+        .eq('estado', 'pendiente')
+        .not('reclamado_at', 'is', null)
+        .gte('reclamado_at', fechaCorte(MINUTOS_RECLAMO));
+
       const { data: ultimo } = await supabase
         .from('control_fechas_envios')
         .select('seccion, enviado_at, ok, mensaje')
@@ -190,7 +348,12 @@ Deno.serve(async (req: Request) => {
         .limit(1)
         .maybeSingle();
 
-      return json({ ok: true, pendientes: pendientes || 0, ultimoEnvio: ultimo || null });
+      return json({
+        ok: true,
+        pendientes: pendientes || 0,
+        reclamados: reclamados || 0,
+        ultimoEnvio: ultimo || null,
+      });
     }
 
     return json({ ok: false, error: `Acción no reconocida: ${accion}` });

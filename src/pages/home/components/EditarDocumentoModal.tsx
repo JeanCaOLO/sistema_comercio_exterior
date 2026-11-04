@@ -2,13 +2,20 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { crearNotificacion, notificarComentario } from '../../../lib/notificaciones';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
-import { parseDocEntries, esFactura, type DocEntry } from '@/lib/documentos';
+import {
+  parseDocEntries,
+  esFactura,
+  esPackingList,
+  TIPO_FACTURA,
+  TIPO_PACKING_LIST,
+  type DocEntry,
+} from '@/lib/documentos';
 import { subirDocumento } from '@/lib/storageDocumentos';
 
 interface ArchivoNuevo {
   id: string;
   file: File;
-  esFactura: boolean;
+  tipo: string | null;
 }
 
 interface RegistroDocumento {
@@ -97,6 +104,43 @@ const sanitizeFileName = (name: string): string => {
   return sanitized + ext;
 };
 
+const SelectorTipoDocumento = ({
+  tipo,
+  onCambiar,
+}: {
+  tipo: string | null;
+  onCambiar: (nuevoTipo: string) => void;
+}) => (
+  <div className="flex items-center gap-1.5 flex-shrink-0">
+    <button
+      type="button"
+      onClick={() => onCambiar(TIPO_FACTURA)}
+      className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+        tipo === TIPO_FACTURA
+          ? 'bg-amber-600 text-white hover:bg-amber-700'
+          : 'bg-white border border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-700'
+      }`}
+      title={tipo === TIPO_FACTURA ? 'Quitar marca de factura' : 'Marcar como factura'}
+    >
+      <i className={tipo === TIPO_FACTURA ? 'ri-checkbox-circle-fill' : 'ri-bill-line'}></i>
+      Factura
+    </button>
+    <button
+      type="button"
+      onClick={() => onCambiar(TIPO_PACKING_LIST)}
+      className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+        tipo === TIPO_PACKING_LIST
+          ? 'bg-teal-600 text-white hover:bg-teal-700'
+          : 'bg-white border border-gray-300 text-gray-600 hover:border-teal-400 hover:text-teal-700'
+      }`}
+      title={tipo === TIPO_PACKING_LIST ? 'Quitar marca de packing list' : 'Marcar como packing list'}
+    >
+      <i className={tipo === TIPO_PACKING_LIST ? 'ri-checkbox-circle-fill' : 'ri-file-list-3-line'}></i>
+      Packing list
+    </button>
+  </div>
+);
+
 export default function EditarDocumentoModal({ isOpen, onClose, registro, onSaved }: EditarDocumentoModalProps) {
   const [documentosActuales, setDocumentosActuales] = useState<DocEntry[]>([]);
   const [documentosEliminados, setDocumentosEliminados] = useState<DocEntry[]>([]);
@@ -156,7 +200,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
     });
     setNuevosArchivos(prev => [
       ...prev,
-      ...droppedFiles.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false })),
+      ...droppedFiles.map((f) => ({ id: crypto.randomUUID(), file: f, tipo: null })),
     ]);
   }, []);
 
@@ -168,7 +212,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       });
       setNuevosArchivos(prev => [
         ...prev,
-        ...selected.map((f) => ({ id: crypto.randomUUID(), file: f, esFactura: false })),
+        ...selected.map((f) => ({ id: crypto.randomUUID(), file: f, tipo: null })),
       ]);
     }
   };
@@ -187,14 +231,16 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
     setNuevosArchivos(prev => prev.filter((_, i) => i !== index));
   };
 
-  const toggleFacturaActual = (url: string) => {
+  const alternarTipoActual = (url: string, tipo: string) => {
     setDocumentosActuales(prev => prev.map(e => (
-      e.url === url ? { ...e, tipo: esFactura(e) ? null : 'factura' } : e
+      e.url === url ? { ...e, tipo: e.tipo === tipo ? null : tipo } : e
     )));
   };
 
-  const toggleFacturaNuevo = (id: string) => {
-    setNuevosArchivos(prev => prev.map(a => (a.id === id ? { ...a, esFactura: !a.esFactura } : a)));
+  const alternarTipoNuevo = (id: string, tipo: string) => {
+    setNuevosArchivos(prev => prev.map(a => (
+      a.id === id ? { ...a, tipo: a.tipo === tipo ? null : tipo } : a
+    )));
   };
 
   const addPO = () => {
@@ -246,7 +292,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         nuevosArchivos.map(async (item) => {
           const url = await subirDocumento(item.file, { carpeta: 'caa' });
           if (!url) return null;
-          return { url, tipo: item.esFactura ? 'factura' : null } as DocEntry;
+          return { url, tipo: item.tipo } as DocEntry;
         })
       )).filter((e): e is DocEntry => e !== null);
 
@@ -255,11 +301,11 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
 
       // Datos de auditoría
       const docsAnteriores = parseDocEntries(registro.doc);
-      const facturasAntes = new Set(docsAnteriores.filter(esFactura).map(e => e.url));
-      const facturasDespues = new Set(documentosFinales.filter(esFactura).map(e => e.url));
-      const facturasCambiaron =
-        facturasAntes.size !== facturasDespues.size ||
-        [...facturasAntes].some(u => !facturasDespues.has(u));
+      const firmasAntes = new Set(docsAnteriores.map(e => `${e.url}|${e.tipo || ''}`));
+      const firmasDespues = new Set(documentosFinales.map(e => `${e.url}|${e.tipo || ''}`));
+      const marcasCambiaron =
+        firmasAntes.size !== firmasDespues.size ||
+        [...firmasAntes].some(f => !firmasDespues.has(f));
       const acciones: string[] = [];
 
       if (nuevosArchivos.length > 0) {
@@ -277,8 +323,8 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       if (aplicaTLC !== (registro.aplica_tlc || false)) {
         acciones.push(`Cambió TLC de ${registro.aplica_tlc ? 'Sí' : 'No'} a ${aplicaTLC ? 'Sí' : 'No'}`);
       }
-      if (facturasCambiaron) {
-        acciones.push('Cambió las marcas de factura');
+      if (marcasCambiaron) {
+        acciones.push('Cambió las marcas de tipo de documento (factura / packing list)');
       }
       if (comentario !== (registro.instrucciones_adicionales || '')) {
         acciones.push('Editó el comentario');
@@ -309,7 +355,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           po_modificado: posCombinadas !== poOriginal,
           po_anterior: poOriginal,
           po_nuevo: posCombinadas,
-          facturas_modificadas: facturasCambiaron,
+          marcas_modificadas: marcasCambiaron,
         },
         documentos_anteriores: docsAnteriores,
         documentos_nuevos: documentosFinales,
@@ -322,6 +368,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
       const updateData: Record<string, any> = {
         doc: documentosFinales,
         bl_cargado: blCargado,
+        packing_list_cargado: documentosFinales.some(esPackingList),
         po_tiquetera: posCombinadas,
         instrucciones_adicionales: comentario.trim() || null,
       };
@@ -352,7 +399,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (docCaaMatch) {
           await supabase
             .from('documentos_caa')
-            .update({ doc: documentosFinales, bl_cargado: blCargado, tc_cargado: tcCargado, aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: documentosFinales, bl_cargado: blCargado, tc_cargado: tcCargado, packing_list_cargado: documentosFinales.some(esPackingList), aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', docCaaMatch.id);
 
           // Registrar también en auditoría para documentos_caa
@@ -378,7 +425,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
         if (expMatch) {
           await supabase
             .from('expedientes')
-            .update({ doc: documentosFinales, bl_cargado: blCargado, transito_corto: tcCargado, aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
+            .update({ doc: documentosFinales, bl_cargado: blCargado, transito_corto: tcCargado, packing_list_cargado: documentosFinales.some(esPackingList), aplica_tlc: aplicaTLC, po_tiquetera: posCombinadas, instrucciones_adicionales: comentario.trim() || null })
             .eq('id', expMatch.id);
 
           try {
@@ -467,6 +514,9 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
   if (!isOpen) return null;
 
   const totalDocumentos = documentosActuales.length + nuevosArchivos.length;
+  const firmaMarcasActual = documentosActuales.map((e) => `${e.url}|${e.tipo || ''}`).sort().join(';');
+  const firmaMarcasOriginal = parseDocEntries(registro.doc).map((e) => `${e.url}|${e.tipo || ''}`).sort().join(';');
+  const hayCambioMarcas = firmaMarcasActual !== firmaMarcasOriginal;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -650,6 +700,7 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                 {documentosActuales.map((entry, idx) => {
                   const { url } = entry;
                   const factura = esFactura(entry);
+                  const packingList = esPackingList(entry);
                   const fileName = extractFileName(url);
                   const { icon, color, bg } = getFileIconFromUrl(url);
                   const esImagen = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(fileName.split('.').pop()?.toLowerCase() || '');
@@ -657,7 +708,11 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                     <div
                       key={`exist-${idx}`}
                       className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                        factura ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'
+                        factura
+                          ? 'bg-amber-50 border-amber-300'
+                          : packingList
+                          ? 'bg-teal-50 border-teal-300'
+                          : 'bg-white border-gray-200'
                       }`}
                     >
                       {esImagen ? (
@@ -677,20 +732,14 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                             Factura
                           </span>
                         )}
+                        {packingList && (
+                          <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal-100 text-teal-700">
+                            <i className="ri-file-list-3-line text-[11px]"></i>
+                            Packing list
+                          </span>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleFacturaActual(url)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap ${
-                          factura
-                            ? 'bg-amber-600 text-white hover:bg-amber-700'
-                            : 'bg-white border border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-700'
-                        }`}
-                        title={factura ? 'Quitar marca de factura' : 'Marcar como factura'}
-                      >
-                        <i className={factura ? 'ri-checkbox-circle-fill' : 'ri-bill-line'}></i>
-                        Es factura
-                      </button>
+                      <SelectorTipoDocumento tipo={entry.tipo} onCambiar={(nuevoTipo) => alternarTipoActual(url, nuevoTipo)} />
                       <a
                         href={url}
                         target="_blank"
@@ -790,7 +839,11 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                     <div
                       key={`new-${idx}`}
                       className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                        item.esFactura ? 'bg-amber-100 border-amber-300' : 'bg-amber-50 border-amber-200'
+                        item.tipo === TIPO_FACTURA
+                          ? 'bg-amber-100 border-amber-300'
+                          : item.tipo === TIPO_PACKING_LIST
+                          ? 'bg-teal-100 border-teal-300'
+                          : 'bg-gray-50 border-gray-200'
                       }`}
                     >
                       <div className={`w-9 h-9 flex items-center justify-center rounded-lg ${bg} flex-shrink-0`}>
@@ -799,20 +852,20 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">{item.file.name}</p>
                         <p className="text-xs text-gray-400">{formatFileSize(item.file.size)}</p>
+                        {item.tipo === TIPO_FACTURA && (
+                          <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-700">
+                            <i className="ri-bill-line text-[11px]"></i>
+                            Factura
+                          </span>
+                        )}
+                        {item.tipo === TIPO_PACKING_LIST && (
+                          <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal-100 text-teal-700">
+                            <i className="ri-file-list-3-line text-[11px]"></i>
+                            Packing list
+                          </span>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleFacturaNuevo(item.id)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer flex-shrink-0 whitespace-nowrap ${
-                          item.esFactura
-                            ? 'bg-amber-600 text-white hover:bg-amber-700'
-                            : 'bg-white border border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-700'
-                        }`}
-                        title={item.esFactura ? 'Quitar marca de factura' : 'Marcar como factura'}
-                      >
-                        <i className={item.esFactura ? 'ri-checkbox-circle-fill' : 'ri-bill-line'}></i>
-                        Es factura
-                      </button>
+                      <SelectorTipoDocumento tipo={item.tipo} onCambiar={(nuevoTipo) => alternarTipoNuevo(item.id, nuevoTipo)} />
                       <button
                         type="button"
                         onClick={() => quitarNuevoArchivo(idx)}
@@ -855,10 +908,16 @@ export default function EditarDocumentoModal({ isOpen, onClose, registro, onSave
           </div>
 
           {/* Resumen de cambios */}
-          {(documentosEliminados.length > 0 || nuevosArchivos.length > 0 || blCargado !== registro.bl_cargado || tcCargado !== (registro.tc_cargado || false) || aplicaTLC !== (registro.aplica_tlc || false) || comentario !== (registro.instrucciones_adicionales || '') || getPosCombinadas() !== (registro.po_tiquetera || '').trim()) && (
+          {(documentosEliminados.length > 0 || nuevosArchivos.length > 0 || hayCambioMarcas || blCargado !== registro.bl_cargado || tcCargado !== (registro.tc_cargado || false) || aplicaTLC !== (registro.aplica_tlc || false) || comentario !== (registro.instrucciones_adicionales || '') || getPosCombinadas() !== (registro.po_tiquetera || '').trim()) && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <h3 className="text-sm font-bold text-amber-800 mb-2">Resumen de cambios</h3>
               <ul className="space-y-1.5">
+                {hayCambioMarcas && (
+                  <li className="flex items-center gap-2 text-sm text-amber-700">
+                    <i className="ri-price-tag-3-line text-teal-600"></i>
+                    Se actualizaron las marcas de tipo de documento
+                  </li>
+                )}
                 {nuevosArchivos.length > 0 && (
                   <li className="flex items-center gap-2 text-sm text-amber-700">
                     <i className="ri-add-circle-line text-green-600"></i>

@@ -686,6 +686,20 @@ export async function cargarPosEnviadas(): Promise<MapaEnviadas> {
 
 // ------------------------- cola de envío -------------------------
 
+/** Normaliza la lista de POs que viene guardada en la cola. */
+function listaDePos(valor: unknown): string[] {
+  let lista: unknown = valor;
+  if (typeof lista === 'string') {
+    try {
+      lista = JSON.parse(lista);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(lista)) return [];
+  return lista.filter((po): po is string => typeof po === 'string');
+}
+
 export interface CorreoEnCola {
   id: string;
   seccion: string;
@@ -695,16 +709,31 @@ export interface CorreoEnCola {
   asunto: string;
   adjuntoNombre: string;
   totalPos: number;
+  /** POs incluidas en ese correo. */
+  pos: string[];
   estado: 'pendiente' | 'enviado' | 'error';
   mensaje: string;
   creadoAt: string;
+  /** Momento en que el script de Google reclamó el correo para enviarlo. */
+  reclamadoAt: string | null;
+}
+
+/** Minutos que un correo queda reclamado antes de volver a estar disponible. */
+export const MINUTOS_RECLAMO = 120;
+
+/** El script lo tiene tomado ahora mismo (lo va a enviar en esta corrida). */
+export function enEnvioAhora(correo: CorreoEnCola): boolean {
+  if (correo.estado !== 'pendiente' || !correo.reclamadoAt) return false;
+  const marca = new Date(correo.reclamadoAt).getTime();
+  if (!Number.isFinite(marca)) return false;
+  return Date.now() - marca < MINUTOS_RECLAMO * 60 * 1000;
 }
 
 /** Correos que están esperando a que el script de Google los envíe. */
 export async function cargarCola(limite = 20): Promise<CorreoEnCola[]> {
   const { data, error } = await supabase
     .from('control_fechas_cola_correos')
-    .select('id, seccion, modo, para, asunto, adjunto_nombre, total_pos, estado, error, creado_at')
+    .select('id, seccion, modo, para, asunto, adjunto_nombre, total_pos, pos, estado, error, creado_at, reclamado_at')
     .order('creado_at', { ascending: false })
     .limit(limite);
 
@@ -718,9 +747,11 @@ export async function cargarCola(limite = 20): Promise<CorreoEnCola[]> {
     asunto: string | null;
     adjunto_nombre: string | null;
     total_pos: number | null;
+    pos: unknown;
     estado: string;
     error: string | null;
     creado_at: string;
+    reclamado_at: string | null;
   }[]).map((fila) => ({
     id: fila.id,
     seccion: fila.seccion,
@@ -730,52 +761,60 @@ export async function cargarCola(limite = 20): Promise<CorreoEnCola[]> {
     asunto: fila.asunto || '',
     adjuntoNombre: fila.adjunto_nombre || '',
     totalPos: Number(fila.total_pos) || 0,
+    pos: listaDePos(fila.pos),
     estado: fila.estado === 'enviado' ? 'enviado' : fila.estado === 'error' ? 'error' : 'pendiente',
     mensaje: fila.error || '',
     creadoAt: fila.creado_at,
+    reclamadoAt: fila.reclamado_at || null,
   }));
 }
 
 interface ColaPendiente {
-  /** Secciones que ya tienen un correo pendiente para esta carga. */
-  secciones: Set<string>;
-  /** Claves `seccion::po` que ya están esperando en la cola. */
+  /** Claves `seccion::po` de todo lo que está esperando en la cola. */
   pos: Set<string>;
 }
 
-/** Lo que ya está esperando en la cola para esta carga, por sección y por PO. */
-async function cargarColaPendiente(cargaId: string): Promise<ColaPendiente> {
-  const vacio: ColaPendiente = { secciones: new Set(), pos: new Set() };
-  if (!cargaId) return vacio;
+/**
+ * POs que ya están esperando en la cola, sin importar de qué carga vengan.
+ * Antes se filtraba por carga, así que si llegaba una carga nueva mientras la
+ * anterior todavía tenía correos pendientes, se volvían a encolar las mismas
+ * POs y soporte las recibía dos veces.
+ */
+async function cargarColaPendiente(): Promise<ColaPendiente> {
+  const resultado: ColaPendiente = { pos: new Set() };
+  let desde = 0;
 
-  const { data, error } = await supabase
-    .from('control_fechas_cola_correos')
-    .select('seccion, pos')
-    .eq('estado', 'pendiente')
-    .eq('carga_id', cargaId)
-    .limit(TAMANO_PAGINA);
+  for (;;) {
+    const { data, error } = await supabase
+      .from('control_fechas_cola_correos')
+      .select('seccion, pos')
+      .eq('estado', 'pendiente')
+      .order('creado_at', { ascending: true })
+      .range(desde, desde + TAMANO_PAGINA - 1);
 
-  if (error) throw error;
+    if (error) throw error;
 
-  const filas = (data || []) as unknown as { seccion: string; pos: unknown }[];
-  const resultado: ColaPendiente = { secciones: new Set(), pos: new Set() };
+    const filas = (data || []) as unknown as { seccion: string; pos: unknown }[];
 
-  filas.forEach((fila) => {
-    resultado.secciones.add(fila.seccion);
-    let lista: unknown = fila.pos;
-    if (typeof lista === 'string') {
-      try {
-        lista = JSON.parse(lista);
-      } catch {
-        lista = [];
+    filas.forEach((fila) => {
+      let lista: unknown = fila.pos;
+      if (typeof lista === 'string') {
+        try {
+          lista = JSON.parse(lista);
+        } catch {
+          lista = [];
+        }
       }
-    }
-    if (Array.isArray(lista)) {
-      lista.forEach((po) => {
-        if (typeof po === 'string') resultado.pos.add(`${fila.seccion}::${po}`);
-      });
-    }
-  });
+      if (Array.isArray(lista)) {
+        lista.forEach((po) => {
+          if (typeof po === 'string') resultado.pos.add(`${fila.seccion}::${po}`);
+        });
+      }
+    });
+
+    if (filas.length < TAMANO_PAGINA) break;
+    desde += TAMANO_PAGINA;
+  }
 
   return resultado;
 }
@@ -837,11 +876,14 @@ export interface PrevisualizacionSeccion {
 /** Lo que se enviaría: por sección, cuántas POs son nuevas. */
 export function previsualizarEnvio(
   resultado: ResultadoControl,
-  enviadas: MapaEnviadas | null
+  enviadas: MapaEnviadas | null,
+  enCola?: Set<string>
 ): PrevisualizacionSeccion[] {
   return seccionesReporte(resultado).map((seccion) => {
     const set = enviadas?.[seccion.clave] || new Set<string>();
-    const nuevas = seccion.pos.filter((po) => !set.has(po)).length;
+    const nuevas = seccion.pos.filter(
+      (po) => !set.has(po) && !enCola?.has(`${seccion.clave}::${po}`)
+    ).length;
     return {
       clave: seccion.clave,
       titulo: seccion.titulo,
@@ -874,11 +916,11 @@ export async function enviarReporteControl({
     enviadas = mapaVacio();
   }
 
-  let colaPendiente: ColaPendiente = { secciones: new Set(), pos: new Set() };
+  let colaPendiente: ColaPendiente = { pos: new Set() };
   try {
-    colaPendiente = await cargarColaPendiente(cargaId);
+    colaPendiente = await cargarColaPendiente();
   } catch {
-    colaPendiente = { secciones: new Set(), pos: new Set() };
+    colaPendiente = { pos: new Set() };
   }
 
   let correos = 0;
@@ -891,7 +933,7 @@ export async function enviarReporteControl({
     texto: string;
     adjunto: AdjuntoCorreo;
     pos: string[];
-  }): Promise<void> => {
+  }): Promise<'ok' | 'duplicado'> => {
     if (!destino.para) {
       throw new Error('Falta el destinatario del correo.');
     }
@@ -915,7 +957,13 @@ export async function enviarReporteControl({
       creado_por: usuario || null,
     });
 
-    if (error) throw new Error(`No se pudo poner el correo en la cola: ${error.message}`);
+    if (error) {
+      // 23505 = ya existe un correo pendiente para esa PO y sección (candado de la base).
+      if (error.code === '23505') return 'duplicado';
+      throw new Error(`No se pudo poner el correo en la cola: ${error.message}`);
+    }
+
+    return 'ok';
   };
 
   for (const seccion of secciones) {
@@ -960,7 +1008,7 @@ export async function enviarReporteControl({
         const adjunto = construirAdjuntoPo(seccion, resultado, archivo, numeroPo);
 
         try {
-          await insertarEnCola({
+          const estado = await insertarEnCola({
             seccion: seccion.clave,
             asunto: cuerpo.asunto,
             html: cuerpo.html,
@@ -968,6 +1016,10 @@ export async function enviarReporteControl({
             adjunto,
             pos: [numeroPo],
           });
+          if (estado === 'duplicado') {
+            omitidasCola += 1;
+            continue;
+          }
           enCola += 1;
           correos += 1;
         } catch (err) {
@@ -999,8 +1051,11 @@ export async function enviarReporteControl({
     }
 
     const setEnviadas = enviadas[seccion.clave] || new Set<string>();
-    const nuevas = seccion.pos.filter((po) => !setEnviadas.has(po));
-    const yaEnviadas = seccion.pos.length - nuevas.length;
+    const esperando = seccion.pos.filter((po) => colaPendiente.pos.has(`${seccion.clave}::${po}`));
+    const nuevas = seccion.pos.filter(
+      (po) => !setEnviadas.has(po) && !colaPendiente.pos.has(`${seccion.clave}::${po}`)
+    );
+    const yaEnviadas = seccion.pos.length - nuevas.length - esperando.length;
 
     if (nuevas.length === 0) {
       resultados.push({
@@ -1014,22 +1069,9 @@ export async function enviarReporteControl({
         mensaje:
           seccion.pos.length === 0
             ? 'La sección no tiene hallazgos.'
-            : 'Todas las POs de esta sección ya se habían reportado a soporte.',
-        adjunto: '',
-      });
-      continue;
-    }
-
-    if (colaPendiente.secciones.has(seccion.clave)) {
-      resultados.push({
-        clave: seccion.clave,
-        titulo: seccion.titulo,
-        total: seccion.pos.length,
-        yaEnviadas,
-        nuevas: 0,
-        enviado: false,
-        ok: true,
-        mensaje: 'Esta sección ya está en la cola, esperando la corrida de las 8:00 a. m.',
+            : esperando.length > 0
+              ? `Las ${esperando.length} PO(s) de esta sección ya están en la cola, esperando la corrida de las 8:00 a. m.`
+              : 'Todas las POs de esta sección ya se habían reportado a soporte.',
         adjunto: '',
       });
       continue;
@@ -1043,7 +1085,7 @@ export async function enviarReporteControl({
     let mensaje = '';
 
     try {
-      await insertarEnCola({
+      const estado = await insertarEnCola({
         seccion: seccion.clave,
         asunto: cuerpo.asunto,
         html: cuerpo.html,
@@ -1052,8 +1094,12 @@ export async function enviarReporteControl({
         pos: nuevas,
       });
       ok = true;
-      mensaje = 'En cola: sale en la próxima corrida (lunes a viernes, 8:00 a. m.).';
-      correos += 1;
+      if (estado === 'duplicado') {
+        mensaje = 'Esta sección ya estaba en la cola con las mismas POs: no se duplicó.';
+      } else {
+        mensaje = 'En cola: sale en la próxima corrida (lunes a viernes, 8:00 a. m.).';
+        correos += 1;
+      }
     } catch (err) {
       mensaje = err instanceof Error ? err.message : 'Error desconocido al preparar el correo.';
       huboError = true;

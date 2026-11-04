@@ -162,7 +162,7 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
             <i className="ri-ship-2-line text-white text-xl"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Análisis Asignación Agente de Carga</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Asignación Agentes de Carga</h1>
             <p className="text-sm text-gray-500 mt-0.5 max-w-2xl">
               Carga el Excel de POs y obtén la asignación por Proveedor de Servicio y País Destino.
               El archivo trae el histórico completo, así que cada carga reemplaza la anterior.

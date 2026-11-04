@@ -19,6 +19,7 @@ import CampanitaNotificaciones from './components/CampanitaNotificaciones';
 import GestionCambiosEtd, { type SeccionEtd } from './components/GestionCambiosEtd';
 import AnalisisAgenteCarga from './components/agente-carga/AnalisisAgenteCarga';
 import AnalisisControlFechas from './components/control-fechas/AnalisisControlFechas';
+import ComparadorDocumentos from './components/herramientas/ComparadorDocumentos';
 import { verificarSolicitudesEtdAtrasadas } from '@/lib/notificaciones';
 
 export default function Home() {
@@ -247,6 +248,7 @@ export default function Home() {
               {activeView === 'facturas' && <Facturas />}
               {activeView === 'agente-carga' && <AnalisisAgenteCarga usuario={userName} />}
               {activeView === 'control-fechas' && <AnalisisControlFechas usuario={userName} />}
+              {activeView === 'comparador-documentos' && <ComparadorDocumentos />}
               {(activeView === 'etd-dashboard' || activeView === 'etd-solicitar' || activeView === 'etd-aprobaciones' || activeView === 'etd-historial') && (
                 <GestionCambiosEtd
                   seccion={seccionEtdActual}

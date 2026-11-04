@@ -18,7 +18,7 @@ export interface SeccionNavegacion {
   items: ItemNavegacion[];
 }
 
-export type GrupoId = 'expedientes' | 'orders' | 'sistema';
+export type GrupoId = 'expedientes' | 'orders' | 'herramientas' | 'sistema';
 
 export interface GrupoNavegacion {
   id: GrupoId;
@@ -71,8 +71,22 @@ export const GRUPOS_NAVEGACION: GrupoNavegacion[] = [
       {
         titulo: 'Análisis de Carga',
         items: [
-          { id: 'agente-carga', label: 'Análisis Asignación Agente de Carga', icon: 'ri-ship-2-line' },
+          { id: 'agente-carga', label: 'Asignación Agentes de Carga', icon: 'ri-ship-2-line' },
           { id: 'control-fechas', label: 'Control de Fechas NEXT', icon: 'ri-calendar-check-line' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'herramientas',
+    nombre: 'Herramientas',
+    descripcion: 'Utilidades de apoyo a la operación',
+    icon: 'ri-tools-line',
+    secciones: [
+      {
+        titulo: '',
+        items: [
+          { id: 'comparador-documentos', label: 'Comparador de Documentos', icon: 'ri-file-search-line' },
         ],
       },
     ],

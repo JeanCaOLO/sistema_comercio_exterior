@@ -75,13 +75,14 @@ export const PERMISOS_DEFAULT: MatrizPermisos = {
   'Administrador': [
     'dashboard', 'gestion-dropship', 'gestion-zf', 'lista-expedientes',
     'reportes', 'carga-caa', 'documentacion', 'repositorio', 'facturas', 'configuracion',
-    'etd-solicitar', 'etd-aprobaciones', 'etd-historial', 'etd-dashboard', 'agente-carga', 'control-fechas'
+    'etd-solicitar', 'etd-aprobaciones', 'etd-historial', 'etd-dashboard', 'agente-carga', 'control-fechas',
+    'comparador-documentos'
   ],
   'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
   'Bodega': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Documentos': ['dashboard', 'lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial', 'agente-carga', 'control-fechas'],
-  'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
+  'Documentos': ['dashboard', 'lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial', 'agente-carga', 'control-fechas', 'comparador-documentos'],
+  'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas', 'comparador-documentos'],
   'Solicitante': ['carga-caa', 'documentacion', 'repositorio', 'facturas'],
 };
 

@@ -9,6 +9,7 @@ import {
   previsualizarEnvio,
   cargarCola,
   descartarCorreoCola,
+  enEnvioAhora,
   type AgrupacionEnvio,
   type ConfigCorreoControl,
   type CorreoEnCola,
@@ -88,7 +89,18 @@ export default function PanelEnvioReporte({ resultado, meta, usuario }: PanelEnv
     configRef.current = config;
   }, [config]);
 
-  const previsualizacion = useMemo(() => previsualizarEnvio(resultado, enviadas), [resultado, enviadas]);
+  const enCola = useMemo(() => {
+    const set = new Set<string>();
+    cola
+      .filter((item) => item.estado === 'pendiente')
+      .forEach((item) => item.pos.forEach((po) => set.add(`${item.seccion}::${po}`)));
+    return set;
+  }, [cola]);
+
+  const previsualizacion = useMemo(
+    () => previsualizarEnvio(resultado, enviadas, enCola),
+    [resultado, enviadas, enCola]
+  );
 
   const totalNuevas = previsualizacion.reduce((suma, fila) => suma + fila.nuevas, 0);
   const correosPrevistos =
@@ -343,8 +355,9 @@ export default function PanelEnvioReporte({ resultado, meta, usuario }: PanelEnv
         <div className="flex items-start gap-2 rounded-lg px-4 py-3 bg-teal-50 border border-teal-100">
           <i className="ri-shield-check-line text-teal-600 mt-0.5"></i>
           <p className="text-[11px] text-teal-800 leading-relaxed">
-            Cada PO enviada en modo real queda marcada, así que si volvés a cargar la data solo se reportan las POs
-            nuevas de cada sección. Los envíos de prueba no marcan nada y podés quitarlos de la cola cuando quieras.
+            Cada PO enviada en modo real queda marcada y las que ya están esperando en la cola no se vuelven a
+            encolar, así que ninguna PO se reporta dos veces a soporte. Los envíos de prueba no marcan nada y podés
+            quitarlos de la cola cuando quieras.
           </p>
         </div>
 
@@ -560,7 +573,9 @@ export default function PanelEnvioReporte({ resultado, meta, usuario }: PanelEnv
                   <i
                     className={`mt-0.5 ${
                       item.estado === 'pendiente'
-                        ? 'ri-time-line text-amber-500'
+                        ? enEnvioAhora(item)
+                          ? 'ri-send-plane-line text-teal-600'
+                          : 'ri-time-line text-amber-500'
                         : item.estado === 'enviado'
                           ? 'ri-checkbox-circle-line text-emerald-600'
                           : 'ri-close-circle-line text-red-500'
@@ -573,11 +588,15 @@ export default function PanelEnvioReporte({ resultado, meta, usuario }: PanelEnv
                     <p className="text-[10px] text-gray-400 truncate">
                       {formatearEntero(item.totalPos)} POs · {item.modo === 'real' ? 'real' : 'prueba'} ·{' '}
                       {item.destinatarios}
-                      {item.estado === 'pendiente' ? ' · esperando la corrida de las 8:00 a. m.' : ''}
+                      {item.estado === 'pendiente'
+                        ? enEnvioAhora(item)
+                          ? ' · el script lo está enviando ahora (no se reenvía)'
+                          : ' · esperando la corrida de las 8:00 a. m.'
+                        : ''}
                     </p>
                     {item.mensaje && <p className="text-[10px] text-red-600 mt-0.5 truncate">{item.mensaje}</p>}
                   </div>
-                  {item.estado === 'pendiente' && (
+                  {item.estado === 'pendiente' && !enEnvioAhora(item) && (
                     <button
                       onClick={() => descartar(item.id)}
                       className="px-2 py-1 text-[10px] text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 whitespace-nowrap cursor-pointer"
