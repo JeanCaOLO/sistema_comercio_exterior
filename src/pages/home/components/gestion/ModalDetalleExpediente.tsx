@@ -1,3 +1,4 @@
+import MarcaSincronizacionRaga from '@/components/feature/MarcaSincronizacionRaga';
 import { formatearFecha } from '@/lib/fechas';
 import type { RutaLogistica } from '@/lib/rutas';
 import type { Expediente } from './types';
@@ -106,6 +107,13 @@ export default function ModalDetalleExpediente({
                 automáticamente al guardar.
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Marca de la última sincronización con Raga (solo Dropship) */}
+        {esDropship && (
+          <div className="px-6 pt-4">
+            <MarcaSincronizacionRaga expedienteId={expediente.id} />
           </div>
         )}
 

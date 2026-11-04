@@ -21,11 +21,13 @@ export interface PerfilColumnas {
   mapeo?: MapeoColumnas;
   /** Nombres de columna del Excel, para reconocer el formato en otro archivo. */
   etiquetas?: string[];
+  /** Perfiles de PDF leídos con las columnas reales (por posición). */
+  rejilla?: boolean;
   creado: string;
 }
 
 export type DatosPerfil =
-  | { tipo: 'pdf'; seleccion: SeleccionPdf }
+  | { tipo: 'pdf'; seleccion: SeleccionPdf; rejilla?: boolean }
   | { tipo: 'excel'; mapeo: MapeoColumnas; etiquetas: string[] };
 
 const CLAVE = 'comparador_documentos_perfiles_v1';
@@ -129,7 +131,7 @@ export function guardarPerfilComparador(
     creado: new Date().toISOString(),
   };
   const perfil: PerfilColumnas = datos.tipo === 'pdf'
-    ? { ...base, seleccion: datos.seleccion }
+    ? { ...base, seleccion: datos.seleccion, rejilla: datos.rejilla === true }
     : { ...base, mapeo: datos.mapeo, etiquetas: datos.etiquetas };
 
   const lista = existente
@@ -160,12 +162,17 @@ export function buscarPerfilComparador(
   nombreArchivo: string,
   perfiles: PerfilColumnas[],
 ): PerfilColumnas | null {
-  const dePdf = perfiles.filter((perfil) => perfil.tipo === 'pdf' && perfil.seleccion);
+  // Solo los perfiles nuevos: las columnas de PDF ahora se miden por posición,
+  // así que una selección vieja (por orden de palabras) ya no significa lo mismo.
+  const dePdf = perfiles.filter((perfil) => perfil.tipo === 'pdf' && perfil.seleccion && perfil.rejilla);
   if (!dePdf.length) return null;
   const firma = firmarLayoutPdf(lineas);
   if (firma) {
     const porFormato = dePdf.find((perfil) => perfil.firma === firma);
     if (porFormato) return porFormato;
+    // Si el formato cambió, no se aplica a ciegas un mapeo viejo: es mejor que
+    // el usuario confirme las columnas otra vez antes de comparar mal los datos.
+    return dePdf.find((perfil) => !perfil.firma) ?? null;
   }
   return porNombreArchivo(nombreArchivo, dePdf);
 }

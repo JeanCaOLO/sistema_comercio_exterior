@@ -5,6 +5,8 @@ import ModalDetalleDuracion from './ModalDetalleDuracion';
 import ModalDetalleEtdNotificado from './ModalDetalleEtdNotificado';
 import ModalDetalleAsignadoNotificado from './ModalDetalleAsignadoNotificado';
 import ModalDetalleSinEtd from './ModalDetalleSinEtd';
+import ModalDetalleDatosEmbarque from './ModalDetalleDatosEmbarque';
+import TarjetaDatosEmbarque from './TarjetaDatosEmbarque';
 import ModalDetalleMcg from '@/pages/home/components/ModalDetalleMcg';
 import SeccionKpisDropship from '@/pages/home/components/SeccionKpisDropship';
 import SeccionKpisMcg from '@/pages/home/components/SeccionKpisMcg';
@@ -22,6 +24,7 @@ import {
   descargarReporteDuracion,
   descargarReporteEtd,
   descargarReporteSinEtd,
+  descargarReporteSinDatosEmbarque,
 } from './reportes';
 
 type DashboardProps = {
@@ -37,6 +40,19 @@ export default function SeccionDropship({ datos }: DashboardProps) {
         descripcion="Indicadores de tiempos, notificación y cumplimiento de los expedientes Dropship (incluye MCG)"
         chips={[`${datos.estadoDataDropship.total} expedientes`, 'Dropship + MCG']}
         colorIcono="bg-sky-600"
+      />
+
+      <TarjetaDatosEmbarque
+        datos={datos.datosEmbarque}
+        totalDetalle={datos.sinDatosEmbarqueDetalle.length}
+        onVerDetalle={() => datos.setShowSinDatosEmbarque(true)}
+      />
+
+      <ModalDetalleDatosEmbarque
+        abierto={datos.showSinDatosEmbarque}
+        filas={datos.sinDatosEmbarqueDetalle}
+        onClose={() => datos.setShowSinDatosEmbarque(false)}
+        onDescargar={() => descargarReporteSinDatosEmbarque(datos.sinDatosEmbarqueDetalle)}
       />
 
       <TarjetaDuracionMinima

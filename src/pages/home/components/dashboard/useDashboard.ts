@@ -20,6 +20,7 @@ import type { FilaDuracion, FiltroDuracion } from '@/pages/home/components/dashb
 import type { FilaEtdNotificado } from '@/pages/home/components/dashboard/ModalDetalleEtdNotificado';
 import type { FilaAsignadoNotificado } from '@/pages/home/components/dashboard/ModalDetalleAsignadoNotificado';
 import type { FilaSinEtd } from '@/pages/home/components/dashboard/ModalDetalleSinEtd';
+import type { FilaSinDatosEmbarque } from '@/pages/home/components/dashboard/ModalDetalleDatosEmbarque';
 import {
   calcularKpiAsignadoNotificado,
   calcularKpiEtdNotificado,
@@ -41,6 +42,7 @@ import {
 } from './utils';
 import {
   crearComparativosVacios,
+  crearDatosEmbarqueVacio,
   crearDificultadVacia,
   crearEstadoVacio,
   crearKpiDataVacio,
@@ -48,6 +50,7 @@ import {
   crearKpiMcgVacio,
   crearKpisZfVacio,
   type Comparativos,
+  type DatosEmbarqueDropship,
   type DificultadItem,
   type EstadoData,
   type FiltroModuloTiempos,
@@ -154,6 +157,7 @@ export function useDashboard() {
   const [kpiEta15, setKpiEta15] = useState<ResultadoEta15>(ETA15_VACIA);
   const [kpiEtdLiberacion, setKpiEtdLiberacion] =
     useState<ResultadoEtdLiberacion>(ETD_LIBERACION_VACIA);
+  const [showSinDatosEmbarque, setShowSinDatosEmbarque] = useState(false);
 
   // ── KPIs MCG ──
   const [kpiMcgCreacion, setKpiMcgCreacion] = useState<KpiMcgResumen>(crearKpiMcgVacio());
@@ -487,6 +491,58 @@ export function useDashboard() {
     [expedientes]
   );
 
+  // Cobertura de datos de embarque (BL, contenedor y fechas) en los Dropship del período.
+  const datosEmbarque = useMemo<DatosEmbarqueDropship>(() => {
+    const dropship = expedientes.filter(esDropship);
+    const total = dropship.length;
+    if (total === 0) return crearDatosEmbarqueVacio();
+
+    const sinBl = dropship.filter((e) => !String(e.numero_bl ?? '').trim()).length;
+    const sinContenedor = dropship.filter((e) => !String(e.numero_contenedor ?? '').trim()).length;
+    const sinFechas = dropship.filter((e) => !e.etd || !e.eta_real).length;
+    const sinDatos = dropship.filter(
+      (e) => !String(e.numero_bl ?? '').trim() || !String(e.numero_contenedor ?? '').trim()
+    ).length;
+    const completos = total - sinDatos;
+
+    return {
+      total,
+      completos,
+      sinDatos,
+      sinBl,
+      sinContenedor,
+      sinFechas,
+      porcentajeSinDatos: Math.round((sinDatos / total) * 100),
+      porcentajeCompletos: Math.round((completos / total) * 100),
+    };
+  }, [expedientes]);
+
+  // Detalle de los tickets con algún dato de embarque pendiente.
+  const sinDatosEmbarqueDetalle = useMemo<FilaSinDatosEmbarque[]>(() => {
+    const filas: FilaSinDatosEmbarque[] = [];
+
+    expedientes.filter(esDropship).forEach((exp) => {
+      const faltantes: string[] = [];
+      if (!String(exp.numero_bl ?? '').trim()) faltantes.push('N° de BL');
+      if (!String(exp.numero_contenedor ?? '').trim()) faltantes.push('N° de Contenedor');
+      if (!exp.etd) faltantes.push('ETD');
+      if (!exp.eta_real) faltantes.push('ETA Real');
+      if (faltantes.length === 0) return;
+
+      filas.push({
+        id: exp.id,
+        po_tiquetera: exp.po_tiquetera || '—',
+        exp_id: exp.exp_id || '',
+        solicitante: exp.solicitante || '',
+        estado_expediente: exp.estado_expediente || '—',
+        tipo_modulo: exp.mcg === true ? 'MCG' : 'Dropship',
+        faltantes: faltantes.join(', '),
+      });
+    });
+
+    return filas.sort((a, b) => a.po_tiquetera.localeCompare(b.po_tiquetera));
+  }, [expedientes]);
+
   // ── Acción de alcance por módulo (sincroniza la tarjeta de estados) ──
   const seleccionarModulo = useCallback((vista: VistaEstados) => {
     setVistaModulo(vista);
@@ -580,6 +636,10 @@ export function useDashboard() {
     kpiEtdLiberacion,
     entregadosDropship,
     transitoCortoDropship,
+    datosEmbarque,
+    sinDatosEmbarqueDetalle,
+    showSinDatosEmbarque,
+    setShowSinDatosEmbarque,
 
     // mcg
     kpiMcgCreacion,

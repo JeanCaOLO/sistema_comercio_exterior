@@ -1002,6 +1002,12 @@ const TIPOS_NOTIFICACION_FECHAS = [
   'fechas_rechazada',
 ];
 
+// Avisos generados por la sincronización automática con Raga:
+// Raga completó el BL, el contenedor o las fechas reales de un ticket.
+export function esNotificacionRagaDatos(tipo: string): boolean {
+  return tipo === 'raga_datos_actualizados';
+}
+
 export function esNotificacionFechas(tipo: string): boolean {
   return TIPOS_NOTIFICACION_FECHAS.includes(tipo);
 }
@@ -1102,6 +1108,8 @@ export function getIconoColor(tipo: string): string {
       return 'text-emerald-600 bg-emerald-100';
     case 'fechas_rechazada':
       return 'text-red-600 bg-red-100';
+    case 'raga_datos_actualizados':
+      return 'text-cyan-600 bg-cyan-100';
     default:
       return 'text-gray-600 bg-gray-100';
   }
@@ -1147,6 +1155,8 @@ export function getTipoLabel(tipo: string): string {
       return 'Fechas PO aprobadas';
     case 'fechas_rechazada':
       return 'Fechas PO rechazadas';
+    case 'raga_datos_actualizados':
+      return 'Datos completados por Raga';
     default:
       return tipo;
   }

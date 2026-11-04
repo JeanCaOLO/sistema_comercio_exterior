@@ -78,13 +78,21 @@ export default function ZonaCargaDocumento({
             ? 'border-teal-400 bg-teal-50/50'
             : 'border-gray-300 bg-gray-50 hover:border-teal-400 hover:bg-teal-50/30';
 
-  const columnas = documento?.tipo === 'pdf' && documento.lineas ? muestrasColumnas(documento.lineas) : [];
+  const columnas: { indice: number; etiqueta: string; muestras: string[] }[] = documento && documento.tipo === 'pdf'
+    ? (documento.columnas && documento.columnas.length
+      ? documento.columnas.map(({ indice, etiqueta, muestras }) => ({ indice, etiqueta, muestras }))
+      : muestrasColumnas(documento.lineas ?? []).map((columna) => ({
+        indice: columna.indice,
+        etiqueta: '',
+        muestras: columna.muestras,
+      })))
+    : [];
 
   const opcionesMapeo = documento && documento.tipo === 'excel'
     ? documento.etiquetas.map((etiqueta, indice) => ({ valor: indice, etiqueta }))
     : columnas.map((columna) => ({
       valor: columna.indice,
-      etiqueta: `Columna ${columna.indice + 1}${columna.muestras.length ? ` · ${columna.muestras.join(' / ')}` : ''}`,
+      etiqueta: `Columna ${columna.indice + 1}${columna.etiqueta ? ` · ${columna.etiqueta}` : ''}${columna.muestras.length ? ` · ${columna.muestras.slice(0, 3).join(' / ')}` : ''}`,
     }));
 
   const campos: { campo: keyof MapeoColumnas; nombre: string; opcional?: boolean }[] = [
@@ -176,7 +184,11 @@ export default function ZonaCargaDocumento({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onSeleccionPdf(documento.seleccion ?? sugerirSeleccionPdf(documento.lineas ?? []))}
+                  onClick={() => onSeleccionPdf(
+                    documento.seleccion
+                    ?? documento.analisis?.seleccion
+                    ?? sugerirSeleccionPdf(documento.lineas ?? []),
+                  )}
                   className={`flex-1 px-2 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${documento.manual ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   Elegir columnas
@@ -274,7 +286,7 @@ export default function ZonaCargaDocumento({
                   >
                     <option value="">Usar un perfil guardado…</option>
                     {perfiles
-                      .filter((perfil) => perfil.tipo === documento.tipo)
+                      .filter((perfil) => perfil.tipo === documento.tipo && (perfil.tipo !== 'pdf' || perfil.rejilla))
                       .map((perfil) => (
                         <option key={perfil.id} value={perfil.id}>{perfil.proveedor}</option>
                       ))}

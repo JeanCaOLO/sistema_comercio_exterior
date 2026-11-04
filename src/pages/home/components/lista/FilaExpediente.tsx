@@ -1,6 +1,7 @@
 // Fila memoizada de la tabla de expedientes (evita repintar toda la tabla).
 
 import { memo } from 'react';
+import MarcaRagaTicket from '@/components/feature/MarcaRagaTicket';
 import type { Expediente } from './types';
 import {
   calcularDiasDesdeCargaFactura,
@@ -50,6 +51,9 @@ function FilaExpediente({ expediente, ahora, onSelect, onHistorial, onDocumentos
       <td className="px-3 py-3 whitespace-nowrap">
         <div className="text-sm font-medium text-gray-900">{expediente.po_tiquetera}</div>
         <div className="text-xs text-gray-500">{expediente.tipo_po}</div>
+        <div className="mt-1">
+          <MarcaRagaTicket expedienteId={expediente.id} />
+        </div>
       </td>
       <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">{expediente.exp_id}</td>
       <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">{expediente.solicitante}</td>

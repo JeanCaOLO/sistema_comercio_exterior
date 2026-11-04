@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNotificaciones } from '@/hooks/useNotificaciones';
-import { getIconoColor, getTipoLabel, timeAgo, esNotificacionEtd, esNotificacionFechas, type Notificacion } from '@/lib/notificaciones';
+import { getIconoColor, getTipoLabel, timeAgo, esNotificacionEtd, esNotificacionFechas, esNotificacionRagaDatos, type Notificacion } from '@/lib/notificaciones';
 import ToastNotificaciones from './ToastNotificacion';
 
 interface CampanitaNotificacionesProps {
@@ -46,6 +46,15 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
   // directamente en el módulo de Aprobaciones Pendientes.
   const abrirNotificacion = async (notif: Notificacion) => {
     if (!notif.leida) await marcarLeida(notif.id);
+
+    // Aviso de la sincronización con Raga: abre el ticket que se completó.
+    if (esNotificacionRagaDatos(notif.tipo) && notif.expediente_id) {
+      window.dispatchEvent(
+        new CustomEvent('abrirExpedienteRaga', { detail: { id: notif.expediente_id } })
+      );
+      setAbierto(false);
+      return;
+    }
 
     if (esNotificacionFechas(notif.tipo) && notif.expediente_id) {
       window.dispatchEvent(
@@ -157,6 +166,11 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
                             {(esNotificacionEtd(notif.tipo) || esNotificacionFechas(notif.tipo)) && notif.expediente_id ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full whitespace-nowrap">
                                 Ver solicitud
+                                <i className="ri-arrow-right-s-line"></i>
+                              </span>
+                            ) : esNotificacionRagaDatos(notif.tipo) && notif.expediente_id ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                Ver ticket
                                 <i className="ri-arrow-right-s-line"></i>
                               </span>
                             ) : (

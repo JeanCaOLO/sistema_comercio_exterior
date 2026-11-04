@@ -12,6 +12,10 @@ export type Lado = 'a' | 'b';
 export interface LineaPdf {
   pagina: number;
   tokens: string[];
+  /** Coordenada X (izquierda) de cada token. Solo en PDF con texto. */
+  xs?: number[];
+  /** Ancho aproximado de cada token. Solo en PDF con texto. */
+  anchos?: number[];
 }
 
 export interface FilaDocumento {
@@ -49,6 +53,12 @@ export interface DocumentoLeido {
   hojas?: HojaExcel[];
   hojaActiva?: number;
   lineas?: LineaPdf[];
+  /** PDF: líneas ya armadas en columnas reales (una celda por columna). */
+  grilla?: LineaPdf[];
+  /** PDF: columnas detectadas, para el selector de columnas. */
+  columnas?: ColumnaPdf[];
+  /** PDF: columnas que se detectaron automáticamente. */
+  analisis?: AnalisisGrillaPdf;
   paginas?: number;
   manual?: boolean;
   seleccion?: SeleccionPdf;
@@ -282,10 +292,32 @@ export async function leerPdf(archivo: File): Promise<{ lineas: LineaPdf[]; pagi
       });
       grupos.forEach((g) => {
         g.items.sort((a, b) => a.transform[4] - b.transform[4]);
-        const tokens = recomponerCodigos(
-          g.items.map((i) => String(i.str).trim()).join(' ').split(/\s+/).filter(Boolean),
-        );
-        if (tokens.length) lineas.push({ pagina: p, tokens });
+        const tokens: string[] = [];
+        const xs: number[] = [];
+        const anchos: number[] = [];
+        g.items.forEach((item) => {
+          const texto = String(item.str ?? '').trim();
+          if (!texto) return;
+          const partes = texto.split(/\s+/).filter(Boolean);
+          if (!partes.length) return;
+          const x0 = Number(item.transform?.[4]) || 0;
+          const anchoTotal = Number(item.width) || 0;
+          const caracteres = partes.reduce((suma, parte) => suma + parte.length, 0) || 1;
+          let recorrido = 0;
+          partes.forEach((parte) => {
+            const ancho = anchoTotal > 0
+              ? (anchoTotal * parte.length) / caracteres
+              : Math.max(3, parte.length * 4.6);
+            tokens.push(parte);
+            xs.push(x0 + (anchoTotal > 0 ? (anchoTotal * recorrido) / caracteres : 0));
+            anchos.push(ancho);
+            recorrido += parte.length;
+          });
+        });
+        const unidos = recomponerCodigos(tokens, xs, anchos);
+        if (unidos.tokens.length) {
+          lineas.push({ pagina: p, tokens: unidos.tokens, xs: unidos.xs, anchos: unidos.anchos });
+        }
       });
     } catch {
       // Página ilegible: se omite y se continúa con el resto.
@@ -318,8 +350,14 @@ const CODIGO_UNIDO = /^[A-Za-z0-9][A-Za-z0-9\-/._]*$/;
  * Muchos PDF escriben la referencia en trozos sueltos: "03" "-" "04" "-" "023".
  * Aquí se vuelven a unir para que la referencia sea un solo token legible.
  */
-function recomponerCodigos(tokens: string[]): string[] {
+function recomponerCodigos(
+  tokens: string[],
+  xs?: number[],
+  anchos?: number[],
+): { tokens: string[]; xs?: number[]; anchos?: number[] } {
   const salida: string[] = [];
+  const salidaX: number[] = [];
+  const salidaAnchos: number[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
     const anterior = salida[salida.length - 1];
@@ -333,12 +371,22 @@ function recomponerCodigos(tokens: string[]): string[] {
       && (/\d/.test(anterior) || /\d/.test(siguiente))
     ) {
       salida[salida.length - 1] = `${anterior}${token}${siguiente}`;
+      const ultimo = salidaAnchos.length - 1;
+      if (ultimo >= 0) {
+        salidaAnchos[ultimo] = (salidaAnchos[ultimo] ?? 0) + (anchos?.[i] ?? 0) + (anchos?.[i + 1] ?? 0);
+      }
       i += 1;
       continue;
     }
     salida.push(token);
+    salidaX.push(xs?.[i] ?? 0);
+    salidaAnchos.push(anchos?.[i] ?? 0);
   }
-  return salida;
+  return {
+    tokens: salida,
+    xs: xs ? salidaX : undefined,
+    anchos: anchos ? salidaAnchos : undefined,
+  };
 }
 
 /** ¿Este token parece una referencia de producto (03-04-023, SKU-1234…)? */
@@ -613,6 +661,464 @@ export function sugerirSeleccionPdf(lineas: LineaPdf[]): SeleccionPdf {
 }
 
 // ------------------------------------------------------------
+// PDF: COLUMNAS REALES POR POSICIÓN
+// ------------------------------------------------------------
+// Un PDF no trae columnas: trae palabras sueltas, cada una con una
+// coordenada. Contar palabras por línea falla en cuanto la descripción
+// ocupa varias palabras o una celda viene vacía, porque todo se corre
+// un lugar. Aquí se agrupan las palabras por su posición horizontal para
+// reconstruir las columnas verdaderas de la tabla, de modo que la
+// referencia, la cantidad y el precio se lean igual en cualquier factura.
+
+export interface BandaPdf {
+  x: number;
+  fin: number;
+}
+
+export interface ColumnaPdf {
+  indice: number;
+  etiqueta: string;
+  muestras: string[];
+  x: number;
+  ancho: number;
+}
+
+export interface GrillaPdf {
+  bandas: BandaPdf[];
+  lineas: LineaPdf[];
+  etiquetas: (string | undefined)[];
+}
+
+export interface AnalisisGrillaPdf {
+  seleccion: SeleccionPdf;
+  total: number;
+  descripcion: number;
+}
+
+interface PalabraPdf {
+  texto: string;
+  x: number;
+  fin: number;
+}
+
+const ETIQUETA_COLUMNA: Record<string, string> = {
+  ref: 'Referencia',
+  desc: 'Descripción',
+  qty: 'Cantidad',
+  um: 'Unidad',
+  price: 'Precio unitario',
+  total: 'Total',
+};
+
+function palabrasConPosicion(linea: LineaPdf): PalabraPdf[] {
+  if (!linea.xs || linea.xs.length !== linea.tokens.length) return [];
+  const salida: PalabraPdf[] = [];
+  linea.tokens.forEach((token, indice) => {
+    if (!token) return;
+    const x = linea.xs?.[indice] ?? 0;
+    const ancho = linea.anchos?.[indice] || Math.max(3, token.length * 4.6);
+    salida.push({ texto: token, x, fin: x + ancho });
+  });
+  return salida;
+}
+
+/** Traduce el título de una columna del PDF a un campo del comparador. */
+function claveEncabezado(token: string, siguiente?: string): string | null {
+  const texto = normalizarEtiqueta(token);
+  if (!texto || texto.length > 16) return null;
+  const sig = siguiente ? normalizarEtiqueta(siguiente) : '';
+  if (/^(unit|unidad|um|uom|measure|medida)$/.test(texto) && /^(price|precio|costo|cost|valor)/.test(sig)) return 'price';
+  if (/^(qty|quantity|cant|cantidad|bultos?|piezas?|pcs|units|cantidadbultos)$/.test(texto)) return 'qty';
+  if (/^(unit|unidad|uom|um|medida|measure)$/.test(texto)) return 'um';
+  if (/^(description|descripcion|descrip|detalle|producto|product|descripcionproducto)$/.test(texto)) return 'desc';
+  if (/^(unitprice|preciounitario|precio|price|preciou|pu|punit|valorunitario|costo|cost|pvp)$/.test(texto)) return 'price';
+  if (/^(total|amount|monto|importe|subtotal|valortotal|totalusd)$/.test(texto)) return 'total';
+  if (/^(item|itemno|items|sku|skunumber|codigo|cod|code|ref|referencia|articulo|art|modelo|model|part|partnumber|partno|noitem|itemnumber)$/.test(texto)) return 'ref';
+  return null;
+}
+
+function bandaDeCentro(bandas: BandaPdf[], centro: number, tolerancia: number): number {
+  for (let b = 0; b < bandas.length; b += 1) {
+    if (centro >= bandas[b].x - 1 && centro <= bandas[b].fin + 1) return b;
+  }
+  let elegido = -1;
+  let distancia = Infinity;
+  bandas.forEach((banda, b) => {
+    const d = centro < banda.x ? banda.x - centro : centro - banda.fin;
+    if (d < distancia) {
+      distancia = d;
+      elegido = b;
+    }
+  });
+  return distancia <= tolerancia ? elegido : -1;
+}
+
+/** Busca en el encabezado del PDF los títulos de cada columna. */
+function etiquetasDeEncabezado(lineas: LineaPdf[], bandas: BandaPdf[], anchoPagina: number): (string | undefined)[] {
+  const etiquetas: (string | undefined)[] = bandas.map(() => undefined);
+  const asignadas = new Set<string>();
+  const tolerancia = Math.max(8, anchoPagina * 0.06);
+  const limite = Math.min(lineas.length, 120);
+
+  for (let i = 0; i < limite; i += 1) {
+    const palabras = palabrasConPosicion(lineas[i]);
+    if (palabras.length < 2) continue;
+    if (palabras.filter((palabra) => esNumero(palabra.texto)).length > 1) continue;
+
+    const encontradas: { clave: string; palabra: PalabraPdf }[] = [];
+    palabras.forEach((palabra, ix) => {
+      const clave = claveEncabezado(palabra.texto, palabras[ix + 1]?.texto);
+      if (clave) encontradas.push({ clave, palabra });
+    });
+    if (encontradas.length < 2) continue;
+
+    encontradas.forEach(({ clave, palabra }) => {
+      if (asignadas.has(clave)) return;
+      // El título manda cuando su inicio cae dentro de la columna. Si cae en un
+      // espacio libre (títulos partidos en varias palabras) se ignora, así no
+      // se pisa el nombre de otra columna.
+      const indice = bandas.findIndex(
+        (banda) => palabra.x >= banda.x - tolerancia && palabra.x <= banda.fin + 2,
+      );
+      if (indice < 0 || etiquetas[indice]) return;
+      etiquetas[indice] = ETIQUETA_COLUMNA[clave];
+      asignadas.add(clave);
+    });
+  }
+  return etiquetas;
+}
+
+/** Une filas que el PDF partió en dos líneas (texto arriba, números abajo). */
+function unirFilasPartidas(filas: LineaPdf[]): LineaPdf[] {
+  const salida: LineaPdf[] = [];
+  filas.forEach((linea) => {
+    const anterior = salida[salida.length - 1];
+    const conReferencia = linea.tokens.some((token) => esReferenciaToken(token));
+    const conNumero = linea.tokens.some((token) => esNumero(token));
+    if (anterior && anterior.pagina === linea.pagina && conNumero && !conReferencia) {
+      const anteriorReferencia = anterior.tokens.some((token) => esReferenciaToken(token));
+      const anteriorNumero = anterior.tokens.some((token) => esNumero(token));
+      if (anteriorReferencia && !anteriorNumero) {
+        salida[salida.length - 1] = {
+          pagina: anterior.pagina,
+          tokens: anterior.tokens.map((celda, columna) => {
+            const extra = linea.tokens[columna] ?? '';
+            if (!extra) return celda;
+            if (!celda) return extra;
+            return `${celda} ${extra}`;
+          }),
+        };
+        return;
+      }
+    }
+    salida.push(linea);
+  });
+  return salida;
+}
+
+/**
+ * Reconstruye la tabla del PDF: cada línea queda con una celda por columna,
+ * sin importar cuántas palabras tenga cada celda ni si alguna viene vacía.
+ */
+export function construirGrillaPdf(lineas: LineaPdf[]): GrillaPdf {
+  const vacia: GrillaPdf = { bandas: [], lineas: [], etiquetas: [] };
+  const conPosicion = lineas
+    .map((linea) => ({ linea, palabras: palabrasConPosicion(linea) }))
+    .filter((item) => item.palabras.length >= 2);
+  if (!conPosicion.length) return vacia;
+
+  const anchoPagina = Math.max(1, ...conPosicion.flatMap((item) => item.palabras.map((p) => p.fin)));
+  const cuantosNumeros = (palabras: PalabraPdf[]) =>
+    palabras.filter((palabra) => esNumero(palabra.texto)).length;
+
+  let aprendizaje = conPosicion.filter(
+    (item) => item.palabras.length >= 3 && cuantosNumeros(item.palabras) >= 2,
+  );
+  if (aprendizaje.length < 2) aprendizaje = conPosicion.filter((item) => cuantosNumeros(item.palabras) >= 2);
+  if (!aprendizaje.length) aprendizaje = conPosicion;
+
+  const puntos: BandaPdf[] = [];
+  aprendizaje.forEach((item) => item.palabras.forEach((palabra) => puntos.push({ x: palabra.x, fin: palabra.fin })));
+  if (puntos.length < 3) return vacia;
+  puntos.sort((a, b) => a.x - b.x || a.fin - b.fin);
+
+  const holgura = Math.max(2, anchoPagina * 0.004);
+  const bandas: BandaPdf[] = [];
+  puntos.forEach((punto) => {
+    const ultima = bandas[bandas.length - 1];
+    if (ultima && punto.x <= ultima.fin + holgura) {
+      ultima.fin = Math.max(ultima.fin, punto.fin);
+      return;
+    }
+    bandas.push({ x: punto.x, fin: punto.fin });
+  });
+  if (bandas.length < 2) return vacia;
+
+  const filas: LineaPdf[] = [];
+  conPosicion.forEach(({ linea, palabras }) => {
+    const celdas: string[][] = bandas.map(() => []);
+    palabras.forEach((palabra) => {
+      const indice = bandaDeCentro(bandas, (palabra.x + palabra.fin) / 2, anchoPagina);
+      if (indice >= 0) celdas[indice].push(palabra.texto);
+    });
+    const tokens = celdas.map((partes) => partes.join(' ').trim());
+    if (tokens.filter((token) => token !== '').length < 2) return;
+    filas.push({ pagina: linea.pagina, tokens });
+  });
+  if (!filas.length) return vacia;
+
+  return {
+    bandas,
+    lineas: unirFilasPartidas(filas),
+    etiquetas: etiquetasDeEncabezado(lineas, bandas, anchoPagina),
+  };
+}
+
+interface ResumenColumnaPdf {
+  indice: number;
+  total: number;
+  ratioNumerico: number;
+  ratioEntero: number;
+  ratioDecimal: number;
+  ratioReferencia: number;
+  ratioUnidad: number;
+  ratioConDigito: number;
+  variados: number;
+  largo: number;
+}
+
+/** Decide cuál columna es la referencia, la cantidad, la unidad y el precio. */
+function analizarGrillaPdf(grilla: GrillaPdf): AnalisisGrillaPdf {
+  const columnas = Math.max(0, ...grilla.lineas.map((linea) => linea.tokens.length));
+  const base = grilla.lineas.filter((linea) => !lineaNoEsItem(linea.tokens));
+  const filas = base.length ? base : grilla.lineas;
+
+  const resumen: ResumenColumnaPdf[] = Array.from({ length: columnas }, (_, indice) => {
+    const valores = filas
+      .map((linea) => String(linea.tokens[indice] ?? '').trim())
+      .filter(Boolean);
+    const cuenta = (condicion: (valor: string) => boolean) => valores.filter(condicion).length;
+    const total = valores.length || 1;
+    return {
+      indice,
+      total: valores.length,
+      ratioNumerico: cuenta((valor) => esNumero(valor)) / total,
+      ratioEntero: cuenta((valor) => esNumero(valor) && Number.isInteger(aNumero(valor))) / total,
+      ratioDecimal: cuenta((valor) => esNumero(valor) && /[.,]\d{1,4}$/.test(valor)) / total,
+      ratioReferencia: cuenta((valor) => esReferenciaToken(valor)) / total,
+      ratioUnidad:
+        cuenta((valor) => !esNumero(valor) && valor.length <= 6 && UNIDADES.has(canonUnidad(valor))) / total,
+      ratioConDigito: cuenta((valor) => /\d/.test(valor)) / total,
+      variados: new Set(valores).size / total,
+      largo: valores.length
+        ? valores.reduce((suma, valor) => suma + valor.length, 0) / valores.length
+        : 0,
+    };
+  });
+
+  const porEtiqueta = (nombre: string) =>
+    resumen.find((columna) => grilla.etiquetas[columna.indice] === nombre)?.indice ?? -1;
+
+  const numericas = resumen.filter((columna) => columna.total >= 2 && columna.ratioNumerico >= 0.55);
+  let qty = -1;
+  let price = -1;
+  let totalCol = -1;
+  let mejor = 0;
+
+  // La mejor señal es matemática: cantidad × precio = total.
+  numericas.forEach((colCantidad) => {
+    numericas.forEach((colPrecio) => {
+      if (colPrecio.indice === colCantidad.indice) return;
+      numericas.forEach((colTotal) => {
+        if (colTotal.indice === colCantidad.indice || colTotal.indice === colPrecio.indice) return;
+        let validos = 0;
+        let aciertos = 0;
+        filas.forEach((linea) => {
+          const textoCantidad = String(linea.tokens[colCantidad.indice] ?? '');
+          const textoPrecio = String(linea.tokens[colPrecio.indice] ?? '');
+          const textoTotal = String(linea.tokens[colTotal.indice] ?? '');
+          if (!esNumero(textoCantidad) || !esNumero(textoPrecio) || !esNumero(textoTotal)) return;
+          const cantidad = aNumero(textoCantidad);
+          const precio = aNumero(textoPrecio);
+          const monto = aNumero(textoTotal);
+          if (!(cantidad > 0) || !(precio > 0)) return;
+          validos += 1;
+          if (Math.abs(cantidad * precio - monto) <= Math.max(0.02, Math.abs(monto) * 0.002)) aciertos += 1;
+        });
+        if (aciertos < 2 || !validos) return;
+        const ratio = aciertos / validos;
+        if (ratio < 0.5) return;
+        const puntaje = ratio
+          + (colCantidad.ratioEntero >= 0.7 ? 0.12 : 0)
+          + (colTotal.indice > colPrecio.indice ? 0.08 : 0);
+        if (puntaje > mejor) {
+          mejor = puntaje;
+          qty = colCantidad.indice;
+          price = colPrecio.indice;
+          totalCol = colTotal.indice;
+        }
+      });
+    });
+  });
+
+  // Sin relación matemática clara: se usa el título y la forma del dato.
+  if (qty < 0) {
+    const porNombre = porEtiqueta('Cantidad');
+    qty = porNombre > -1
+      ? porNombre
+      : (resumen.find(
+        (columna) => columna.total >= 2
+          && columna.ratioNumerico >= 0.5
+          && columna.ratioEntero >= 0.6
+          && columna.indice !== price
+          && columna.indice !== totalCol,
+      )?.indice ?? -1);
+  }
+  if (price < 0) {
+    const porNombre = porEtiqueta('Precio unitario');
+    if (porNombre > -1) price = porNombre;
+  }
+  if (price < 0) {
+    const candidatas = resumen
+      .filter(
+        (columna) => columna.total >= 2
+          && columna.ratioNumerico >= 0.5
+          && columna.indice !== qty
+          && columna.indice !== totalCol
+          && (qty < 0 || columna.indice > qty),
+      )
+      .sort((a, b) => b.ratioDecimal - a.ratioDecimal || a.indice - b.indice);
+    price = candidatas[0]?.indice ?? -1;
+  }
+  if (price < 0) {
+    const candidatas = resumen
+      .filter(
+        (columna) => columna.total >= 2
+          && columna.ratioNumerico >= 0.5
+          && columna.indice !== qty
+          && columna.indice !== totalCol,
+      )
+      .sort((a, b) => b.ratioDecimal - a.ratioDecimal || a.indice - b.indice);
+    price = candidatas[0]?.indice ?? -1;
+  }
+
+  const candidatasRef = resumen
+    .filter(
+      (columna) => columna.total >= 2
+        && columna.ratioNumerico < 0.5
+        && columna.indice !== qty
+        && columna.indice !== price
+        && columna.indice !== totalCol,
+    )
+    .map((columna) => ({
+      indice: columna.indice,
+      puntaje: columna.ratioReferencia * 1.8
+        + columna.ratioConDigito
+        + columna.variados * 0.6
+        - columna.ratioUnidad * 1.2
+        - columna.ratioDecimal
+        + (qty > -1 && columna.indice < qty ? 0.3 : 0),
+    }))
+    .sort((a, b) => b.puntaje - a.puntaje);
+
+  let ref = candidatasRef.length ? candidatasRef[0].indice : -1;
+  if (ref < 0) {
+    ref = resumen.find(
+      (columna) => columna.ratioConDigito >= 0.3 && columna.indice !== qty && columna.indice !== price,
+    )?.indice ?? 0;
+  }
+
+  let um = -1;
+  const porUnidad = resumen.find(
+    (columna) => columna.indice !== ref
+      && columna.indice !== qty
+      && columna.indice !== price
+      && columna.indice !== totalCol
+      && columna.ratioUnidad >= 0.4,
+  );
+  if (porUnidad) {
+    um = porUnidad.indice;
+  } else {
+    const porNombre = porEtiqueta('Unidad');
+    if (porNombre > -1 && porNombre !== qty) um = porNombre;
+  }
+
+  const usadas = new Set([ref, qty, price, totalCol, um]);
+  const candidatasDesc = resumen
+    .filter((columna) => !usadas.has(columna.indice) && columna.total >= 1 && columna.ratioNumerico < 0.4)
+    .sort((a, b) => b.largo - a.largo);
+
+  return {
+    seleccion: { ref, qty, price, um },
+    total: totalCol,
+    descripcion: candidatasDesc[0]?.indice ?? -1,
+  };
+}
+
+/** Muestra, para el selector de columnas, qué datos trae cada columna. */
+function describirColumnasPdf(grilla: GrillaPdf): ColumnaPdf[] {
+  const columnas = Math.max(0, ...grilla.lineas.map((linea) => linea.tokens.length));
+  const filas = grilla.lineas
+    .filter((linea) => linea.tokens.some((token) => /\d/.test(token)))
+    .slice(0, 200);
+
+  return Array.from({ length: columnas }, (_, indice) => {
+    const muestras: string[] = [];
+    filas.forEach((linea) => {
+      const valor = String(linea.tokens[indice] ?? '').trim();
+      if (!valor || muestras.includes(valor) || muestras.length >= 4) return;
+      muestras.push(valor);
+    });
+    const banda = grilla.bandas[indice];
+    return {
+      indice,
+      etiqueta: grilla.etiquetas[indice] ?? '',
+      muestras,
+      x: banda?.x ?? 0,
+      ancho: banda ? banda.fin - banda.x : 0,
+    };
+  });
+}
+
+/** Arma las filas de la comparación ya separadas en columnas reales. */
+function filasDesdeGrillaPdf(grilla: LineaPdf[], analisis: AnalisisGrillaPdf): FilaDocumento[] {
+  const { ref, qty, price, um } = analisis.seleccion;
+  const filas: FilaDocumento[] = [];
+
+  grilla.forEach((linea) => {
+    const tokens = linea.tokens;
+    if (lineaNoEsItem(tokens)) return;
+    const celdaRef = String(tokens[ref] ?? '').trim();
+    if (!celdaRef || !/\d/.test(celdaRef)) return;
+
+    const celdaCantidad = qty >= 0 ? String(tokens[qty] ?? '').trim() : '';
+    const celdaPrecio = price >= 0 ? String(tokens[price] ?? '').trim() : '';
+    const cantidad = qty >= 0 ? aNumero(celdaCantidad) : NaN;
+    const precio = price >= 0 ? aNumero(celdaPrecio) : NaN;
+    if (isNaN(cantidad) && isNaN(precio)) return;
+
+    let unidad = um >= 0 ? String(tokens[um] ?? '').trim() : '';
+    if (!unidad) unidad = celdaCantidad.split(/\s+/).find((parte) => esTokenUnidad(parte)) ?? '';
+
+    const descripcion = analisis.descripcion >= 0 ? String(tokens[analisis.descripcion] ?? '').trim() : '';
+    const monto = !isNaN(cantidad) && !isNaN(precio) ? cantidad * precio : NaN;
+
+    filas.push({
+      celdas: [cantidad, unidad.toUpperCase(), celdaRef, descripcion, precio, monto],
+      ubicacion: `pág. ${linea.pagina}`,
+    });
+  });
+
+  return filas;
+}
+
+/** Líneas que representan el formato del PDF (para guardar el perfil del proveedor). */
+export function lineasParaFirma(doc: DocumentoLeido): LineaPdf[] {
+  if (doc.grilla && doc.grilla.length) return doc.grilla;
+  return doc.lineas ?? [];
+}
+
+// ------------------------------------------------------------
 // DOCUMENTOS
 // ------------------------------------------------------------
 export async function leerDocumento(archivo: File): Promise<DocumentoLeido> {
@@ -622,7 +1128,12 @@ export async function leerDocumento(archivo: File): Promise<DocumentoLeido> {
     if (lineas.length < 3) {
       throw new Error('No pude leer texto en este PDF (¿es un escaneo o una foto?). Necesito un PDF con texto seleccionable.');
     }
-    const filas = filasPdfAuto(lineas);
+    const grilla = construirGrillaPdf(lineas);
+    const analisis = grilla.lineas.length ? analizarGrillaPdf(grilla) : null;
+    const columnas = grilla.lineas.length ? describirColumnasPdf(grilla) : [];
+    const porColumnas = analisis ? filasDesdeGrillaPdf(grilla.lineas, analisis) : [];
+    const filas = porColumnas.length ? porColumnas : filasPdfAuto(lineas);
+
     return {
       nombre: archivo.name,
       tipo: 'pdf',
@@ -631,6 +1142,9 @@ export async function leerDocumento(archivo: File): Promise<DocumentoLeido> {
       mapeo: { qty: 0, um: 1, ref: 2, desc: 3, price: 4 },
       tieneEncabezado: true,
       lineas,
+      grilla: grilla.lineas.length ? grilla.lineas : undefined,
+      columnas: columnas.length ? columnas : undefined,
+      analisis: analisis ?? undefined,
       paginas,
       manual: false,
     };
@@ -682,25 +1196,27 @@ export function cambiarHoja(doc: DocumentoLeido, indice: number): DocumentoLeido
 }
 
 export function aplicarSeleccionPdf(doc: DocumentoLeido, sel: SeleccionPdf): DocumentoLeido {
-  if (!doc.lineas) return doc;
+  const base = doc.grilla && doc.grilla.length ? doc.grilla : doc.lineas;
+  if (!base || !base.length) return doc;
   return {
     ...doc,
     manual: true,
     seleccion: sel,
     etiquetas: ETIQUETAS_PDF_MANUAL,
-    filas: filasPdfManual(doc.lineas, sel),
+    filas: filasPdfManual(base, sel),
     mapeo: { ref: 0, qty: 1, price: 2, um: 3, desc: 4 },
   };
 }
 
 export function volverAAutomaticoPdf(doc: DocumentoLeido): DocumentoLeido {
-  if (!doc.lineas) return doc;
+  if (!doc.lineas || !doc.lineas.length) return doc;
+  const porColumnas = doc.grilla && doc.analisis ? filasDesdeGrillaPdf(doc.grilla, doc.analisis) : [];
   return {
     ...doc,
     manual: false,
     seleccion: undefined,
     etiquetas: ETIQUETAS_PDF_AUTO,
-    filas: filasPdfAuto(doc.lineas),
+    filas: porColumnas.length ? porColumnas : filasPdfAuto(doc.lineas),
     mapeo: { qty: 0, um: 1, ref: 2, desc: 3, price: 4 },
   };
 }

@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { formatearFecha } from '@/lib/fechas';
+import MarcaRagaTicket from '@/components/feature/MarcaRagaTicket';
 import type { Expediente } from './types';
 import { formatearTiempo, getDificultadColor, getPrioridadColor } from './utils';
 
@@ -37,6 +38,9 @@ function TarjetaExpediente({
         <div className="flex-1">
           <h4 className="font-semibold text-gray-900 text-sm mb-1">{expediente.po_tiquetera}</h4>
           <p className="text-xs text-gray-500">{expediente.exp_id}</p>
+          <div className="mt-1">
+            <MarcaRagaTicket expedienteId={expediente.id} />
+          </div>
           {expediente.tipo_modulo === 'zf' && expediente.recibo_delzof_fecha && (
             <p
               className="text-[11px] text-amber-700 font-medium mt-0.5 whitespace-nowrap"

@@ -6,6 +6,7 @@ import type { FilaDuracion, FiltroDuracion } from './ModalDetalleDuracion';
 import type { FilaEtdNotificado } from './ModalDetalleEtdNotificado';
 import type { FilaAsignadoNotificado } from './ModalDetalleAsignadoNotificado';
 import type { FilaSinEtd } from './ModalDetalleSinEtd';
+import type { FilaSinDatosEmbarque } from './ModalDetalleDatosEmbarque';
 
 const hoy = (): string => new Date().toISOString().split('T')[0];
 
@@ -75,4 +76,17 @@ export const descargarReporteSinEtd = (filas: FilaSinEtd[]): void => {
   }));
 
   descargarExcel(`reporte-sin-etd-${hoy()}.xlsx`, datos);
+};
+
+export const descargarReporteSinDatosEmbarque = (filas: FilaSinDatosEmbarque[]): void => {
+  const datos = filas.map((e) => ({
+    'PO/Tiquetera': e.po_tiquetera,
+    'EXP ID': e.exp_id || '-',
+    Módulo: e.tipo_modulo,
+    Solicitante: e.solicitante,
+    Estado: e.estado_expediente,
+    'Datos pendientes': e.faltantes,
+  }));
+
+  descargarExcel(`reporte-datos-embarque-pendientes-${hoy()}.xlsx`, datos);
 };

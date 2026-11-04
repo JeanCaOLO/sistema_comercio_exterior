@@ -7,6 +7,7 @@ import {
   cambiarHoja,
   comparar,
   leerDocumento,
+  lineasParaFirma,
   volverAAutomaticoPdf,
   type DocumentoLeido,
   type MapeoColumnas,
@@ -107,7 +108,8 @@ export default function ComparadorDocumentos() {
       let doc = leido;
       let perfil: PerfilColumnas | null = null;
       if (doc.tipo === 'pdf' && doc.lineas?.length) {
-        perfil = buscarPerfilComparador(doc.lineas, doc.nombre, perfiles);
+        const lineasFirma = lineasParaFirma(doc);
+        perfil = lineasFirma.length ? buscarPerfilComparador(lineasFirma, doc.nombre, perfiles) : null;
         if (perfil && perfil.seleccion) doc = aplicarSeleccionPdf(doc, perfil.seleccion);
       } else if (doc.tipo === 'excel') {
         const encontrado = buscarPerfilExcel(doc.etiquetas, doc.nombre, perfiles);
@@ -161,7 +163,7 @@ export default function ComparadorDocumentos() {
     if (!actual) return;
     let actualizado: DocumentoLeido = actual;
     if (perfil.tipo === 'pdf' && perfil.seleccion) {
-      if (!actual.lineas) return;
+      if (!actual.lineas || !perfil.rejilla) return;
       actualizado = aplicarSeleccionPdf(actual, perfil.seleccion);
     } else if (perfil.tipo === 'excel' && perfil.mapeo) {
       if (actual.tipo !== 'excel') return;
@@ -191,10 +193,12 @@ export default function ComparadorDocumentos() {
         etiquetas: actual.etiquetas,
       });
     } else {
-      if (!actual.lineas || !actual.seleccion) return;
-      lista = guardarPerfilComparador(nombre, firmarLayoutPdf(actual.lineas), {
+      const lineasFirma = lineasParaFirma(actual);
+      if (!lineasFirma.length || !actual.seleccion) return;
+      lista = guardarPerfilComparador(nombre, firmarLayoutPdf(lineasFirma), {
         tipo: 'pdf',
         seleccion: actual.seleccion,
+        rejilla: true,
       });
     }
     setPerfiles(lista);

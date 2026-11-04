@@ -146,6 +146,29 @@ export interface KpiDuracion {
   diasPromedioTotal: number;
 }
 
+// ── Cobertura de datos de embarque (Dropship) ──
+export interface DatosEmbarqueDropship {
+  total: number;
+  completos: number;
+  sinDatos: number;
+  sinBl: number;
+  sinContenedor: number;
+  sinFechas: number;
+  porcentajeSinDatos: number;
+  porcentajeCompletos: number;
+}
+
+export const crearDatosEmbarqueVacio = (): DatosEmbarqueDropship => ({
+  total: 0,
+  completos: 0,
+  sinDatos: 0,
+  sinBl: 0,
+  sinContenedor: 0,
+  sinFechas: 0,
+  porcentajeSinDatos: 0,
+  porcentajeCompletos: 0,
+});
+
 export const crearKpiDuracionVacio = (): KpiDuracion => ({
   totalEvaluados: 0,
   cumplen: 0,

@@ -1,5 +1,6 @@
 // Modal de detalle y edición de un expediente desde la Lista.
 
+import MarcaSincronizacionRaga from '@/components/feature/MarcaSincronizacionRaga';
 import { formatearFecha } from '@/lib/fechas';
 import type { RutaLogistica } from '@/lib/rutas';
 import type { Expediente } from './types';
@@ -71,6 +72,13 @@ export default function ModalDetalleLista({
             <i className="ri-close-line text-2xl text-gray-500"></i>
           </button>
         </div>
+
+        {/* Marca de la última sincronización con Raga (solo Dropship) */}
+        {expediente.tipo_modulo === 'dropship' && (
+          <div className="px-6 pt-4">
+            <MarcaSincronizacionRaga expedienteId={expediente.id} />
+          </div>
+        )}
 
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

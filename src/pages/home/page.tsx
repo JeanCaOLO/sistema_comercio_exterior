@@ -23,6 +23,7 @@ import AnalisisAgenteCarga from './components/agente-carga/AnalisisAgenteCarga';
 import AnalisisControlFechas from './components/control-fechas/AnalisisControlFechas';
 import ComparadorDocumentos from './components/herramientas/ComparadorDocumentos';
 import { verificarSolicitudesEtdAtrasadas, verificarCambiosCampoAtrasados, verificarFechasAtrasadas } from '@/lib/notificaciones';
+import { useSincronizacionRaga } from '@/hooks/useSincronizacionRaga';
 
 // Vistas del menú que pertenecen al centro unificado de cambios de órdenes.
 const VISTAS_CAMBIOS: Record<string, VistaCambios> = {
@@ -68,6 +69,7 @@ export default function Home() {
   const [matrizPermisos, setMatrizPermisos] = useState<Record<string, string[]>>(PERMISOS_DEFAULT);
   const [solicitudEtdObjetivo, setSolicitudEtdObjetivo] = useState<string | null>(null);
   const [solicitudFechasObjetivo, setSolicitudFechasObjetivo] = useState<string | null>(null);
+  const [expedienteRagaObjetivo, setExpedienteRagaObjetivo] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, perfil, loading, signOut } = useAuth();
 
@@ -149,16 +151,26 @@ export default function Home() {
       setSolicitudFechasObjetivo(typeof id === 'string' && id ? id : null);
     };
 
+    // Al hacer clic en un aviso de la sincronización con Raga se abre el ticket
+    // de Dropship que se completó con BL, contenedor o fechas reales.
+    const handleAbrirExpedienteRaga = (event: any) => {
+      const id = event.detail?.id;
+      setActiveView('gestion-dropship');
+      setExpedienteRagaObjetivo(typeof id === 'string' && id ? id : null);
+    };
+
     window.addEventListener('openFormularioExpediente', handleOpenFormulario);
     window.addEventListener('navigateTo', handleNavigateTo);
     window.addEventListener('abrirSolicitudEtd', handleAbrirSolicitudEtd);
     window.addEventListener('abrirSolicitudFechas', handleAbrirSolicitudFechas);
+    window.addEventListener('abrirExpedienteRaga', handleAbrirExpedienteRaga);
 
     return () => {
       window.removeEventListener('openFormularioExpediente', handleOpenFormulario);
       window.removeEventListener('navigateTo', handleNavigateTo);
       window.removeEventListener('abrirSolicitudEtd', handleAbrirSolicitudEtd);
       window.removeEventListener('abrirSolicitudFechas', handleAbrirSolicitudFechas);
+      window.removeEventListener('abrirExpedienteRaga', handleAbrirExpedienteRaga);
     };
   }, []);
 
@@ -175,6 +187,9 @@ export default function Home() {
     }, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [usuarioId]);
+
+  // Sincronización automática con Raga para los expedientes de Dropship.
+  useSincronizacionRaga(Boolean(usuarioId));
 
   const handleLogout = async () => {
     try {
@@ -268,6 +283,8 @@ export default function Home() {
                   onNuevoExpediente={() => setShowFormulario(true)}
                   refreshTrigger={refreshExpedientes}
                   tipoModulo="dropship"
+                  expedienteObjetivoId={expedienteRagaObjetivo}
+                  onObjetivoConsumido={() => setExpedienteRagaObjetivo(null)}
                 />
               )}
               {activeView === 'gestion-zf' && (

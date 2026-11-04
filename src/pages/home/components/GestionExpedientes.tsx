@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { crearNotificacion, notificarComentario } from '@/lib/notificaciones';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +11,7 @@ import TableroKanban from './gestion/TableroKanban';
 import ModalHistorialExpediente from './gestion/ModalHistorialExpediente';
 import ModalDetalleExpediente from './gestion/ModalDetalleExpediente';
 import ModalConfirmarDevolver from './gestion/ModalConfirmarDevolver';
+import SincronizacionRaga from './gestion/SincronizacionRaga';
 import { useExpedientesKanban } from './gestion/useExpedientesKanban';
 import {
   ESTADOS_DROPSHIP,
@@ -37,11 +38,16 @@ interface GestionExpedientesProps {
   onNuevoExpediente?: () => void;
   refreshTrigger?: number;
   tipoModulo?: TipoModulo;
+  // Ticket que se debe abrir automáticamente (por ejemplo, desde un aviso de Raga).
+  expedienteObjetivoId?: string | null;
+  onObjetivoConsumido?: () => void;
 }
 
 export default function GestionExpedientes({
   refreshTrigger,
   tipoModulo = 'dropship',
+  expedienteObjetivoId = null,
+  onObjetivoConsumido,
 }: GestionExpedientesProps) {
   const { perfil } = useAuth();
   const esAdmin = perfil?.roles?.includes('Administrador') ?? false;
@@ -222,6 +228,21 @@ export default function GestionExpedientes({
     setIsAsignarMode(false);
     setUploadedFiles([]);
   };
+
+  // Abre automáticamente el ticket indicado desde la campanita (aviso de Raga).
+  useEffect(() => {
+    if (!expedienteObjetivoId || loading) return;
+
+    const objetivo = expedientes.find((exp) => exp.id === expedienteObjetivoId);
+    if (objetivo) {
+      setSelectedExpediente(objetivo);
+      setShowModal(true);
+      setEditMode(false);
+      setUploadedFiles([]);
+    }
+    onObjetivoConsumido?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expedienteObjetivoId, expedientes, loading]);
 
   const handleEdit = (expediente?: Expediente) => {
     if (expediente) {
@@ -778,6 +799,10 @@ export default function GestionExpedientes({
           </button>
         )}
       </div>
+
+      {tipoModulo === 'dropship' && (
+        <SincronizacionRaga onSincronizado={recargaSilenciosa} />
+      )}
 
       {showSuccess && (
         <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">
