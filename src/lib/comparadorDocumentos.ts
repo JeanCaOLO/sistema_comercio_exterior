@@ -1222,6 +1222,68 @@ export function volverAAutomaticoPdf(doc: DocumentoLeido): DocumentoLeido {
 }
 
 // ------------------------------------------------------------
+// VARIAS FACTURAS POR LADO (varios PDF / Excel unidos)
+// ------------------------------------------------------------
+export const ETIQUETAS_UNIFICADAS = ['Bultos', 'Unidad', 'Referencia', 'Descripción', 'Precio', 'Monto'];
+
+/**
+ * Reordena las filas de un documento a las columnas unificadas del comparador,
+ * para poder sumar varios archivos sin que se mezclen los mapeos de columnas.
+ */
+export function normalizarDocumento(doc: DocumentoLeido, etiquetaOrigen?: string): DocumentoLeido {
+  const { ref, qty, um, price, desc } = doc.mapeo;
+  const valor = (celdas: (string | number)[], indice: number) => (indice > -1 ? celdas[indice] ?? '' : '');
+
+  const filas: FilaDocumento[] = doc.filas.map((fila) => {
+    const bultos = valor(fila.celdas, qty);
+    const unidad = valor(fila.celdas, um);
+    const referencia = valor(fila.celdas, ref);
+    const descripcion = valor(fila.celdas, desc);
+    const precio = valor(fila.celdas, price);
+    const monto = aNumero(bultos) * aNumero(precio);
+    return {
+      celdas: [bultos, unidad, referencia, descripcion, precio, isNaN(monto) ? '' : monto],
+      ubicacion: etiquetaOrigen ? `${etiquetaOrigen} · ${fila.ubicacion}` : fila.ubicacion,
+    };
+  });
+
+  return {
+    nombre: doc.nombre,
+    tipo: doc.tipo,
+    etiquetas: ETIQUETAS_UNIFICADAS,
+    filas,
+    mapeo: { qty: 0, um: 1, ref: 2, desc: 3, price: 4 },
+    tieneEncabezado: true,
+    paginas: doc.paginas,
+  };
+}
+
+/**
+ * Une varios documentos en uno solo para compararlos juntos.
+ * Cada archivo conserva su propio mapeo y sus filas se reordenan antes de sumarlas.
+ */
+export function combinarDocumentos(docs: DocumentoLeido[], nombre = 'Documentos combinados'): DocumentoLeido | null {
+  const listos = docs.filter((doc) => doc.filas.length > 0);
+  if (!listos.length) return null;
+
+  const normalizados = listos.map((doc) =>
+    normalizarDocumento(doc, listos.length > 1 ? doc.nombre : undefined),
+  );
+  const filas = normalizados.flatMap((doc) => doc.filas);
+  const paginas = normalizados.reduce((suma, doc) => suma + (doc.paginas ?? 0), 0);
+
+  return {
+    nombre,
+    tipo: normalizados[0].tipo,
+    etiquetas: ETIQUETAS_UNIFICADAS,
+    filas,
+    mapeo: { qty: 0, um: 1, ref: 2, desc: 3, price: 4 },
+    tieneEncabezado: true,
+    paginas: paginas || undefined,
+  };
+}
+
+// ------------------------------------------------------------
 // COMPARACIÓN
 // ------------------------------------------------------------
 export type Estado = 'soloA' | 'soloB' | 'qty' | 'uni' | 'pre';

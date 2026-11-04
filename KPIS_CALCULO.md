@@ -448,6 +448,19 @@ porcentajeMeta  = min(100, round(3 / promedio * 100))
 | **Aging** (días en el estado actual) | > 3 días | > 7 días |
 | **Retraso** (días vs. vencimiento) | > 0 días | > 3 días |
 
+**Semáforo mostrado en la tabla (el PEOR de los dos criterios):**
+
+```txt
+nivelAging    = (aging <= 3) ? verde : (aging <= 7) ? ámbar : rojo
+nivelRetraso  = (retraso <= 0) ? verde : (retraso <= 3) ? ámbar : rojo
+nivelGlobal   = el más severo entre nivelAging y nivelRetraso
+```
+
+> Un expediente que se movió de estado ayer (aging verde) pero está vencido hace 30 días
+> (retraso rojo) se muestra como **Crítico**, no como "En rango". Debajo del chip se agrega la
+> leyenda "vencido hace N d" y el tooltip detalla el motivo. Los filtros por nivel de color
+> trabajan sobre `nivelGlobal`.
+
 ### Definiciones
 - **Expediente terminal** = Dropship en `Notificado`/`Visto Listo`, o ZF en `Completado`.
 - **Aging** = días entre la **fecha de entrada al estado actual** (la más temprana con `fecha_fin`
@@ -461,7 +474,7 @@ porcentajeMeta  = min(100, round(3 / promedio * 100))
 | KPI | Fórmula |
 |---|---|
 | **En proceso** | Cantidad de expedientes NO terminales. |
-| **Estancados críticos** | En proceso con aging en rojo (> 7 días). |
+| **Críticos (rojo)** | En proceso con `nivelGlobal` rojo (aging > 7 días **o** retraso > 3 días). |
 | **Con retraso** | `atrasados (en proceso, retraso>0)` **+** `entregadosTarde`. |
 | **Retraso promedio** | `suma(retrasos) / totalConRetraso` (redondeado a 1 decimal). |
 

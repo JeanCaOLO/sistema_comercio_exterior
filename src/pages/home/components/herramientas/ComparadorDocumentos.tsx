@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import ZonaCargaDocumento, { type EstadoCarga } from './ZonaCargaDocumento';
 import ResultadoComparador from './ResultadoComparador';
 import {
   aplicarMapeoPorEtiquetas,
   aplicarSeleccionPdf,
   cambiarHoja,
+  combinarDocumentos,
   comparar,
   leerDocumento,
   lineasParaFirma,
@@ -31,12 +32,12 @@ type LadoDocumento = 'a' | 'b';
 const ESTADO_INICIAL: EstadoCarga = { tipo: 'idle' };
 
 export default function ComparadorDocumentos() {
-  const [docA, setDocA] = useState<DocumentoLeido | null>(null);
-  const [docB, setDocB] = useState<DocumentoLeido | null>(null);
+  const [docsA, setDocsA] = useState<DocumentoLeido[]>([]);
+  const [docsB, setDocsB] = useState<DocumentoLeido[]>([]);
+  const [perfilesA, setPerfilesA] = useState<(PerfilColumnas | null)[]>([]);
+  const [perfilesB, setPerfilesB] = useState<(PerfilColumnas | null)[]>([]);
   const [estadoA, setEstadoA] = useState<EstadoCarga>(ESTADO_INICIAL);
   const [estadoB, setEstadoB] = useState<EstadoCarga>(ESTADO_INICIAL);
-  const [perfilA, setPerfilA] = useState<PerfilColumnas | null>(null);
-  const [perfilB, setPerfilB] = useState<PerfilColumnas | null>(null);
   const [perfiles, setPerfiles] = useState<PerfilColumnas[]>([]);
   const [tolerancia, setTolerancia] = useState(0.01);
   const [resultado, setResultado] = useState<ResultadoComparacion | null>(null);
@@ -45,9 +46,23 @@ export default function ComparadorDocumentos() {
     setPerfiles(leerPerfilesComparador());
   }, []);
 
-  const fijarDoc = (lado: LadoDocumento, doc: DocumentoLeido | null) => {
-    if (lado === 'a') setDocA(doc);
-    else setDocB(doc);
+  const listaDocs = useCallback((lado: LadoDocumento) => (lado === 'a' ? docsA : docsB), [docsA, docsB]);
+
+  const fijarDocs = (lado: LadoDocumento, actualizar: (prev: DocumentoLeido[]) => DocumentoLeido[]) => {
+    if (lado === 'a') setDocsA(actualizar);
+    else setDocsB(actualizar);
+  };
+
+  const fijarPerfiles = (
+    lado: LadoDocumento,
+    actualizar: (prev: (PerfilColumnas | null)[]) => (PerfilColumnas | null)[],
+  ) => {
+    if (lado === 'a') setPerfilesA(actualizar);
+    else setPerfilesB(actualizar);
+  };
+
+  const fijarPerfil = (lado: LadoDocumento, indice: number, perfil: PerfilColumnas | null) => {
+    fijarPerfiles(lado, (prev) => prev.map((item, i) => (i === indice ? perfil : item)));
   };
 
   const fijarEstado = (lado: LadoDocumento, estado: EstadoCarga) => {
@@ -55,14 +70,11 @@ export default function ComparadorDocumentos() {
     else setEstadoB(estado);
   };
 
-  const fijarPerfil = (lado: LadoDocumento, perfil: PerfilColumnas | null) => {
-    if (lado === 'a') setPerfilA(perfil);
-    else setPerfilB(perfil);
-  };
-
-  const cargar = async (lado: LadoDocumento, archivo: File) => {
-    fijarEstado(lado, { tipo: 'leyendo', mensaje: `Leyendo ${archivo.name}…` });
-    fijarPerfil(lado, null);
+  /** Lee un archivo y le aplica el perfil guardado del proveedor si existe. */
+  const leerArchivo = async (
+    archivo: File,
+    catalogo: PerfilColumnas[],
+  ): Promise<{ doc: DocumentoLeido; perfil: PerfilColumnas | null; aviso?: string }> => {
     const esPdf = /\.pdf$/i.test(archivo.name);
 
     let leido: DocumentoLeido | null = null;
@@ -75,23 +87,20 @@ export default function ComparadorDocumentos() {
 
     // PDF sin texto útil (escaneo o foto) o sin líneas reconocidas: se intenta con IA.
     if (esPdf && (!leido || !leido.filas.length)) {
-      fijarEstado(lado, { tipo: 'leyendo', mensaje: 'El PDF no trae texto legible. Leyendo la imagen con IA…' });
       try {
         const conIa = await leerFacturaConIa(archivo);
-        fijarDoc(lado, conIa);
-        fijarEstado(lado, {
-          tipo: 'listo',
-          mensaje: `${conIa.nombre} · ${conIa.filas.length} línea(s) leídas con IA (revisá la vista previa)`,
-        });
-        return;
+        return {
+          doc: conIa,
+          perfil: null,
+          aviso: `${conIa.nombre} leído con IA (revisá la vista previa)`,
+        };
       } catch (errorIa: any) {
         if (leido && leido.lineas?.length) {
-          fijarDoc(lado, leido);
-          fijarEstado(lado, {
-            tipo: 'aviso',
-            mensaje: `No pude leerlo con IA (${errorIa?.message ?? 'sin detalle'}). Usá “Elegir columnas” para marcarlas a mano.`,
-          });
-          return;
+          return {
+            doc: leido,
+            perfil: null,
+            aviso: `No pude leerlo con IA (${errorIa?.message ?? 'sin detalle'}). Usá “Elegir columnas” para marcarlas a mano.`,
+          };
         }
         throw new Error(errorIa?.message || errorTexto?.message || 'No se pudo leer el PDF.');
       }
@@ -100,67 +109,113 @@ export default function ComparadorDocumentos() {
     if (!leido) throw new Error(errorTexto?.message || 'No se pudo leer el archivo.');
 
     if (!leido.filas.length) {
-      throw new Error('Leí el archivo pero no encontré líneas con referencia, bultos y precio. Revisa el mapeo de columnas.');
+      throw new Error('Leí el archivo pero no encontré líneas con referencia, bultos y precio. Revisá el mapeo de columnas.');
     }
 
-    try {
-      // Si hay un perfil guardado para este proveedor o este formato, se aplica solo.
-      let doc = leido;
-      let perfil: PerfilColumnas | null = null;
-      if (doc.tipo === 'pdf' && doc.lineas?.length) {
-        const lineasFirma = lineasParaFirma(doc);
-        perfil = lineasFirma.length ? buscarPerfilComparador(lineasFirma, doc.nombre, perfiles) : null;
-        if (perfil && perfil.seleccion) doc = aplicarSeleccionPdf(doc, perfil.seleccion);
-      } else if (doc.tipo === 'excel') {
-        const encontrado = buscarPerfilExcel(doc.etiquetas, doc.nombre, perfiles);
-        if (encontrado && encontrado.perfil.mapeo) {
-          perfil = encontrado.perfil;
-          doc = aplicarMapeoPorEtiquetas(doc, encontrado.perfil.mapeo, encontrado.perfil.etiquetas ?? []);
-        }
+    let doc = leido;
+    let perfil: PerfilColumnas | null = null;
+    if (doc.tipo === 'pdf' && doc.lineas?.length) {
+      const lineasFirma = lineasParaFirma(doc);
+      perfil = lineasFirma.length ? buscarPerfilComparador(lineasFirma, doc.nombre, catalogo) : null;
+      if (perfil && perfil.seleccion) doc = aplicarSeleccionPdf(doc, perfil.seleccion);
+    } else if (doc.tipo === 'excel') {
+      const encontrado = buscarPerfilExcel(doc.etiquetas, doc.nombre, catalogo);
+      if (encontrado && encontrado.perfil.mapeo) {
+        perfil = encontrado.perfil;
+        doc = aplicarMapeoPorEtiquetas(doc, encontrado.perfil.mapeo, encontrado.perfil.etiquetas ?? []);
       }
+    }
 
-      fijarDoc(lado, doc);
-      fijarPerfil(lado, perfil);
+    return { doc, perfil };
+  };
+
+  const cargar = async (lado: LadoDocumento, archivos: File[]) => {
+    if (!archivos.length) return;
+
+    const nuevos: DocumentoLeido[] = [];
+    const nuevosPerfiles: (PerfilColumnas | null)[] = [];
+    const fallos: string[] = [];
+    const avisos: string[] = [];
+
+    for (let i = 0; i < archivos.length; i += 1) {
+      const archivo = archivos[i];
       fijarEstado(lado, {
-        tipo: 'listo',
-        mensaje: `${doc.nombre} · ${doc.filas.length} línea(s) leídas${doc.tipo === 'pdf' ? ' del PDF' : ''}${
-          perfil ? ` · perfil «${perfil.proveedor}» aplicado` : ''
-        }`,
+        tipo: 'leyendo',
+        mensaje: archivos.length > 1
+          ? `Leyendo ${archivo.name} (${i + 1}/${archivos.length})…`
+          : `Leyendo ${archivo.name}…`,
       });
-    } catch (error: any) {
-      fijarDoc(lado, null);
-      fijarPerfil(lado, null);
-      fijarEstado(lado, { tipo: 'error', mensaje: error?.message || 'No se pudo leer el archivo.' });
+      try {
+        const { doc, perfil, aviso } = await leerArchivo(archivo, perfiles);
+        nuevos.push(doc);
+        nuevosPerfiles.push(perfil);
+        if (aviso) avisos.push(aviso);
+      } catch (error: any) {
+        fallos.push(`${archivo.name}: ${error?.message || 'no se pudo leer'}`);
+      }
+    }
+
+    if (nuevos.length) {
+      fijarDocs(lado, (prev) => [...prev, ...nuevos]);
+      fijarPerfiles(lado, (prev) => [...prev, ...nuevosPerfiles]);
+    }
+
+    const totalLineas = nuevos.reduce((suma, doc) => suma + doc.filas.length, 0);
+    const resumen = `${nuevos.length} archivo(s) · ${totalLineas} línea(s) leídas`;
+    const conPerfil = nuevosPerfiles.filter(Boolean).length;
+    const detallePerfil = conPerfil ? ` · ${conPerfil} con perfil de proveedor aplicado` : '';
+
+    if (fallos.length) {
+      fijarEstado(lado, {
+        tipo: 'aviso',
+        mensaje: `${nuevos.length ? `${resumen}${detallePerfil}. ` : ''}No pude leer: ${fallos.join(' | ')}`,
+      });
+    } else if (avisos.length) {
+      fijarEstado(lado, { tipo: 'aviso', mensaje: `${resumen}${detallePerfil}. ${avisos.join(' | ')}` });
+    } else if (nuevos.length) {
+      fijarEstado(lado, { tipo: 'listo', mensaje: `${resumen}${detallePerfil}` });
     }
   };
 
-  const quitar = (lado: LadoDocumento) => {
-    fijarDoc(lado, null);
-    fijarPerfil(lado, null);
+  const quitar = (lado: LadoDocumento, indice: number) => {
+    const restantes = listaDocs(lado).filter((_, i) => i !== indice);
+    fijarDocs(lado, (prev) => prev.filter((_, i) => i !== indice));
+    fijarPerfiles(lado, (prev) => prev.filter((_, i) => i !== indice));
+    if (!restantes.length) fijarEstado(lado, ESTADO_INICIAL);
+  };
+
+  const quitarTodos = (lado: LadoDocumento) => {
+    fijarDocs(lado, () => []);
+    fijarPerfiles(lado, () => []);
     fijarEstado(lado, ESTADO_INICIAL);
   };
 
-  const actualizarMapeo = (lado: LadoDocumento, mapeo: MapeoColumnas) => {
-    const actual = lado === 'a' ? docA : docB;
-    if (!actual) return;
-    fijarDoc(lado, { ...actual, mapeo });
+  const actualizarDoc = (
+    lado: LadoDocumento,
+    indice: number,
+    transformar: (doc: DocumentoLeido) => DocumentoLeido,
+  ) => {
+    fijarDocs(lado, (prev) => prev.map((doc, i) => (i === indice ? transformar(doc) : doc)));
   };
 
-  const actualizarHoja = (lado: LadoDocumento, indice: number) => {
-    const actual = lado === 'a' ? docA : docB;
-    if (!actual) return;
-    fijarDoc(lado, cambiarHoja(actual, indice));
+  const actualizarMapeo = (lado: LadoDocumento, indice: number, mapeo: MapeoColumnas) => {
+    actualizarDoc(lado, indice, (doc) => ({ ...doc, mapeo }));
   };
 
-  const actualizarSeleccionPdf = (lado: LadoDocumento, seleccion: SeleccionPdf | null) => {
-    const actual = lado === 'a' ? docA : docB;
-    if (!actual) return;
-    fijarDoc(lado, seleccion ? aplicarSeleccionPdf(actual, seleccion) : volverAAutomaticoPdf(actual));
+  const actualizarHoja = (lado: LadoDocumento, indice: number, hoja: number) => {
+    actualizarDoc(lado, indice, (doc) => cambiarHoja(doc, hoja));
   };
 
-  const aplicarPerfil = (lado: LadoDocumento, perfil: PerfilColumnas) => {
-    const actual = lado === 'a' ? docA : docB;
+  const actualizarSeleccionPdf = (lado: LadoDocumento, indice: number, seleccion: SeleccionPdf | null) => {
+    actualizarDoc(lado, indice, (doc) =>
+      (seleccion ? aplicarSeleccionPdf(doc, seleccion) : volverAAutomaticoPdf(doc)),
+    );
+  };
+
+  const aplicarPerfil = (lado: LadoDocumento, indice: number, perfil: PerfilColumnas) => {
+    const actual = listaDocs(lado)[indice];
     if (!actual) return;
+
     let actualizado: DocumentoLeido = actual;
     if (perfil.tipo === 'pdf' && perfil.seleccion) {
       if (!actual.lineas || !perfil.rejilla) return;
@@ -171,16 +226,17 @@ export default function ComparadorDocumentos() {
     } else {
       return;
     }
-    fijarDoc(lado, actualizado);
-    fijarPerfil(lado, perfil);
+
+    actualizarDoc(lado, indice, () => actualizado);
+    fijarPerfil(lado, indice, perfil);
     fijarEstado(lado, {
       tipo: 'listo',
       mensaje: `${actual.nombre} · perfil «${perfil.proveedor}» aplicado`,
     });
   };
 
-  const guardarPerfil = (lado: LadoDocumento, proveedor: string) => {
-    const actual = lado === 'a' ? docA : docB;
+  const guardarPerfil = (lado: LadoDocumento, indice: number, proveedor: string) => {
+    const actual = listaDocs(lado)[indice];
     if (!actual) return;
     const nombre = proveedor.trim();
     if (!nombre) return;
@@ -201,29 +257,43 @@ export default function ComparadorDocumentos() {
         rejilla: true,
       });
     }
+
     setPerfiles(lista);
     const guardado = lista.find(
       (item) => item.tipo === actual.tipo && item.proveedor.toLowerCase() === nombre.toLowerCase(),
     );
-    if (guardado) fijarPerfil(lado, guardado);
+    if (guardado) fijarPerfil(lado, indice, guardado);
   };
 
   const eliminarPerfil = (id: string) => {
     const lista = eliminarPerfilComparador(id);
     setPerfiles(lista);
-    if (perfilA?.id === id) setPerfilA(null);
-    if (perfilB?.id === id) setPerfilB(null);
+    setPerfilesA((prev) => prev.map((perfil) => (perfil?.id === id ? null : perfil)));
+    setPerfilesB((prev) => prev.map((perfil) => (perfil?.id === id ? null : perfil)));
   };
 
   const reiniciar = () => {
-    setDocA(null);
-    setDocB(null);
+    setDocsA([]);
+    setDocsB([]);
+    setPerfilesA([]);
+    setPerfilesB([]);
     setEstadoA(ESTADO_INICIAL);
     setEstadoB(ESTADO_INICIAL);
-    setPerfilA(null);
-    setPerfilB(null);
     setResultado(null);
   };
+
+  // Todas las facturas cargadas se unen en un solo documento para comparar.
+  const docA = useMemo(
+    () => combinarDocumentos(
+      docsA,
+      docsA.length > 1 ? `${docsA.length} facturas de proveedor` : docsA[0]?.nombre ?? 'Factura de proveedor',
+    ),
+    [docsA],
+  );
+  const docB = useMemo(
+    () => combinarDocumentos(docsB, docsB[0]?.nombre ?? 'PO de Siglo'),
+    [docsB],
+  );
 
   useEffect(() => {
     if (!docA || !docB) {
@@ -235,17 +305,19 @@ export default function ComparadorDocumentos() {
 
   const alTolerancia = useCallback((valor: number) => setTolerancia(valor), []);
 
+  const hayArchivos = docsA.length > 0 || docsB.length > 0;
+
   return (
     <div className="p-4 md:p-6 space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Comparador de Documentos</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Sube la factura del proveedor y el PO de Siglo (Excel o PDF) y te digo qué referencias faltan y dónde cambian
+            Sube una o varias facturas del proveedor y el PO de Siglo (Excel o PDF) y te digo qué referencias faltan y dónde cambian
             bultos, unidad o precio unitario.
           </p>
         </div>
-        {(docA || docB) && (
+        {hayArchivos && (
           <button
             type="button"
             onClick={reiniciar}
@@ -261,35 +333,38 @@ export default function ComparadorDocumentos() {
         <ZonaCargaDocumento
           numero={1}
           titulo="Factura de proveedor"
-          descripcion="Documento que envía el proveedor (el formato puede variar)."
-          documento={docA}
+          descripcion="Podés sumar varias facturas: se comparan juntas contra el PO."
+          multiple
+          documentos={docsA}
           estado={estadoA}
           perfiles={perfiles}
-          perfilAplicado={perfilA}
-          onArchivo={(archivo) => cargar('a', archivo)}
-          onQuitar={() => quitar('a')}
-          onMapeo={(mapeo) => actualizarMapeo('a', mapeo)}
-          onHoja={(indice) => actualizarHoja('a', indice)}
-          onSeleccionPdf={(seleccion) => actualizarSeleccionPdf('a', seleccion)}
-          onAplicarPerfil={(perfil) => aplicarPerfil('a', perfil)}
-          onGuardarPerfil={(proveedor) => guardarPerfil('a', proveedor)}
+          perfilesAplicados={perfilesA}
+          onArchivos={(archivos) => cargar('a', archivos)}
+          onQuitar={(indice) => quitar('a', indice)}
+          onQuitarTodos={() => quitarTodos('a')}
+          onMapeo={(indice, mapeo) => actualizarMapeo('a', indice, mapeo)}
+          onHoja={(indice, hoja) => actualizarHoja('a', indice, hoja)}
+          onSeleccionPdf={(indice, seleccion) => actualizarSeleccionPdf('a', indice, seleccion)}
+          onAplicarPerfil={(indice, perfil) => aplicarPerfil('a', indice, perfil)}
+          onGuardarPerfil={(indice, proveedor) => guardarPerfil('a', indice, proveedor)}
           onEliminarPerfil={eliminarPerfil}
         />
         <ZonaCargaDocumento
           numero={2}
           titulo="PO de Siglo"
           descripcion="El PO con el formato fijo del sistema."
-          documento={docB}
+          documentos={docsB}
           estado={estadoB}
           perfiles={perfiles}
-          perfilAplicado={perfilB}
-          onArchivo={(archivo) => cargar('b', archivo)}
-          onQuitar={() => quitar('b')}
-          onMapeo={(mapeo) => actualizarMapeo('b', mapeo)}
-          onHoja={(indice) => actualizarHoja('b', indice)}
-          onSeleccionPdf={(seleccion) => actualizarSeleccionPdf('b', seleccion)}
-          onAplicarPerfil={(perfil) => aplicarPerfil('b', perfil)}
-          onGuardarPerfil={(proveedor) => guardarPerfil('b', proveedor)}
+          perfilesAplicados={perfilesB}
+          onArchivos={(archivos) => cargar('b', archivos)}
+          onQuitar={(indice) => quitar('b', indice)}
+          onQuitarTodos={() => quitarTodos('b')}
+          onMapeo={(indice, mapeo) => actualizarMapeo('b', indice, mapeo)}
+          onHoja={(indice, hoja) => actualizarHoja('b', indice, hoja)}
+          onSeleccionPdf={(indice, seleccion) => actualizarSeleccionPdf('b', indice, seleccion)}
+          onAplicarPerfil={(indice, perfil) => aplicarPerfil('b', indice, perfil)}
+          onGuardarPerfil={(indice, proveedor) => guardarPerfil('b', indice, proveedor)}
           onEliminarPerfil={eliminarPerfil}
         />
       </div>
@@ -305,6 +380,10 @@ export default function ComparadorDocumentos() {
               <ul className="space-y-1.5 text-xs text-gray-600">
                 <li className="flex items-start gap-2">
                   <i className="ri-checkbox-circle-line text-teal-600 mt-0.5"></i>
+                  <span>Podés cargar <b className="font-semibold">varias facturas PDF a la vez</b>: se unen y se comparan como un solo documento contra el PO.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <i className="ri-checkbox-circle-line text-teal-600 mt-0.5"></i>
                   <span>En Excel la lectura es automática: detecta referencia, bultos, unidad y precio aunque el formato cambie.</span>
                 </li>
                 <li className="flex items-start gap-2">
@@ -318,7 +397,7 @@ export default function ComparadorDocumentos() {
                 </li>
                 <li className="flex items-start gap-2">
                   <i className="ri-checkbox-circle-line text-teal-600 mt-0.5"></i>
-                  <span>Cuando ambos archivos están cargados podés copiar el reporte, descargarlo en Excel o sacar un PDF listo para enviarle al proveedor.</span>
+                  <span>Cuando ambos lados están cargados podés copiar el reporte, descargarlo en Excel o sacar un PDF listo para enviarle al proveedor.</span>
                 </li>
               </ul>
             </div>
@@ -328,9 +407,9 @@ export default function ComparadorDocumentos() {
         <ResultadoComparador
           resultado={resultado}
           tolerancia={tolerancia}
-          nombreArchivo={docA?.nombre ?? 'comparacion'}
-          factura={docA?.nombre ?? ''}
-          po={docB?.nombre ?? ''}
+          nombreArchivo={docA.nombre}
+          factura={docA.nombre}
+          po={docB.nombre}
           onTolerancia={alTolerancia}
           onNueva={reiniciar}
         />

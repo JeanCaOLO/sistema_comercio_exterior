@@ -65,6 +65,13 @@ const nivelAging = (dias: number): Nivel =>
 const nivelRetraso = (dias: number): Nivel =>
   dias <= UMBRAL_RETRASO_AMBAR ? 'verde' : dias <= UMBRAL_RETRASO_ROJO ? 'ambar' : 'rojo';
 
+// El semáforo visible es el PEOR entre envejecimiento y vencimiento:
+// un expediente que se movió de estado ayer pero está vencido hace 30 días NO puede verse "En rango".
+const SEVERIDAD: Record<Nivel, number> = { verde: 0, ambar: 1, rojo: 2 };
+
+const peorNivel = (...niveles: Nivel[]): Nivel =>
+  niveles.reduce<Nivel>((peor, n) => (SEVERIDAD[n] > SEVERIDAD[peor] ? n : peor), 'verde');
+
 interface FilaEstancado {
   id: string;
   po: string;
@@ -82,6 +89,8 @@ interface FilaEstancado {
   retraso: number;
   nivelAging: Nivel;
   nivelRetraso: Nivel;
+  nivelGlobal: Nivel;
+  motivo: string;
 }
 
 interface FilaAtraso {
@@ -173,6 +182,15 @@ export default function ReporteAtrasos() {
         const req = parseFechaSegura(exp.fecha_requerimiento);
         const retraso = Number.isNaN(req.getTime()) ? 0 : diffDias(ahora, req);
 
+        const nvAging = nivelAging(aging);
+        const nvRetraso = nivelRetraso(retraso);
+        const nvGlobal = peorNivel(nvAging, nvRetraso);
+
+        const motivos: string[] = [];
+        if (nvAging !== 'verde') motivos.push(`${aging} días sin cambiar de estado`);
+        if (retraso > 0) motivos.push(`vencido hace ${retraso} días`);
+        const motivo = motivos.length > 0 ? motivos.join(' · ') : 'Dentro de rango y a tiempo';
+
         return {
           id: exp.id,
           po: texto(exp.po_tiquetera),
@@ -188,8 +206,10 @@ export default function ReporteAtrasos() {
           fechaRequerimiento: texto(exp.fecha_requerimiento),
           aging,
           retraso,
-          nivelAging: nivelAging(aging),
-          nivelRetraso: nivelRetraso(retraso)
+          nivelAging: nvAging,
+          nivelRetraso: nvRetraso,
+          nivelGlobal: nvGlobal,
+          motivo
         };
       })
       .sort((a, b) => b.aging - a.aging);
@@ -228,7 +248,7 @@ export default function ReporteAtrasos() {
   // ── Filtros ──
   const estancadosFiltrados = estancados.filter((f) => {
     if (filtroModulo !== 'todos' && f.modulo !== filtroModulo) return false;
-    if (filtroNivel !== 'todos' && f.nivelAging !== filtroNivel) return false;
+    if (filtroNivel !== 'todos' && f.nivelGlobal !== filtroNivel) return false;
     if (busqueda) {
       const term = busqueda.toLowerCase().trim();
       const coincide =
@@ -258,7 +278,7 @@ export default function ReporteAtrasos() {
 
   // ── KPIs ──
   const totalEnProceso = estancados.length;
-  const criticos = estancados.filter((f) => f.nivelAging === 'rojo').length;
+  const criticos = estancados.filter((f) => f.nivelGlobal === 'rojo').length;
   const atrasados = estancados.filter((f) => f.retraso > 0).length;
   const entregadosTarde = entregadosConRetraso.length;
   const sumaRetraso = estancados.reduce((s, f) => s + Math.max(0, f.retraso), 0) +
@@ -319,7 +339,7 @@ export default function ReporteAtrasos() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Atrasos &amp; Aging</h1>
           <p className="text-gray-500 mt-1 text-sm">
-            Expedientes estancados con semáforo de envejecimiento y días de retraso vs. vencimiento
+            Expedientes con semáforo por estancamiento y por vencimiento; el color toma el peor de los dos
           </p>
         </div>
         <button
@@ -363,13 +383,13 @@ export default function ReporteAtrasos() {
 
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">Estancados críticos</p>
+            <p className="text-sm text-gray-500">Críticos (rojo)</p>
             <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center">
               <i className="ri-alarm-warning-line text-red-600 text-xl"></i>
             </div>
           </div>
           <p className="text-3xl font-bold text-red-600 mt-2">{criticos}</p>
-          <p className="text-xs text-gray-500 mt-1">más de {UMBRAL_AGING_ROJO} días en su estado</p>
+          <p className="text-xs text-gray-500 mt-1">estancados o vencidos en rojo</p>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -458,16 +478,16 @@ export default function ReporteAtrasos() {
         </div>
 
         {/* Leyenda semáforo */}
-        <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-gray-100">
-          <span className="text-xs text-gray-500 font-medium">Semáforo de envejecimiento:</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 pt-3 border-t border-gray-100">
+          <span className="text-xs text-gray-500 font-medium">Semáforo (toma el peor de los dos criterios):</span>
           <span className="flex items-center gap-1.5 text-xs text-gray-600">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> 0–{UMBRAL_AGING_AMBAR} días
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> en estado 0–{UMBRAL_AGING_AMBAR} días y sin vencer
           </span>
           <span className="flex items-center gap-1.5 text-xs text-gray-600">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> {UMBRAL_AGING_AMBAR + 1}–{UMBRAL_AGING_ROJO} días
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> en estado {UMBRAL_AGING_AMBAR + 1}–{UMBRAL_AGING_ROJO} días o vencido {UMBRAL_RETRASO_ROJO} días o menos
           </span>
           <span className="flex items-center gap-1.5 text-xs text-gray-600">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> &gt; {UMBRAL_AGING_ROJO} días
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> más de {UMBRAL_AGING_ROJO} días en estado o más de {UMBRAL_RETRASO_ROJO} días vencido
           </span>
         </div>
       </div>
@@ -482,7 +502,7 @@ export default function ReporteAtrasos() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Envejecimiento</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Semáforo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">PO / EXP</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Módulo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Estado</th>
@@ -504,15 +524,24 @@ export default function ReporteAtrasos() {
                 </tr>
               ) : (
                 estancadosFiltrados.map((f) => {
-                  const c = COLORES[f.nivelAging];
+                  const c = COLORES[f.nivelGlobal];
+                  const ca = COLORES[f.nivelAging];
                   const cr = COLORES[f.nivelRetraso];
                   return (
-                    <tr key={f.id} className={`hover:bg-gray-50 transition-colors ${f.nivelAging === 'rojo' ? 'bg-red-50/40' : ''}`}>
+                    <tr key={f.id} className={`hover:bg-gray-50 transition-colors ${f.nivelGlobal === 'rojo' ? 'bg-red-50/40' : ''}`}>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium ${c.chip}`}>
+                        <span
+                          title={f.motivo}
+                          className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium ${c.chip}`}
+                        >
                           <span className={`w-2 h-2 rounded-full ${c.dot}`}></span>
                           {c.label}
                         </span>
+                        {f.retraso > 0 && (
+                          <div className="text-[11px] text-red-600 font-medium mt-1 whitespace-nowrap">
+                            vencido hace {f.retraso} d
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-sm font-medium text-gray-900 whitespace-nowrap">{f.po}</div>
@@ -542,7 +571,7 @@ export default function ReporteAtrasos() {
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{formatearFechaCorta(f.fechaCreacion)}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`text-base font-bold ${c.text}`}>{f.aging}</span>
+                        <span className={`text-base font-bold ${ca.text}`}>{f.aging}</span>
                         <span className="text-xs text-gray-400 ml-1">días</span>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{formatearFechaCorta(f.fechaRequerimiento)}</td>

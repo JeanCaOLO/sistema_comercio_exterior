@@ -12,32 +12,38 @@ interface ZonaCargaDocumentoProps {
   titulo: string;
   descripcion: string;
   numero: number;
-  documento: DocumentoLeido | null;
+  /** Permite sumar varios archivos en la misma zona. */
+  multiple?: boolean;
+  documentos: DocumentoLeido[];
   estado: EstadoCarga;
   perfiles: PerfilColumnas[];
-  perfilAplicado: PerfilColumnas | null;
-  onArchivo: (archivo: File) => void;
-  onQuitar: () => void;
-  onMapeo: (mapeo: MapeoColumnas) => void;
-  onHoja: (indice: number) => void;
-  onSeleccionPdf: (seleccion: SeleccionPdf | null) => void;
-  onAplicarPerfil: (perfil: PerfilColumnas) => void;
-  onGuardarPerfil: (proveedor: string) => void;
+  perfilesAplicados: (PerfilColumnas | null)[];
+  onArchivos: (archivos: File[]) => void;
+  onQuitar: (indice: number) => void;
+  onQuitarTodos: () => void;
+  onMapeo: (indice: number, mapeo: MapeoColumnas) => void;
+  onHoja: (indice: number, hoja: number) => void;
+  onSeleccionPdf: (indice: number, seleccion: SeleccionPdf | null) => void;
+  onAplicarPerfil: (indice: number, perfil: PerfilColumnas) => void;
+  onGuardarPerfil: (indice: number, proveedor: string) => void;
   onEliminarPerfil: (id: string) => void;
 }
 
 const ACEPTADOS = '.xlsx,.xls,.csv,.pdf';
+const MAXIMO_POR_CARGA = 10;
 
 export default function ZonaCargaDocumento({
   titulo,
   descripcion,
   numero,
-  documento,
+  multiple = false,
+  documentos,
   estado,
   perfiles,
-  perfilAplicado,
-  onArchivo,
+  perfilesAplicados,
+  onArchivos,
   onQuitar,
+  onQuitarTodos,
   onMapeo,
   onHoja,
   onSeleccionPdf,
@@ -48,22 +54,31 @@ export default function ZonaCargaDocumento({
   const [arrastrando, setArrastrando] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
   const [proveedor, setProveedor] = useState('');
+  const [activo, setActivo] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const documento = documentos[activo] ?? null;
+  const perfilAplicado = perfilesAplicados[activo] ?? null;
+
+  useEffect(() => {
+    if (activo > documentos.length - 1) setActivo(0);
+  }, [documentos.length, activo]);
 
   useEffect(() => {
     setVerDetalle(false);
     setProveedor(perfilAplicado?.proveedor ?? '');
   }, [documento?.nombre, perfilAplicado]);
 
-  const tomarArchivo = (archivo?: File | null) => {
-    if (!archivo) return;
-    onArchivo(archivo);
+  const tomarArchivos = (lista?: FileList | null) => {
+    if (!lista || !lista.length) return;
+    const archivos = Array.from(lista);
+    onArchivos(multiple ? archivos.slice(0, MAXIMO_POR_CARGA) : archivos.slice(0, 1));
     if (inputRef.current) inputRef.current.value = '';
   };
 
   const cambiarCampo = (campo: keyof MapeoColumnas, valor: number) => {
     if (!documento) return;
-    onMapeo({ ...documento.mapeo, [campo]: valor });
+    onMapeo(activo, { ...documento.mapeo, [campo]: valor });
   };
 
   const borde = estado.tipo === 'error'
@@ -102,6 +117,17 @@ export default function ZonaCargaDocumento({
     { campo: 'price', nombre: 'Precio unitario' },
   ];
 
+  const totalLineas = documentos.reduce((suma, doc) => suma + doc.filas.length, 0);
+  const etiquetaCarga = documentos.length === 0
+    ? 'Arrastra el archivo o haz clic aquí'
+    : multiple
+      ? (documentos.length === 1 ? documentos[0].nombre : `${documentos.length} archivos cargados`)
+      : documentos[0].nombre;
+
+  const ayuda = multiple
+    ? `Podés cargar varios a la vez (hasta ${MAXIMO_POR_CARGA}): se unen en una sola comparación`
+    : 'Excel (.xlsx, .xls, .csv) o PDF (con texto o escaneado)';
+
   return (
     <section className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
       <header className="flex items-start gap-3 px-4 py-3 border-b border-gray-100">
@@ -112,11 +138,11 @@ export default function ZonaCargaDocumento({
           <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">{titulo}</p>
           <p className="text-xs text-gray-500 mt-0.5">{descripcion}</p>
         </div>
-        {documento && (
+        {documentos.length > 0 && (
           <button
             type="button"
-            onClick={onQuitar}
-            title="Quitar archivo"
+            onClick={onQuitarTodos}
+            title="Quitar todos los archivos"
             className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer flex-shrink-0"
           >
             <i className="ri-close-line"></i>
@@ -131,7 +157,7 @@ export default function ZonaCargaDocumento({
           onDrop={(event) => {
             event.preventDefault();
             setArrastrando(false);
-            tomarArchivo(event.dataTransfer.files?.[0]);
+            tomarArchivos(event.dataTransfer.files);
           }}
           className={`flex flex-col items-center justify-center gap-1 text-center border-2 border-dashed rounded-lg px-3 py-6 transition-colors cursor-pointer ${borde}`}
         >
@@ -139,20 +165,65 @@ export default function ZonaCargaDocumento({
             ref={inputRef}
             type="file"
             accept={ACEPTADOS}
+            multiple={multiple}
             className="hidden"
-            onChange={(event) => tomarArchivo(event.target.files?.[0])}
+            onChange={(event) => tomarArchivos(event.target.files)}
           />
-          <i className={`text-2xl ${estado.tipo === 'error' ? 'ri-error-warning-line text-red-500' : estado.tipo === 'aviso' ? 'ri-error-warning-line text-amber-500' : documento ? 'ri-file-check-line text-emerald-600' : 'ri-upload-cloud-2-line text-teal-600'}`}></i>
-          <span className="text-sm font-medium text-gray-800 break-all">
-            {documento ? documento.nombre : 'Arrastra el archivo o haz clic aquí'}
-          </span>
-          <span className="text-xs text-gray-500">Excel (.xlsx, .xls, .csv) o PDF (con texto o escaneado)</span>
+          <i className={`text-2xl ${estado.tipo === 'error' ? 'ri-error-warning-line text-red-500' : estado.tipo === 'aviso' ? 'ri-error-warning-line text-amber-500' : documentos.length > 0 ? 'ri-file-check-line text-emerald-600' : 'ri-upload-cloud-2-line text-teal-600'}`}></i>
+          <span className="text-sm font-medium text-gray-800 break-all">{etiquetaCarga}</span>
+          <span className="text-xs text-gray-500">{ayuda}</span>
         </label>
+
+        {documentos.length > 0 && (
+          <ul className="space-y-1.5">
+            {documentos.map((doc, indice) => (
+              <li
+                key={`${doc.nombre}-${indice}`}
+                className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
+                  documentos.length > 1 && indice === activo
+                    ? 'border-teal-300 bg-teal-50/60'
+                    : 'border-gray-200 bg-white'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActivo(indice)}
+                  className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+                  title="Ver y ajustar este archivo"
+                >
+                  <span className="w-4 h-4 flex items-center justify-center text-gray-400 flex-shrink-0">
+                    <i className={`text-sm ${doc.tipo === 'pdf' ? 'ri-file-pdf-2-line' : 'ri-file-excel-2-line'}`}></i>
+                  </span>
+                  <span className="text-xs text-gray-700 truncate flex-1 min-w-0">{doc.nombre}</span>
+                  <span className="text-[11px] text-gray-500 whitespace-nowrap">{doc.filas.length} líneas</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onQuitar(indice)}
+                  title="Quitar este archivo"
+                  className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer flex-shrink-0"
+                >
+                  <i className="ri-close-line text-sm"></i>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {estado.tipo !== 'idle' && estado.mensaje && (
           <p className={`text-xs ${estado.tipo === 'error' ? 'text-red-600' : estado.tipo === 'leyendo' ? 'text-teal-700' : estado.tipo === 'aviso' ? 'text-amber-700' : 'text-emerald-700'}`}>
             {estado.tipo === 'leyendo' && <i className="ri-loader-4-line animate-spin mr-1"></i>}
             {estado.mensaje}
+          </p>
+        )}
+
+        {documentos.length > 1 && (
+          <p className="text-[11px] text-gray-500 leading-snug flex items-start gap-1.5">
+            <i className="ri-links-line mt-0.5 text-teal-600"></i>
+            <span>
+              Los {documentos.length} archivos se comparan juntos contra el otro documento.
+              {documento ? ` Ahora estás ajustando «${documento.nombre}».` : ''}
+            </span>
           </p>
         )}
 
@@ -163,7 +234,7 @@ export default function ZonaCargaDocumento({
                 <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Hoja</label>
                 <select
                   value={documento.hojaActiva ?? 0}
-                  onChange={(event) => onHoja(Number(event.target.value))}
+                  onChange={(event) => onHoja(activo, Number(event.target.value))}
                   className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white text-gray-800 cursor-pointer"
                 >
                   {documento.hojas.map((hoja, indice) => (
@@ -177,7 +248,7 @@ export default function ZonaCargaDocumento({
               <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1">
                 <button
                   type="button"
-                  onClick={() => onSeleccionPdf(null)}
+                  onClick={() => onSeleccionPdf(activo, null)}
                   className={`flex-1 px-2 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${!documento.manual ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   Detección automática
@@ -185,6 +256,7 @@ export default function ZonaCargaDocumento({
                 <button
                   type="button"
                   onClick={() => onSeleccionPdf(
+                    activo,
                     documento.seleccion
                     ?? documento.analisis?.seleccion
                     ?? sugerirSeleccionPdf(documento.lineas ?? []),
@@ -258,7 +330,7 @@ export default function ZonaCargaDocumento({
                   />
                   <button
                     type="button"
-                    onClick={() => onGuardarPerfil(proveedor)}
+                    onClick={() => onGuardarPerfil(activo, proveedor)}
                     disabled={!proveedor.trim()}
                     className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                       proveedor.trim()
@@ -280,7 +352,7 @@ export default function ZonaCargaDocumento({
                     value=""
                     onChange={(event) => {
                       const perfil = perfiles.find((item) => item.id === event.target.value);
-                      if (perfil) onAplicarPerfil(perfil);
+                      if (perfil) onAplicarPerfil(activo, perfil);
                     }}
                     className="w-full text-sm border border-teal-200 rounded-md px-2 py-1.5 bg-white text-gray-800 cursor-pointer"
                   >
@@ -312,7 +384,9 @@ export default function ZonaCargaDocumento({
 
             <div className="flex items-center justify-between gap-2 pt-1">
               <span className="text-xs text-gray-500">
-                {documento.filas.length} línea(s) leídas
+                {documentos.length > 1
+                  ? `${documento.filas.length} línea(s) en este archivo · ${totalLineas} en total`
+                  : `${documento.filas.length} línea(s) leídas`}
                 {documento.tipo === 'pdf' && documento.paginas ? ` · ${documento.paginas} pág.` : ''}
               </span>
               <button
