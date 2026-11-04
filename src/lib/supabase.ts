@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
@@ -29,6 +30,117 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     },
   },
 });
+
+// Clave usada para avisar en la pantalla de login que la sesión anterior caducó.
+export const CLAVE_AVISO_SESION_EXPIRADA = 'sesion_expirada_aviso';
+
+// Detecta si un error corresponde a una sesión inválida o a un refresh token
+// que ya no existe en el servidor (por ejemplo, sesión cerrada desde otro equipo).
+export function esErrorSesionInvalida(error: unknown): boolean {
+  if (!error) return false;
+  const partes: string[] = [];
+  if (typeof error === 'string') partes.push(error);
+  if (typeof error === 'object') {
+    const objeto = error as Record<string, unknown>;
+    ['message', 'error_description', 'code', 'name', 'details', 'hint'].forEach((campo) => {
+      const valor = objeto[campo];
+      if (typeof valor === 'string') partes.push(valor);
+    });
+  }
+  const texto = partes.join(' ').toLowerCase();
+  return (
+    texto.includes('refresh token') ||
+    texto.includes('token not found') ||
+    texto.includes('invalid grant') ||
+    texto.includes('invalid_grant') ||
+    texto.includes('invalid jwt') ||
+    texto.includes('jwt expired') ||
+    texto.includes('auth session missing')
+  );
+}
+
+// Elimina del navegador las credenciales de Supabase que ya no sirven.
+export function limpiarSesionLocal(): void {
+  try {
+    Object.keys(window.localStorage)
+      .filter((clave) => clave.startsWith('sb-') && clave.includes('auth-token'))
+      .forEach((clave) => window.localStorage.removeItem(clave));
+  } catch (error) {
+    console.warn('No se pudo limpiar la sesión local:', error);
+  }
+}
+
+// Deja marcado que la sesión caducó para mostrar un aviso en el login.
+export function marcarSesionExpirada(): void {
+  try {
+    window.sessionStorage.setItem(CLAVE_AVISO_SESION_EXPIRADA, '1');
+  } catch (error) {
+    console.warn('No se pudo registrar el aviso de sesión:', error);
+  }
+}
+
+let depuracionEnCurso = false;
+
+// Limpia credenciales inválidas y cierra la sesión en el navegador una sola vez.
+export async function depurarSesionInvalida(): Promise<void> {
+  if (depuracionEnCurso) return;
+  depuracionEnCurso = true;
+  try {
+    limpiarSesionLocal();
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch (error) {
+    console.warn('Cierre de sesión local sin conexión:', error);
+  } finally {
+    depuracionEnCurso = false;
+  }
+}
+
+// Devuelve una sesión confiable. Si el token ya no es válido se descarta en lugar
+// de dejar la aplicación atrapada en un error de refresco de sesión.
+export async function obtenerSesionValida(): Promise<Session | null> {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      if (esErrorSesionInvalida(error)) {
+        marcarSesionExpirada();
+        await depurarSesionInvalida();
+      }
+      return null;
+    }
+
+    const session = data.session ?? null;
+    if (!session) return null;
+
+    const { error: errorUsuario } = await supabase.auth.getUser();
+    if (errorUsuario && esErrorSesionInvalida(errorUsuario)) {
+      marcarSesionExpirada();
+      await depurarSesionInvalida();
+      return null;
+    }
+
+    return session;
+  } catch (error) {
+    if (esErrorSesionInvalida(error)) {
+      marcarSesionExpirada();
+      await depurarSesionInvalida();
+      return null;
+    }
+    console.warn('No se pudo validar la sesión:', error);
+    return null;
+  }
+}
+
+// Red de seguridad: si el refresco automático de Supabase falla por credenciales
+// vencidas, se limpia la sesión en vez de propagar un error no controlado.
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    if (!esErrorSesionInvalida(event.reason)) return;
+    event.preventDefault();
+    console.warn('Sesión inválida detectada. Se limpian las credenciales locales.');
+    marcarSesionExpirada();
+    void depurarSesionInvalida();
+  });
+}
 
 // Validar conexión al iniciar
 export async function validarConexionSupabase(): Promise<boolean> {

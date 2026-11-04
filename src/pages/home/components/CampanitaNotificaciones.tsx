@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNotificaciones } from '@/hooks/useNotificaciones';
-import { getIconoColor, getTipoLabel, timeAgo, esNotificacionEtd, type Notificacion } from '@/lib/notificaciones';
+import { getIconoColor, getTipoLabel, timeAgo, esNotificacionEtd, esNotificacionFechas, type Notificacion } from '@/lib/notificaciones';
 import ToastNotificaciones from './ToastNotificacion';
 
 interface CampanitaNotificacionesProps {
@@ -46,6 +46,14 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
   // directamente en el módulo de Aprobaciones Pendientes.
   const abrirNotificacion = async (notif: Notificacion) => {
     if (!notif.leida) await marcarLeida(notif.id);
+
+    if (esNotificacionFechas(notif.tipo) && notif.expediente_id) {
+      window.dispatchEvent(
+        new CustomEvent('abrirSolicitudFechas', { detail: { id: notif.expediente_id } })
+      );
+      setAbierto(false);
+      return;
+    }
 
     if (esNotificacionEtd(notif.tipo) && notif.expediente_id) {
       window.dispatchEvent(
@@ -146,7 +154,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
                           <p className="text-sm text-gray-800 leading-snug">{notif.mensaje}</p>
                           <div className="flex items-center justify-between mt-1.5">
                             <span className="text-xs text-gray-400">{timeAgo(notif.created_at)}</span>
-                            {esNotificacionEtd(notif.tipo) && notif.expediente_id ? (
+                            {(esNotificacionEtd(notif.tipo) || esNotificacionFechas(notif.tipo)) && notif.expediente_id ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full whitespace-nowrap">
                                 Ver solicitud
                                 <i className="ri-arrow-right-s-line"></i>

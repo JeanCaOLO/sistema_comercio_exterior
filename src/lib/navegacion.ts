@@ -60,12 +60,23 @@ export const GRUPOS_NAVEGACION: GrupoNavegacion[] = [
     icon: 'ri-shopping-bag-3-line',
     secciones: [
       {
-        titulo: 'Cambios ETD Inicial',
+        titulo: 'Cambios de Órdenes',
         items: [
-          { id: 'etd-dashboard', label: 'Dashboard ETD Inicial', icon: 'ri-dashboard-3-line' },
+          { id: 'etd-dashboard', label: 'Dashboard de Cambios', icon: 'ri-dashboard-3-line' },
           { id: 'etd-solicitar', label: 'Solicitar Cambio ETD Inicial', icon: 'ri-calendar-2-line' },
+          { id: 'carga-lista-solicitar', label: 'Solicitar Cambios Carga Lista', icon: 'ri-file-list-2-line' },
+          { id: 'incoterm-solicitar', label: 'Solicitar Cambio Incoterm', icon: 'ri-exchange-dollar-line' },
           { id: 'etd-aprobaciones', label: 'Aprobaciones Pendientes', icon: 'ri-checkbox-multiple-line' },
           { id: 'etd-historial', label: 'Historial de Solicitudes', icon: 'ri-history-line' },
+        ],
+      },
+      {
+        titulo: 'PO sin Tracking',
+        items: [
+          { id: 'po-sin-tracking-dashboard', label: 'Dashboard PO sin Tracking', icon: 'ri-dashboard-3-line' },
+          { id: 'po-sin-tracking-solicitar', label: 'Cargar Fechas PO sin Tracking', icon: 'ri-calendar-schedule-line' },
+          { id: 'po-sin-tracking-aprobaciones', label: 'Aprobaciones PO sin Tracking', icon: 'ri-checkbox-multiple-line' },
+          { id: 'po-sin-tracking-historial', label: 'Historial PO sin Tracking', icon: 'ri-history-line' },
         ],
       },
       {

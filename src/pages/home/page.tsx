@@ -16,11 +16,48 @@ import Documentacion from './components/Documentacion';
 import RepositorioDocumentacion from './components/RepositorioDocumentacion';
 import Facturas from './components/Facturas';
 import CampanitaNotificaciones from './components/CampanitaNotificaciones';
-import GestionCambiosEtd, { type SeccionEtd } from './components/GestionCambiosEtd';
+import GestionCambiosOrden, { type VistaCambios } from './components/cambios/GestionCambiosOrden';
+import GestionPoSinTracking from './components/po-sin-tracking/GestionPoSinTracking';
+import type { VistaPoTracking } from './components/po-sin-tracking/types';
 import AnalisisAgenteCarga from './components/agente-carga/AnalisisAgenteCarga';
 import AnalisisControlFechas from './components/control-fechas/AnalisisControlFechas';
 import ComparadorDocumentos from './components/herramientas/ComparadorDocumentos';
-import { verificarSolicitudesEtdAtrasadas } from '@/lib/notificaciones';
+import { verificarSolicitudesEtdAtrasadas, verificarCambiosCampoAtrasados, verificarFechasAtrasadas } from '@/lib/notificaciones';
+
+// Vistas del menú que pertenecen al centro unificado de cambios de órdenes.
+const VISTAS_CAMBIOS: Record<string, VistaCambios> = {
+  'etd-dashboard': 'dashboard',
+  'etd-solicitar': 'etd-solicitar',
+  'carga-lista-solicitar': 'carga-lista-solicitar',
+  'incoterm-solicitar': 'incoterm-solicitar',
+  'etd-aprobaciones': 'aprobaciones',
+  'etd-historial': 'historial',
+};
+
+// Mapea la sección interna de vuelta al id del módulo del menú lateral.
+const VISTA_A_MODULO: Record<VistaCambios, string> = {
+  dashboard: 'etd-dashboard',
+  'etd-solicitar': 'etd-solicitar',
+  'carga-lista-solicitar': 'carga-lista-solicitar',
+  'incoterm-solicitar': 'incoterm-solicitar',
+  aprobaciones: 'etd-aprobaciones',
+  historial: 'etd-historial',
+};
+
+// Vistas del módulo "Cambios PO sin Tracking".
+const VISTAS_PO_TRACKING: Record<string, VistaPoTracking> = {
+  'po-sin-tracking-dashboard': 'dashboard',
+  'po-sin-tracking-solicitar': 'solicitar',
+  'po-sin-tracking-aprobaciones': 'aprobaciones',
+  'po-sin-tracking-historial': 'historial',
+};
+
+const VISTA_PO_TRACKING_A_MODULO: Record<VistaPoTracking, string> = {
+  dashboard: 'po-sin-tracking-dashboard',
+  solicitar: 'po-sin-tracking-solicitar',
+  aprobaciones: 'po-sin-tracking-aprobaciones',
+  historial: 'po-sin-tracking-historial',
+};
 
 export default function Home() {
   const [activeView, setActiveView] = useState('');
@@ -30,6 +67,7 @@ export default function Home() {
   const [usuarioId, setUsuarioId] = useState('');
   const [matrizPermisos, setMatrizPermisos] = useState<Record<string, string[]>>(PERMISOS_DEFAULT);
   const [solicitudEtdObjetivo, setSolicitudEtdObjetivo] = useState<string | null>(null);
+  const [solicitudFechasObjetivo, setSolicitudFechasObjetivo] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, perfil, loading, signOut } = useAuth();
 
@@ -103,14 +141,24 @@ export default function Home() {
       setSolicitudEtdObjetivo(typeof id === 'string' && id ? id : null);
     };
 
+    // Al hacer clic en una notificación de fechas de PO se abre la solicitud
+    // directamente en el módulo "Cambios PO sin Tracking".
+    const handleAbrirSolicitudFechas = (event: any) => {
+      const id = event.detail?.id;
+      setActiveView('po-sin-tracking-aprobaciones');
+      setSolicitudFechasObjetivo(typeof id === 'string' && id ? id : null);
+    };
+
     window.addEventListener('openFormularioExpediente', handleOpenFormulario);
     window.addEventListener('navigateTo', handleNavigateTo);
     window.addEventListener('abrirSolicitudEtd', handleAbrirSolicitudEtd);
+    window.addEventListener('abrirSolicitudFechas', handleAbrirSolicitudFechas);
 
     return () => {
       window.removeEventListener('openFormularioExpediente', handleOpenFormulario);
       window.removeEventListener('navigateTo', handleNavigateTo);
       window.removeEventListener('abrirSolicitudEtd', handleAbrirSolicitudEtd);
+      window.removeEventListener('abrirSolicitudFechas', handleAbrirSolicitudFechas);
     };
   }, []);
 
@@ -118,8 +166,12 @@ export default function Home() {
   useEffect(() => {
     if (!usuarioId) return;
     verificarSolicitudesEtdAtrasadas();
+    verificarCambiosCampoAtrasados();
+    verificarFechasAtrasadas();
     const interval = setInterval(() => {
       verificarSolicitudesEtdAtrasadas();
+      verificarCambiosCampoAtrasados();
+      verificarFechasAtrasadas();
     }, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [usuarioId]);
@@ -155,23 +207,9 @@ export default function Home() {
     }
   };
 
-  // Mapea la vista activa del menú (module id) a la sección interna del módulo de Cambios ETD
-  const seccionEtdActual: SeccionEtd =
-    activeView === 'etd-dashboard'
-      ? 'dashboard'
-      : activeView === 'etd-aprobaciones'
-        ? 'aprobaciones'
-        : activeView === 'etd-historial'
-          ? 'historial'
-          : 'solicitar';
-
-  // Mapea la sección interna de vuelta al id del módulo del menú lateral
-  const irASeccionEtd = (seccion: SeccionEtd) => {
-    if (seccion === 'dashboard') setActiveView('etd-dashboard');
-    else if (seccion === 'aprobaciones') setActiveView('etd-aprobaciones');
-    else if (seccion === 'historial') setActiveView('etd-historial');
-    else setActiveView('etd-solicitar');
-  };
+  // Mapea la vista activa del menú (module id) a la sección interna del centro de cambios
+  const vistaCambiosActual: VistaCambios = VISTAS_CAMBIOS[activeView] || 'dashboard';
+  const vistaPoTrackingActual: VistaPoTracking = VISTAS_PO_TRACKING[activeView] || 'dashboard';
 
   // Contexto de navegación para la barra superior (solo visual)
   const grupoActual = grupoDeVista(activeView);
@@ -249,12 +287,20 @@ export default function Home() {
               {activeView === 'agente-carga' && <AnalisisAgenteCarga usuario={userName} />}
               {activeView === 'control-fechas' && <AnalisisControlFechas usuario={userName} />}
               {activeView === 'comparador-documentos' && <ComparadorDocumentos />}
-              {(activeView === 'etd-dashboard' || activeView === 'etd-solicitar' || activeView === 'etd-aprobaciones' || activeView === 'etd-historial') && (
-                <GestionCambiosEtd
-                  seccion={seccionEtdActual}
-                  onSeccionChange={irASeccionEtd}
+              {VISTAS_CAMBIOS[activeView] && (
+                <GestionCambiosOrden
+                  vista={vistaCambiosActual}
+                  onCambiarVista={(vista) => setActiveView(VISTA_A_MODULO[vista])}
                   solicitudObjetivoId={solicitudEtdObjetivo}
                   onObjetivoConsumido={() => setSolicitudEtdObjetivo(null)}
+                />
+              )}
+              {VISTAS_PO_TRACKING[activeView] && (
+                <GestionPoSinTracking
+                  vista={vistaPoTrackingActual}
+                  onCambiarVista={(vista) => setActiveView(VISTA_PO_TRACKING_A_MODULO[vista])}
+                  solicitudObjetivoId={solicitudFechasObjetivo}
+                  onObjetivoConsumido={() => setSolicitudFechasObjetivo(null)}
                 />
               )}
             </>

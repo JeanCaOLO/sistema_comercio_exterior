@@ -27,7 +27,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
         key={item.id}
         onClick={() => setActiveView(item.id)}
         title={isCollapsed ? item.label : undefined}
-        className={`w-full flex items-center gap-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap text-sm ${
+        className={`w-full flex items-center gap-3 rounded-lg transition-colors cursor-pointer text-sm text-left ${
           isCollapsed ? 'justify-center py-2.5' : 'px-3 py-2.5'
         } ${activo ? 'bg-teal-50 text-teal-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
       >
@@ -35,7 +35,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
           <i className={`${item.icon} text-lg`}></i>
         </span>
         {!isCollapsed && (
-          <span className={activo ? 'font-semibold' : 'font-medium'}>{item.label}</span>
+          <span className={`flex-1 min-w-0 whitespace-normal break-words leading-snug ${activo ? 'font-semibold' : 'font-medium'}`}>{item.label}</span>
         )}
       </button>
     );
@@ -55,9 +55,11 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
     return (
       <div key={grupo.id}>
         {!isCollapsed && (
-          <div className="flex items-center gap-2 px-3 pt-4 pb-2">
-            <i className={`${grupo.icon} text-sm text-teal-600`}></i>
-            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500 whitespace-nowrap">
+          <div className="flex items-start gap-2 px-3 pt-4 pb-2">
+            <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <i className={`${grupo.icon} text-sm text-teal-600`}></i>
+            </span>
+            <span className="flex-1 min-w-0 text-[11px] font-bold uppercase tracking-wide text-gray-500 whitespace-normal break-words leading-snug">
               {grupo.nombre}
             </span>
           </div>
@@ -66,7 +68,7 @@ export default function Sidebar({ activeView, setActiveView, onLogout, userName,
           {secciones.map((seccion) => (
             <div key={`${grupo.id}-${seccion.titulo || 'principal'}`}>
               {!isCollapsed && seccion.titulo && (
-                <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-normal break-words leading-snug">
                   {seccion.titulo}
                 </p>
               )}

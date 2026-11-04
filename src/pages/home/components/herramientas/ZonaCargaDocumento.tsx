@@ -4,7 +4,7 @@ import { muestrasColumnas, sugerirSeleccionPdf } from '@/lib/comparadorDocumento
 import type { PerfilColumnas } from '@/lib/perfilesComparador';
 
 export interface EstadoCarga {
-  tipo: 'idle' | 'leyendo' | 'listo' | 'error';
+  tipo: 'idle' | 'leyendo' | 'listo' | 'aviso' | 'error';
   mensaje?: string;
 }
 
@@ -70,11 +70,13 @@ export default function ZonaCargaDocumento({
     ? 'border-red-300 bg-red-50/40'
     : estado.tipo === 'leyendo'
       ? 'border-teal-400 bg-teal-50/40'
-      : documento
-        ? 'border-emerald-300 bg-emerald-50/30'
-        : arrastrando
-          ? 'border-teal-400 bg-teal-50/50'
-          : 'border-gray-300 bg-gray-50 hover:border-teal-400 hover:bg-teal-50/30';
+      : estado.tipo === 'aviso'
+        ? 'border-amber-300 bg-amber-50/40'
+        : documento
+          ? 'border-emerald-300 bg-emerald-50/30'
+          : arrastrando
+            ? 'border-teal-400 bg-teal-50/50'
+            : 'border-gray-300 bg-gray-50 hover:border-teal-400 hover:bg-teal-50/30';
 
   const columnas = documento?.tipo === 'pdf' && documento.lineas ? muestrasColumnas(documento.lineas) : [];
 
@@ -132,15 +134,15 @@ export default function ZonaCargaDocumento({
             className="hidden"
             onChange={(event) => tomarArchivo(event.target.files?.[0])}
           />
-          <i className={`text-2xl ${documento ? 'ri-file-check-line text-emerald-600' : estado.tipo === 'error' ? 'ri-error-warning-line text-red-500' : 'ri-upload-cloud-2-line text-teal-600'}`}></i>
+          <i className={`text-2xl ${estado.tipo === 'error' ? 'ri-error-warning-line text-red-500' : estado.tipo === 'aviso' ? 'ri-error-warning-line text-amber-500' : documento ? 'ri-file-check-line text-emerald-600' : 'ri-upload-cloud-2-line text-teal-600'}`}></i>
           <span className="text-sm font-medium text-gray-800 break-all">
             {documento ? documento.nombre : 'Arrastra el archivo o haz clic aquí'}
           </span>
-          <span className="text-xs text-gray-500">Excel (.xlsx, .xls, .csv) o PDF con texto</span>
+          <span className="text-xs text-gray-500">Excel (.xlsx, .xls, .csv) o PDF (con texto o escaneado)</span>
         </label>
 
         {estado.tipo !== 'idle' && estado.mensaje && (
-          <p className={`text-xs ${estado.tipo === 'error' ? 'text-red-600' : estado.tipo === 'leyendo' ? 'text-teal-700' : 'text-emerald-700'}`}>
+          <p className={`text-xs ${estado.tipo === 'error' ? 'text-red-600' : estado.tipo === 'leyendo' ? 'text-teal-700' : estado.tipo === 'aviso' ? 'text-amber-700' : 'text-emerald-700'}`}>
             {estado.tipo === 'leyendo' && <i className="ri-loader-4-line animate-spin mr-1"></i>}
             {estado.mensaje}
           </p>
@@ -163,7 +165,7 @@ export default function ZonaCargaDocumento({
               </div>
             )}
 
-            {documento.tipo === 'pdf' && (
+            {documento.tipo === 'pdf' && documento.lineas && documento.lineas.length > 0 && (
               <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1">
                 <button
                   type="button"
@@ -205,12 +207,21 @@ export default function ZonaCargaDocumento({
               </div>
             )}
 
-            {documento.tipo === 'pdf' && !documento.manual && (
+            {documento.tipo === 'pdf' && !documento.manual && documento.lineas && documento.lineas.length > 0 && (
               <p className="text-[11px] text-gray-500 leading-snug flex items-start gap-1.5">
                 <i className="ri-bookmark-3-line mt-0.5 text-teal-600"></i>
                 <span>
                   ¿Es una factura que recibís siempre igual? Elegí columnas y guardá el perfil del proveedor para que la
                   próxima se lea sola.
+                </span>
+              </p>
+            )}
+
+            {documento.tipo === 'pdf' && !documento.lineas && documento.filas.length > 0 && (
+              <p className="text-[11px] text-emerald-700 leading-snug flex items-start gap-1.5">
+                <i className="ri-sparkling-2-line mt-0.5"></i>
+                <span>
+                  Este documento se leyó con IA porque no trae texto seleccionable. Revisá la vista previa antes de comparar.
                 </span>
               </p>
             )}

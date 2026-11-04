@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, obtenerSesionValida, limpiarSesionLocal, esErrorSesionInvalida } from '../lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
 interface Perfil {
@@ -62,7 +62,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (esErrorDeSesion) {
           console.warn('⚠️ Sesión inválida detectada. Cerrando sesión para limpiar credenciales.');
-          await supabase.auth.signOut();
+          try {
+            await supabase.auth.signOut({ scope: 'local' });
+          } catch (errorCierre) {
+            console.warn('No se pudo cerrar la sesión en el servidor, se limpia localmente:', errorCierre);
+            limpiarSesionLocal();
+          }
+          setPerfil(null);
+          setUser(null);
         }
         return;
       }
@@ -114,29 +121,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Verificar sesión actual
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let activo = true;
+
+    // Verificar sesión actual. Si el token guardado ya no es válido, se descarta
+    // sin romper la aplicación y se envía al usuario al login.
+    const inicializar = async () => {
+      const session = await obtenerSesionValida();
+      if (!activo) return;
       setUser(session?.user ?? null);
-      if (session?.user?.email) {
-        cargarPerfil(session.user.email);
-      }
       setLoading(false);
-    });
+      if (session?.user?.email) {
+        void cargarPerfil(session.user.email);
+      }
+    };
+
+    void inicializar();
 
     // Escuchar cambios de autenticación
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      setLoading(false);
       if (session?.user?.email) {
-        cargarPerfil(session.user.email);
+        void cargarPerfil(session.user.email);
       } else {
         setPerfil(null);
       }
-      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      activo = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -168,9 +185,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    setPerfil(null);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error && !esErrorSesionInvalida(error)) throw error;
+    } catch (error) {
+      // Si la sesión ya no existe en el servidor, igualmente se limpia localmente
+      // para que el usuario pueda volver a iniciar sesión.
+      if (!esErrorSesionInvalida(error)) throw error;
+    } finally {
+      limpiarSesionLocal();
+      setUser(null);
+      setPerfil(null);
+    }
   };
 
   const value = {

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { CLAVE_AVISO_SESION_EXPIRADA } from '../../lib/supabase';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -8,8 +9,21 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
   const navigate = useNavigate();
   const { signIn, signInWithGoogle } = useAuth();
+
+  // Si la sesión anterior caducó, se avisa aquí en lugar de mostrar un error técnico.
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(CLAVE_AVISO_SESION_EXPIRADA) === '1') {
+        setAviso('Tu sesión anterior caducó. Vuelve a iniciar sesión para continuar.');
+        window.sessionStorage.removeItem(CLAVE_AVISO_SESION_EXPIRADA);
+      }
+    } catch {
+      // Si el navegador bloquea el almacenamiento, simplemente no se muestra el aviso.
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,6 +32,7 @@ export default function Login() {
 
     try {
       await signIn(email, password);
+      setAviso('');
       navigate('/');
     } catch (error: any) {
       console.error('Error al iniciar sesión:', error);
@@ -64,6 +79,13 @@ export default function Login() {
           <h1 className="text-3xl font-bold text-gray-900">Iniciar Sesión</h1>
           <p className="text-gray-500 mt-2">Gestión de Comercio Exterior</p>
         </div>
+
+        {aviso && (
+          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center gap-3">
+            <i className="ri-time-line text-amber-600 text-xl"></i>
+            <p className="text-amber-900 text-sm">{aviso}</p>
+          </div>
+        )}
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">

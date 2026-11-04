@@ -1,23 +1,33 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cargarRolesAprobacionEtd } from '@/lib/permisos';
-import { contarSolicitudesPendientesEtd, puedeVerQaEtd } from '@/lib/etdCambios';
-import SolicitarCambioEtd from './SolicitarCambioEtd';
-import AprobacionesEtd from './AprobacionesEtd';
-import HistorialEtd from './HistorialEtd';
-import DashboardCambiosEtd from './DashboardCambiosEtd';
+import { contarPendientesFechas } from '@/lib/cambiosFechasPo';
+import { puedeVerQaEtd } from '@/lib/etdCambios';
+import SolicitarCambioFechas from './SolicitarCambioFechas';
+import DashboardFechas from './DashboardFechas';
+import ListaCambiosFechas from './ListaCambiosFechas';
+import type { VistaPoTracking } from './types';
 
-export type SeccionEtd = 'dashboard' | 'solicitar' | 'aprobaciones' | 'historial';
-
-interface GestionCambiosEtdProps {
-  seccion: SeccionEtd;
-  onSeccionChange: (seccion: SeccionEtd) => void;
-  // ID de la solicitud que debe abrirse automáticamente (al venir de una notificación).
+interface GestionPoSinTrackingProps {
+  vista: VistaPoTracking;
+  onCambiarVista: (vista: VistaPoTracking) => void;
   solicitudObjetivoId?: string | null;
   onObjetivoConsumido?: () => void;
 }
 
-export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudObjetivoId = null, onObjetivoConsumido }: GestionCambiosEtdProps) {
+const TABS: { id: VistaPoTracking; label: string; icono: string }[] = [
+  { id: 'dashboard', label: 'Dashboard', icono: 'ri-dashboard-3-line' },
+  { id: 'solicitar', label: 'Cargar Fechas de PO', icono: 'ri-calendar-schedule-line' },
+  { id: 'aprobaciones', label: 'Aprobaciones Pendientes', icono: 'ri-checkbox-multiple-line' },
+  { id: 'historial', label: 'Historial de Solicitudes', icono: 'ri-history-line' },
+];
+
+export default function GestionPoSinTracking({
+  vista,
+  onCambiarVista,
+  solicitudObjetivoId = null,
+  onObjetivoConsumido,
+}: GestionPoSinTrackingProps) {
   const { perfil } = useAuth();
   const [rolesAprobacion, setRolesAprobacion] = useState<string[]>([]);
   const [pendientes, setPendientes] = useState(0);
@@ -26,10 +36,8 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudO
   const usuarioNombre = perfil?.nombre || perfil?.email || '';
   const roles = perfil?.roles || [];
   const puedeAprobar = roles.some((r) => rolesAprobacion.includes(r));
-  // Solo el perfil de jalvarez puede alternar entre QA y Producción y ver registros de QA.
   const puedeElegirEntorno = puedeVerQaEtd(perfil?.email);
   const incluirQa = puedeElegirEntorno;
-  // Los administradores (y el perfil de jalvarez) también pueden aprobar sus propias solicitudes.
   const esAdministrador = roles.some((r) => r.trim().toLowerCase() === 'administrador');
   const puedeAprobarPropias = esAdministrador || puedeElegirEntorno;
 
@@ -39,7 +47,7 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudO
 
   const refrescarPendientes = useCallback(async () => {
     try {
-      const count = await contarSolicitudesPendientesEtd({ incluirQa });
+      const count = await contarPendientesFechas({ incluirQa });
       setPendientes(count);
     } catch {
       setPendientes(0);
@@ -50,24 +58,17 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudO
     refrescarPendientes();
   }, [refrescarPendientes]);
 
-  const tabs: { id: SeccionEtd; label: string; icono: string; visible: boolean }[] = [
-    { id: 'dashboard', label: 'Dashboard', icono: 'ri-dashboard-3-line', visible: true },
-    { id: 'solicitar', label: 'Solicitar Cambio ETD Inicial', icono: 'ri-calendar-2-line', visible: true },
-    { id: 'aprobaciones', label: 'Aprobaciones Pendientes', icono: 'ri-checkbox-multiple-line', visible: puedeAprobar },
-    { id: 'historial', label: 'Historial de Solicitudes', icono: 'ri-history-line', visible: true },
-  ];
-
   return (
     <div className="p-6 lg:p-8">
       <div className="mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 flex items-center justify-center bg-teal-600 rounded-lg flex-shrink-0">
-            <i className="ri-calendar-2-line text-white text-xl"></i>
+          <div className="w-11 h-11 flex items-center justify-center bg-sky-600 rounded-lg flex-shrink-0">
+            <i className="ri-calendar-schedule-line text-white text-xl"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Gestión de Cambios ETD Inicial</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Cambios PO sin Tracking</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              Solicita, revisa y aprueba cambios en la fecha ETD Inicial de una orden de compra.
+              Carga y modifica las fechas de las órdenes de compra, con aprobación, dashboard e historial.
             </p>
           </div>
         </div>
@@ -75,12 +76,12 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudO
 
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-1 p-1 bg-gray-100 rounded-xl mb-6 w-fit">
-        {tabs.filter((t) => t.visible).map((t) => (
+        {TABS.filter((t) => t.id !== 'aprobaciones' || puedeAprobar).map((t) => (
           <button
             key={t.id}
-            onClick={() => onSeccionChange(t.id)}
+            onClick={() => onCambiarVista(t.id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
-              seccion === t.id ? 'bg-white text-teal-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              vista === t.id ? 'bg-white text-sky-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
             <i className={t.icono}></i>
@@ -94,28 +95,29 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudO
         ))}
       </div>
 
-      {seccion === 'dashboard' && (
-        <DashboardCambiosEtd
+      {vista === 'dashboard' && (
+        <DashboardFechas
           usuarioId={usuarioId}
           usuarioNombre={usuarioNombre}
           puedeAprobar={puedeAprobar}
           puedeAprobarPropias={puedeAprobarPropias}
           incluirQa={incluirQa}
-          onIrA={onSeccionChange}
+          onIrA={onCambiarVista}
         />
       )}
 
-      {seccion === 'solicitar' && (
-        <SolicitarCambioEtd
+      {vista === 'solicitar' && (
+        <SolicitarCambioFechas
           usuarioId={usuarioId}
           usuarioNombre={usuarioNombre}
           puedeElegirEntorno={puedeElegirEntorno}
         />
       )}
 
-      {seccion === 'aprobaciones' && (
+      {vista === 'aprobaciones' && (
         puedeAprobar ? (
-          <AprobacionesEtd
+          <ListaCambiosFechas
+            modo="aprobaciones"
             usuarioId={usuarioId}
             usuarioNombre={usuarioNombre}
             puedeAprobar={puedeAprobar}
@@ -136,8 +138,15 @@ export default function GestionCambiosEtd({ seccion, onSeccionChange, solicitudO
         )
       )}
 
-      {seccion === 'historial' && (
-        <HistorialEtd usuarioId={usuarioId} usuarioNombre={usuarioNombre} puedeAprobar={puedeAprobar} puedeAprobarPropias={puedeAprobarPropias} incluirQa={incluirQa} />
+      {vista === 'historial' && (
+        <ListaCambiosFechas
+          modo="historial"
+          usuarioId={usuarioId}
+          usuarioNombre={usuarioNombre}
+          puedeAprobar={puedeAprobar}
+          puedeAprobarPropias={puedeAprobarPropias}
+          incluirQa={incluirQa}
+        />
       )}
     </div>
   );

@@ -546,16 +546,464 @@ export async function verificarSolicitudesEtdAtrasadas(): Promise<void> {
   }
 }
 
+// ============================================================
+// SOLICITUDES DE CAMBIO DE CAMPOS (CARGA LISTA / INCOTERM)
+// Comparten el mismo sistema de aprobación y de avisos que el ETD.
+// ============================================================
+
+export type TipoCambioNotificacion = 'etd_inicial' | 'carga_lista' | 'incoterm';
+
+const ETIQUETA_TIPO_CAMBIO: Record<TipoCambioNotificacion, string> = {
+  etd_inicial: 'ETD Inicial',
+  carga_lista: 'Carga Lista',
+  incoterm: 'Incoterm',
+};
+
+interface NotificarNuevaSolicitudCambioParams {
+  tipo: TipoCambioNotificacion;
+  orderNumber: string;
+  tradingCompany: string;
+  solicitanteNombre: string;
+  solicitanteId?: string | null;
+  detalle: string;
+  apiEnv: 'production' | 'qa';
+  solicitudId?: string | null;
+}
+
+// Avisa únicamente a los administradores que existe una nueva solicitud pendiente.
+export async function notificarNuevaSolicitudCambio({
+  tipo,
+  orderNumber,
+  tradingCompany,
+  solicitanteNombre,
+  solicitanteId,
+  detalle,
+  apiEnv,
+  solicitudId,
+}: NotificarNuevaSolicitudCambioParams): Promise<void> {
+  try {
+    let destinatarios = await obtenerAdministradores();
+
+    // Las solicitudes de QA son exclusivas del perfil autorizado.
+    if (apiEnv === 'qa') {
+      const { data: autorizados } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('email', ['jalvarez@ologistics.com']);
+      destinatarios = (autorizados || []).map((u: any) => ({ id: u.id, nombre: u.nombre }));
+    }
+
+    const finales = destinatarios.filter((u) => u.id !== solicitanteId);
+    if (finales.length === 0) return;
+
+    const prefijo = apiEnv === 'qa' ? '[QA] ' : '';
+    const mensaje =
+      `${prefijo}Nueva solicitud de cambio de ${ETIQUETA_TIPO_CAMBIO[tipo]} para la PO ${orderNumber}` +
+      `${tradingCompany ? ` (${tradingCompany})` : ''}. ${detalle}. ` +
+      `Solicitado por: ${solicitanteNombre || 'Usuario'}. Requiere aprobación.`;
+
+    const notificaciones = finales.map((u) => ({
+      usuario_id: u.id,
+      mensaje,
+      tipo: 'cambio_solicitud_pendiente',
+      expediente_id: solicitudId ?? null,
+      po_tiquetera: orderNumber,
+      usuario_genero: 'Sistema',
+      icono: tipo === 'incoterm' ? 'ri-exchange-dollar-line' : 'ri-file-list-2-line',
+      leida: false,
+    }));
+
+    const { error } = await supabase.from('notificaciones').insert(notificaciones);
+    if (error) console.error('[Notificaciones] Error al insertar (nueva solicitud de cambio):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (nueva solicitud de cambio):', err.message || err);
+  }
+}
+
+interface NotificarResultadoCambioParams {
+  usuarioId: string | null;
+  poTiquetera: string;
+  mensaje: string;
+  tipo: 'cambio_aprobada' | 'cambio_rechazada';
+}
+
+// Avisa al solicitante cuando su cambio de campo se resuelve.
+export async function notificarResultadoCambio({
+  usuarioId,
+  poTiquetera,
+  mensaje,
+  tipo,
+}: NotificarResultadoCambioParams): Promise<void> {
+  if (!usuarioId) return;
+  try {
+    const { error } = await supabase.from('notificaciones').insert([{
+      usuario_id: usuarioId,
+      mensaje,
+      tipo,
+      expediente_id: null,
+      po_tiquetera: poTiquetera,
+      usuario_genero: 'Sistema',
+      icono: tipo === 'cambio_aprobada' ? 'ri-checkbox-circle-line' : 'ri-close-circle-line',
+      leida: false,
+    }]);
+    if (error) console.error('[Notificaciones] Error al insertar (resultado de cambio):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (resultado de cambio):', err.message || err);
+  }
+}
+
+interface CambioPendienteAtrasado {
+  id: string;
+  order_number: string;
+  trading_company: string | null;
+  requested_at: string;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  api_env: string | null;
+  detalle: string;
+}
+
+// Recordatorio automático para solicitudes de carga lista / incoterm
+// pendientes más de 2 días (mismo criterio que el ETD Inicial).
+export async function verificarCambiosCampoAtrasados(): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('order_field_change_requests')
+      .select('id, change_type, field_label, previous_value, proposed_value, order_number, trading_company, requested_at, requested_by, requested_by_name, api_env')
+      .eq('status', 'PENDING');
+
+    if (error) throw error;
+    const filas = (data || []) as any[];
+    if (filas.length === 0) return;
+
+    const ahora = Date.now();
+    const atrasadas: CambioPendienteAtrasado[] = filas
+      .filter((f) => {
+        const fecha = new Date(f.requested_at).getTime();
+        return !Number.isNaN(fecha) && ahora - fecha > DIAS_UMBRAL_ETD_ATRASADA * 24 * 60 * 60 * 1000;
+      })
+      .map((f) => ({
+        id: f.id,
+        order_number: f.order_number,
+        trading_company: f.trading_company,
+        requested_at: f.requested_at,
+        requested_by: f.requested_by,
+        requested_by_name: f.requested_by_name,
+        api_env: f.api_env,
+        detalle: `${f.field_label}: ${f.previous_value || 'sin valor'} → ${f.proposed_value}`,
+      }));
+    if (atrasadas.length === 0) return;
+
+    const ids = atrasadas.map((s) => s.id);
+
+    const { data: previos } = await supabase
+      .from('notificaciones')
+      .select('expediente_id, created_at')
+      .eq('tipo', 'cambio_recordatorio')
+      .in('expediente_id', ids);
+
+    const limite = ahora - HORAS_ENTRE_RECORDATORIOS_ETD * 60 * 60 * 1000;
+    const recientementeAvisadas = new Set(
+      (previos || [])
+        .filter((n: any) => n.expediente_id && new Date(n.created_at).getTime() >= limite)
+        .map((n: any) => n.expediente_id)
+    );
+
+    const administradores = await obtenerAdministradores();
+    const destinatariosQa = new Map<string, { id: string; nombre: string }>();
+    if (atrasadas.some((s) => s.api_env && s.api_env !== 'production')) {
+      const { data: autorizados } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('email', ['jalvarez@ologistics.com']);
+      (autorizados || []).forEach((u: any) => destinatariosQa.set(u.id, { id: u.id, nombre: u.nombre }));
+    }
+
+    const nuevas: Record<string, unknown>[] = [];
+
+    atrasadas.forEach((s) => {
+      if (recientementeAvisadas.has(s.id)) return;
+
+      const esQa = Boolean(s.api_env && s.api_env !== 'production');
+      const base = esQa ? Array.from(destinatariosQa.values()) : administradores;
+      const destinatarios = base.filter((u) => u.id !== s.requested_by);
+      if (destinatarios.length === 0) return;
+
+      const dias = Math.floor((ahora - new Date(s.requested_at).getTime()) / (24 * 60 * 60 * 1000));
+      const prefijo = esQa ? '[QA] ' : '';
+      const mensaje =
+        `${prefijo}Recordatorio: la solicitud de cambio de campo para la PO ${s.order_number}` +
+        `${s.trading_company ? ` (${s.trading_company})` : ''} lleva ${dias} días sin aprobarse. ` +
+        `${s.detalle}. Solicitado por: ${s.requested_by_name || 'Usuario'}.`;
+
+      destinatarios.forEach((u) => {
+        nuevas.push({
+          usuario_id: u.id,
+          mensaje,
+          tipo: 'cambio_recordatorio',
+          expediente_id: s.id,
+          po_tiquetera: s.order_number,
+          usuario_genero: 'Sistema',
+          icono: 'ri-alarm-warning-line',
+          leida: false,
+        });
+      });
+    });
+
+    if (nuevas.length === 0) return;
+    const { error: errorInsert } = await supabase.from('notificaciones').insert(nuevas);
+    if (errorInsert) console.error('[Notificaciones] Error al insertar recordatorios de cambio:', errorInsert.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error verificando cambios de campo atrasados:', err.message || err);
+  }
+}
+
+// ============================================================
+// SOLICITUDES DE CAMBIO DE FECHAS DE PO (MÓDULO PO SIN TRACKING)
+// Mismo circuito de avisos que el resto de cambios de órdenes,
+// con tipos propios para abrir la solicitud en su módulo.
+// ============================================================
+
+interface NotificarNuevaSolicitudFechasParams {
+  orderNumber: string;
+  tradingCompany: string;
+  solicitanteNombre: string;
+  solicitanteId?: string | null;
+  detalle: string;
+  apiEnv: 'production' | 'qa';
+  solicitudId?: string | null;
+}
+
+// Avisa únicamente a los administradores que existe una nueva solicitud
+// de cambio de fechas pendiente de aprobación.
+export async function notificarNuevaSolicitudFechas({
+  orderNumber,
+  tradingCompany,
+  solicitanteNombre,
+  solicitanteId,
+  detalle,
+  apiEnv,
+  solicitudId,
+}: NotificarNuevaSolicitudFechasParams): Promise<void> {
+  try {
+    let destinatarios = await obtenerAdministradores();
+
+    if (apiEnv === 'qa') {
+      const { data: autorizados } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('email', ['jalvarez@ologistics.com']);
+      destinatarios = (autorizados || []).map((u: any) => ({ id: u.id, nombre: u.nombre }));
+    }
+
+    const finales = destinatarios.filter((u) => u.id !== solicitanteId);
+    if (finales.length === 0) return;
+
+    const prefijo = apiEnv === 'qa' ? '[QA] ' : '';
+    const mensaje =
+      `${prefijo}Nueva solicitud de cambio de fechas para la PO ${orderNumber}` +
+      `${tradingCompany ? ` (${tradingCompany})` : ''}. ${detalle}. ` +
+      `Solicitado por: ${solicitanteNombre || 'Usuario'}. Requiere aprobación.`;
+
+    const notificaciones = finales.map((u) => ({
+      usuario_id: u.id,
+      mensaje,
+      tipo: 'fechas_solicitud_pendiente',
+      expediente_id: solicitudId ?? null,
+      po_tiquetera: orderNumber,
+      usuario_genero: 'Sistema',
+      icono: 'ri-calendar-schedule-line',
+      leida: false,
+    }));
+
+    const { error } = await supabase.from('notificaciones').insert(notificaciones);
+    if (error) console.error('[Notificaciones] Error al insertar (nueva solicitud de fechas):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (nueva solicitud de fechas):', err.message || err);
+  }
+}
+
+interface NotificarResultadoFechasParams {
+  usuarioId: string | null;
+  poTiquetera: string;
+  mensaje: string;
+  tipo: 'fechas_aprobada' | 'fechas_rechazada';
+}
+
+// Avisa al solicitante cuando su cambio de fechas se resuelve.
+export async function notificarResultadoFechas({
+  usuarioId,
+  poTiquetera,
+  mensaje,
+  tipo,
+}: NotificarResultadoFechasParams): Promise<void> {
+  if (!usuarioId) return;
+  try {
+    const { error } = await supabase.from('notificaciones').insert([{
+      usuario_id: usuarioId,
+      mensaje,
+      tipo,
+      expediente_id: null,
+      po_tiquetera: poTiquetera,
+      usuario_genero: 'Sistema',
+      icono: tipo === 'fechas_aprobada' ? 'ri-checkbox-circle-line' : 'ri-close-circle-line',
+      leida: false,
+    }]);
+    if (error) console.error('[Notificaciones] Error al insertar (resultado de fechas):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (resultado de fechas):', err.message || err);
+  }
+}
+
+interface FechaCambioPendienteAtrasada {
+  id: string;
+  order_number: string;
+  trading_company: string | null;
+  requested_at: string;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  api_env: string | null;
+  detalle: string;
+}
+
+// Recordatorio automático para solicitudes de cambio de fechas
+// pendientes más de 2 días (mismo criterio que el resto de cambios).
+export async function verificarFechasAtrasadas(): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('po_date_change_requests')
+      .select('id, order_number, trading_company, changes, requested_at, requested_by, requested_by_name, api_env')
+      .eq('status', 'PENDING');
+
+    if (error) throw error;
+    const filas = (data || []) as any[];
+    if (filas.length === 0) return;
+
+    const ahora = Date.now();
+    const atrasadas: FechaCambioPendienteAtrasada[] = filas
+      .filter((f) => {
+        const fecha = new Date(f.requested_at).getTime();
+        return !Number.isNaN(fecha) && ahora - fecha > DIAS_UMBRAL_ETD_ATRASADA * 24 * 60 * 60 * 1000;
+      })
+      .map((f) => {
+        let cambios: { etiqueta?: string; valorNuevo?: string }[] = [];
+        if (Array.isArray(f.changes)) cambios = f.changes;
+        else if (typeof f.changes === 'string') {
+          try {
+            const parseado = JSON.parse(f.changes);
+            cambios = Array.isArray(parseado) ? parseado : [];
+          } catch {
+            cambios = [];
+          }
+        }
+        const detalle = cambios.length === 0
+          ? 'Cambio de fechas'
+          : cambios.length === 1
+            ? `${cambios[0].etiqueta || 'Fecha'} → ${cambios[0].valorNuevo || '—'}`
+            : `${cambios.length} fechas: ${cambios.slice(0, 3).map((c) => c.etiqueta).join(', ')}`;
+        return {
+          id: f.id,
+          order_number: f.order_number,
+          trading_company: f.trading_company,
+          requested_at: f.requested_at,
+          requested_by: f.requested_by,
+          requested_by_name: f.requested_by_name,
+          api_env: f.api_env,
+          detalle,
+        };
+      });
+    if (atrasadas.length === 0) return;
+
+    const ids = atrasadas.map((s) => s.id);
+
+    const { data: previos } = await supabase
+      .from('notificaciones')
+      .select('expediente_id, created_at')
+      .eq('tipo', 'fechas_recordatorio')
+      .in('expediente_id', ids);
+
+    const limite = ahora - HORAS_ENTRE_RECORDATORIOS_ETD * 60 * 60 * 1000;
+    const recientementeAvisadas = new Set(
+      (previos || [])
+        .filter((n: any) => n.expediente_id && new Date(n.created_at).getTime() >= limite)
+        .map((n: any) => n.expediente_id)
+    );
+
+    const administradores = await obtenerAdministradores();
+    const destinatariosQa = new Map<string, { id: string; nombre: string }>();
+    if (atrasadas.some((s) => s.api_env && s.api_env !== 'production')) {
+      const { data: autorizados } = await supabase
+        .from('usuarios')
+        .select('id, nombre')
+        .in('email', ['jalvarez@ologistics.com']);
+      (autorizados || []).forEach((u: any) => destinatariosQa.set(u.id, { id: u.id, nombre: u.nombre }));
+    }
+
+    const nuevas: Record<string, unknown>[] = [];
+
+    atrasadas.forEach((s) => {
+      if (recientementeAvisadas.has(s.id)) return;
+
+      const esQa = Boolean(s.api_env && s.api_env !== 'production');
+      const base = esQa ? Array.from(destinatariosQa.values()) : administradores;
+      const destinatarios = base.filter((u) => u.id !== s.requested_by);
+      if (destinatarios.length === 0) return;
+
+      const dias = Math.floor((ahora - new Date(s.requested_at).getTime()) / (24 * 60 * 60 * 1000));
+      const prefijo = esQa ? '[QA] ' : '';
+      const mensaje =
+        `${prefijo}Recordatorio: la solicitud de cambio de fechas para la PO ${s.order_number}` +
+        `${s.trading_company ? ` (${s.trading_company})` : ''} lleva ${dias} días sin aprobarse. ` +
+        `${s.detalle}. Solicitado por: ${s.requested_by_name || 'Usuario'}.`;
+
+      destinatarios.forEach((u) => {
+        nuevas.push({
+          usuario_id: u.id,
+          mensaje,
+          tipo: 'fechas_recordatorio',
+          expediente_id: s.id,
+          po_tiquetera: s.order_number,
+          usuario_genero: 'Sistema',
+          icono: 'ri-alarm-warning-line',
+          leida: false,
+        });
+      });
+    });
+
+    if (nuevas.length === 0) return;
+    const { error: errorInsert } = await supabase.from('notificaciones').insert(nuevas);
+    if (errorInsert) console.error('[Notificaciones] Error al insertar recordatorios de fechas:', errorInsert.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error verificando cambios de fechas atrasados:', err.message || err);
+  }
+}
+
 // Tipos de notificación que apuntan a una solicitud de cambio de ETD Inicial.
 const TIPOS_NOTIFICACION_ETD = [
   'etd_solicitud_pendiente',
   'etd_recordatorio',
   'etd_aprobada',
   'etd_rechazada',
+  'cambio_solicitud_pendiente',
+  'cambio_recordatorio',
+  'cambio_aprobada',
+  'cambio_rechazada',
 ];
 
 export function esNotificacionEtd(tipo: string): boolean {
   return TIPOS_NOTIFICACION_ETD.includes(tipo);
+}
+
+// Tipos de notificación que apuntan a una solicitud de cambio de fechas (PO sin tracking).
+const TIPOS_NOTIFICACION_FECHAS = [
+  'fechas_solicitud_pendiente',
+  'fechas_recordatorio',
+  'fechas_aprobada',
+  'fechas_rechazada',
+];
+
+export function esNotificacionFechas(tipo: string): boolean {
+  return TIPOS_NOTIFICACION_FECHAS.includes(tipo);
 }
 
 export async function obtenerNotificaciones(usuarioId: string): Promise<Notificacion[]> {
@@ -638,6 +1086,22 @@ export function getIconoColor(tipo: string): string {
       return 'text-amber-600 bg-amber-100';
     case 'etd_recordatorio':
       return 'text-orange-600 bg-orange-100';
+    case 'cambio_solicitud_pendiente':
+      return 'text-amber-600 bg-amber-100';
+    case 'cambio_recordatorio':
+      return 'text-orange-600 bg-orange-100';
+    case 'cambio_aprobada':
+      return 'text-emerald-600 bg-emerald-100';
+    case 'cambio_rechazada':
+      return 'text-red-600 bg-red-100';
+    case 'fechas_solicitud_pendiente':
+      return 'text-amber-600 bg-amber-100';
+    case 'fechas_recordatorio':
+      return 'text-orange-600 bg-orange-100';
+    case 'fechas_aprobada':
+      return 'text-emerald-600 bg-emerald-100';
+    case 'fechas_rechazada':
+      return 'text-red-600 bg-red-100';
     default:
       return 'text-gray-600 bg-gray-100';
   }
@@ -667,6 +1131,22 @@ export function getTipoLabel(tipo: string): string {
       return 'Nueva solicitud ETD Inicial';
     case 'etd_recordatorio':
       return 'Recordatorio ETD Inicial';
+    case 'cambio_solicitud_pendiente':
+      return 'Nueva solicitud de cambio';
+    case 'cambio_recordatorio':
+      return 'Recordatorio de cambio';
+    case 'cambio_aprobada':
+      return 'Cambio aprobado';
+    case 'cambio_rechazada':
+      return 'Cambio rechazado';
+    case 'fechas_solicitud_pendiente':
+      return 'Nueva solicitud de fechas PO';
+    case 'fechas_recordatorio':
+      return 'Recordatorio de fechas PO';
+    case 'fechas_aprobada':
+      return 'Fechas PO aprobadas';
+    case 'fechas_rechazada':
+      return 'Fechas PO rechazadas';
     default:
       return tipo;
   }

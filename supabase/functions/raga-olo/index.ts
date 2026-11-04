@@ -74,10 +74,12 @@ Deno.serve(async (req: Request) => {
       const texto = await resp.text();
 
       if (!resp.ok) {
-        return json(
-          { ok: false, api_env: apiEnv, error: `Raga (${apiEnv}) respondió ${resp.status}: ${texto.slice(0, 300)}` },
-          502,
-        );
+        return json({
+          ok: false,
+          api_env: apiEnv,
+          upstream_status: resp.status,
+          error: `Raga (${apiEnv}) respondió ${resp.status}: ${detalleUpstream(texto)}`,
+        });
       }
       return json({ ok: true, api_env: apiEnv, data: parseSeguro(texto) });
     }
@@ -100,10 +102,72 @@ Deno.serve(async (req: Request) => {
       const texto = await resp.text();
 
       if (!resp.ok) {
-        return json(
-          { ok: false, api_env: apiEnv, error: `Raga (${apiEnv}) respondió ${resp.status}: ${texto.slice(0, 300)}` },
-          502,
-        );
+        return json({
+          ok: false,
+          api_env: apiEnv,
+          upstream_status: resp.status,
+          error: `Raga (${apiEnv}) respondió ${resp.status}: ${detalleUpstream(texto)}`,
+        });
+      }
+      return json({ ok: true, api_env: apiEnv, data: parseSeguro(texto) });
+    }
+
+    if (action === 'update-purchase-order-fields') {
+      const orderNumber = String(body?.order_number || '').trim();
+      const tradingCompany = String(body?.trading_company || '').trim();
+      const entrada = body?.fields;
+
+      if (!orderNumber || !tradingCompany) {
+        return json({ ok: false, error: 'Faltan datos obligatorios (order_number, trading_company).' }, 400);
+      }
+      if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) {
+        return json({ ok: false, error: 'Faltan los campos a actualizar (fields).' }, 400);
+      }
+
+      // Solo se permiten claves técnicas simples y nunca campos identificadores
+      // ni de auditoría, para que el cliente no pueda reescribir la orden completa.
+      const RESERVADOS = new Set([
+        'id', 'uuid', 'order_number', 'po_number', 'trading_company',
+        'created_at', 'updated_at', 'deleted_at', 'order_id', 'status_id',
+      ]);
+      const fields: Record<string, string | boolean> = {};
+      for (const [clave, valor] of Object.entries(entrada)) {
+        const nombre = String(clave || '').trim();
+        if (!/^[a-z][a-z0-9_]{1,60}$/.test(nombre)) {
+          return json({ ok: false, error: `Nombre de campo inválido: ${nombre || '(vacío)'}` }, 400);
+        }
+        if (RESERVADOS.has(nombre)) {
+          return json({ ok: false, error: `El campo "${nombre}" no se puede modificar desde este módulo.` }, 400);
+        }
+        if (valor === null || valor === undefined) continue;
+        // Los campos booleanos (ej. carga_lista_validada) se envían como boolean.
+        if (typeof valor === 'boolean') {
+          fields[nombre] = valor;
+          continue;
+        }
+        fields[nombre] = String(valor).trim();
+      }
+
+      if (Object.keys(fields).length === 0) {
+        return json({ ok: false, error: 'No hay cambios para enviar a Raga.' }, 400);
+      }
+
+      const url = `${baseUrl}/api/purchase-orders/${encodeURIComponent(orderNumber)}`;
+      const resp = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ trading_company: tradingCompany, ...fields }),
+      });
+      const texto = await resp.text();
+
+      if (!resp.ok) {
+        return json({
+          ok: false,
+          api_env: apiEnv,
+          upstream_status: resp.status,
+          enviado: fields,
+          error: `Raga (${apiEnv}) respondió ${resp.status}: ${detalleUpstream(texto)}`,
+        });
       }
       return json({ ok: true, api_env: apiEnv, data: parseSeguro(texto) });
     }
@@ -121,6 +185,35 @@ function resolverEntorno(valor: unknown, porDefecto: string | undefined): 'qa' |
   if (solicitado === 'qa') return 'qa';
   if (solicitado === 'production' || solicitado === 'prod') return 'production';
   return String(porDefecto || 'production').trim().toLowerCase() === 'qa' ? 'qa' : 'production';
+}
+
+// Resumen legible del cuerpo de error devuelto por Raga (JSON o texto plano).
+function detalleUpstream(texto: string): string {
+  const limpio = (texto || '').trim();
+  if (!limpio) return 'sin detalle en la respuesta';
+  try {
+    const cuerpo = JSON.parse(limpio) as Record<string, any>;
+    const candidatos = [
+      cuerpo?.error,
+      cuerpo?.message,
+      cuerpo?.detail,
+      cuerpo?.errors,
+      cuerpo?.meta?.message,
+      cuerpo?.meta?.detail,
+    ];
+    for (const valor of candidatos) {
+      if (!valor) continue;
+      if (typeof valor === 'string') return valor.slice(0, 400);
+      try {
+        return JSON.stringify(valor).slice(0, 400);
+      } catch (_e) {
+        // continúa con el siguiente candidato
+      }
+    }
+  } catch (_e) {
+    // no es JSON: se devuelve el texto tal cual
+  }
+  return limpio.slice(0, 400);
 }
 
 function parseSeguro(texto: string): unknown {

@@ -23,6 +23,7 @@ import {
   leerPerfilesComparador,
   type PerfilColumnas,
 } from '@/lib/perfilesComparador';
+import { leerFacturaConIa } from '@/lib/ocrFactura';
 
 type LadoDocumento = 'a' | 'b';
 
@@ -61,12 +62,47 @@ export default function ComparadorDocumentos() {
   const cargar = async (lado: LadoDocumento, archivo: File) => {
     fijarEstado(lado, { tipo: 'leyendo', mensaje: `Leyendo ${archivo.name}…` });
     fijarPerfil(lado, null);
-    try {
-      const leido = await leerDocumento(archivo);
-      if (!leido.filas.length) {
-        throw new Error('Leí el archivo pero no encontré líneas con referencia, bultos y precio. Revisa el mapeo de columnas.');
-      }
+    const esPdf = /\.pdf$/i.test(archivo.name);
 
+    let leido: DocumentoLeido | null = null;
+    let errorTexto: any = null;
+    try {
+      leido = await leerDocumento(archivo);
+    } catch (error) {
+      errorTexto = error;
+    }
+
+    // PDF sin texto útil (escaneo o foto) o sin líneas reconocidas: se intenta con IA.
+    if (esPdf && (!leido || !leido.filas.length)) {
+      fijarEstado(lado, { tipo: 'leyendo', mensaje: 'El PDF no trae texto legible. Leyendo la imagen con IA…' });
+      try {
+        const conIa = await leerFacturaConIa(archivo);
+        fijarDoc(lado, conIa);
+        fijarEstado(lado, {
+          tipo: 'listo',
+          mensaje: `${conIa.nombre} · ${conIa.filas.length} línea(s) leídas con IA (revisá la vista previa)`,
+        });
+        return;
+      } catch (errorIa: any) {
+        if (leido && leido.lineas?.length) {
+          fijarDoc(lado, leido);
+          fijarEstado(lado, {
+            tipo: 'aviso',
+            mensaje: `No pude leerlo con IA (${errorIa?.message ?? 'sin detalle'}). Usá “Elegir columnas” para marcarlas a mano.`,
+          });
+          return;
+        }
+        throw new Error(errorIa?.message || errorTexto?.message || 'No se pudo leer el PDF.');
+      }
+    }
+
+    if (!leido) throw new Error(errorTexto?.message || 'No se pudo leer el archivo.');
+
+    if (!leido.filas.length) {
+      throw new Error('Leí el archivo pero no encontré líneas con referencia, bultos y precio. Revisa el mapeo de columnas.');
+    }
+
+    try {
       // Si hay un perfil guardado para este proveedor o este formato, se aplica solo.
       let doc = leido;
       let perfil: PerfilColumnas | null = null;

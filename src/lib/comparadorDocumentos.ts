@@ -282,7 +282,9 @@ export async function leerPdf(archivo: File): Promise<{ lineas: LineaPdf[]; pagi
       });
       grupos.forEach((g) => {
         g.items.sort((a, b) => a.transform[4] - b.transform[4]);
-        const tokens = g.items.map((i) => String(i.str).trim()).join(' ').split(/\s+/).filter(Boolean);
+        const tokens = recomponerCodigos(
+          g.items.map((i) => String(i.str).trim()).join(' ').split(/\s+/).filter(Boolean),
+        );
         if (tokens.length) lineas.push({ pagina: p, tokens });
       });
     } catch {
@@ -295,46 +297,184 @@ export async function leerPdf(archivo: File): Promise<{ lineas: LineaPdf[]; pagi
 
 const esTokenUnidad = (t: string) => /^[A-Za-z]{2,6}$/.test(t) && UNIDADES.has(t.toLowerCase());
 
+const UNIDAD_MEDIDA = /^(cm|mm|m2|m3|mt|mts|kgs?|gr?|lt?|lts)$/i;
+
+/** Prefiere la unidad pegada a la cantidad y descarta medidas (cm, kg…) del producto. */
+function unidadDeLinea(tokens: string[], indiceCantidad: number): string {
+  const vecinos = [tokens[indiceCantidad + 1], tokens[indiceCantidad - 1]];
+  for (const vecino of vecinos) {
+    if (vecino && esTokenUnidad(vecino) && !UNIDAD_MEDIDA.test(vecino)) return vecino;
+  }
+  const resto = tokens.filter((token) => esTokenUnidad(token) && !UNIDAD_MEDIDA.test(token));
+  if (resto.length) return resto[0];
+  return tokens.find(esTokenUnidad) ?? '';
+}
+
+const SEPARADOR_CODIGO = /^[-/._]$/;
+const FRAGMENTO_CODIGO = /^[A-Za-z0-9]+$/;
+const CODIGO_UNIDO = /^[A-Za-z0-9][A-Za-z0-9\-/._]*$/;
+
+/**
+ * Muchos PDF escriben la referencia en trozos sueltos: "03" "-" "04" "-" "023".
+ * Aquí se vuelven a unir para que la referencia sea un solo token legible.
+ */
+function recomponerCodigos(tokens: string[]): string[] {
+  const salida: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    const anterior = salida[salida.length - 1];
+    const siguiente = tokens[i + 1];
+    if (
+      SEPARADOR_CODIGO.test(token)
+      && anterior
+      && CODIGO_UNIDO.test(anterior)
+      && siguiente
+      && FRAGMENTO_CODIGO.test(siguiente)
+      && (/\d/.test(anterior) || /\d/.test(siguiente))
+    ) {
+      salida[salida.length - 1] = `${anterior}${token}${siguiente}`;
+      i += 1;
+      continue;
+    }
+    salida.push(token);
+  }
+  return salida;
+}
+
+/** ¿Este token parece una referencia de producto (03-04-023, SKU-1234…)? */
+const esReferenciaToken = (token: string): boolean => {
+  const texto = String(token ?? '').trim();
+  if (!texto || esNumero(texto)) return false;
+  if (!REF_GENERICA.test(texto) || !/\d/.test(texto)) return false;
+  return !/^(pcs|pc|ctns?|cartons?|pza|pzas|units?|kgs?|cm|mm|m2|m3|lbs?)$/i.test(texto);
+};
+
+/**
+ * Busca dentro de una línea la combinación cantidad × precio = total,
+ * priorizando el total que aparece al final y la cantidad seguida de su unidad.
+ */
+function mejorTriplete(tokens: string[]): { a: number; b: number; c: number; puntaje: number } | null {
+  const numeros: number[] = [];
+  tokens.forEach((token, indice) => {
+    if (esNumero(token)) numeros.push(indice);
+  });
+  if (numeros.length < 3) return null;
+  const ultimo = numeros[numeros.length - 1];
+  const candidatos: { a: number; b: number; c: number; puntaje: number }[] = [];
+
+  numeros.forEach((a) => {
+    const cantidad = aNumero(tokens[a]);
+    if (!Number.isInteger(cantidad) || cantidad < 1) return;
+    numeros.forEach((b) => {
+      if (b === a) return;
+      const precio = aNumero(tokens[b]);
+      if (!(precio > 0)) return;
+      numeros.forEach((c) => {
+        if (c === a || c === b) return;
+        if (Math.abs(cantidad * precio - aNumero(tokens[c])) > 0.02) return;
+        let puntaje = 0;
+        if (c === ultimo) puntaje += 4;
+        const despues = tokens[a + 1];
+        if (despues && esTokenUnidad(despues)) puntaje += 3;
+        if (a < b && b < c) puntaje += 1;
+        if (/[.,]\d/.test(tokens[b])) puntaje += 1;
+        candidatos.push({ a, b, c, puntaje });
+      });
+    });
+  });
+
+  if (!candidatos.length) return null;
+  candidatos.sort((x, y) => y.puntaje - x.puntaje);
+  return candidatos[0];
+}
+
+/**
+ * Plan B: hay facturas que ponen la referencia en una línea y los números
+ * (bultos, precio, total) en otra. Aquí se empareja cada línea numérica con la
+ * referencia más cercana de la misma página.
+ */
+function filasPdfPorBloques(lineas: LineaPdf[]): FilaDocumento[] {
+  const refs = lineas
+    .map((linea, indice) => {
+      const tope = Math.min(linea.tokens.length, 6);
+      let refIndex = -1;
+      for (let i = 0; i < tope; i += 1) {
+        if (esReferenciaToken(linea.tokens[i])) {
+          refIndex = i;
+          break;
+        }
+      }
+      return { linea, indice, refIndex };
+    })
+    .filter((item) => item.refIndex > -1);
+
+  if (!refs.length) return [];
+
+  const filas: FilaDocumento[] = [];
+  const usadas = new Set<number>();
+
+  lineas.forEach((linea, indice) => {
+    const triplete = mejorTriplete(linea.tokens);
+    if (!triplete) return;
+    let indiceElegido = -1;
+    let distancia = Infinity;
+    for (const ref of refs) {
+      if (usadas.has(ref.indice)) continue;
+      if (ref.linea.pagina !== linea.pagina) continue;
+      if (ref.indice === indice) continue;
+      const delta = Math.abs(ref.indice - indice);
+      if (delta > 6 || delta >= distancia) continue;
+      distancia = delta;
+      indiceElegido = ref.indice;
+    }
+    if (indiceElegido < 0) return;
+    const ref = refs.find((item) => item.indice === indiceElegido);
+    if (!ref) return;
+    usadas.add(ref.indice);
+
+    const tokens = linea.tokens;
+    let unidad = unidadDeLinea(tokens, triplete.a);
+    if (!unidad) unidad = ref.linea.tokens.find(esTokenUnidad) || '';
+    const descripcion = ref.linea.tokens
+      .filter((_, ix) => ix !== ref.refIndex)
+      .join(' ')
+      .trim();
+
+    filas.push({
+      celdas: [
+        aNumero(tokens[triplete.a]),
+        unidad.toUpperCase(),
+        ref.linea.tokens[ref.refIndex],
+        descripcion,
+        aNumero(tokens[triplete.b]),
+        aNumero(tokens[triplete.c]),
+      ],
+      ubicacion: `pág. ${linea.pagina}`,
+    });
+  });
+
+  return filas;
+}
+
 /** Fila automática (misma lógica del comparador original). */
 export function filasPdfAuto(lineas: LineaPdf[]): FilaDocumento[] {
-  const candidatas = lineas.map((linea) => {
-    const t = linea.tokens;
-    const numeros: number[] = [];
-    t.forEach((token, ix) => {
-      if (esNumero(token)) numeros.push(ix);
-    });
-    let triplete: { a: number; b: number; c: number } | null = null;
-    for (const a of numeros) {
-      const q = aNumero(t[a]);
-      if (!Number.isInteger(q) || q < 1) continue;
-      for (const b of numeros) {
-        if (b === a) continue;
-        const p = aNumero(t[b]);
-        for (const c of numeros) {
-          if (c === a || c === b) continue;
-          if (Math.abs(q * p - aNumero(t[c])) < 0.02) {
-            triplete = { a, b, c };
-            break;
-          }
-        }
-        if (triplete) break;
-      }
-      if (triplete) break;
-    }
-    return { linea, triplete };
-  });
+  const candidatas = lineas.map((linea) => ({ linea, triplete: mejorTriplete(linea.tokens) }));
 
   const conTriplete = candidatas.filter((c) => c.triplete);
   const filas: FilaDocumento[] = [];
+  const usadasDescripcion = new Set<number>();
+  const esTextoNoItem = (tokens: string[]) =>
+    !tokens.some((token) => esReferenciaToken(token))
+    && !/^(total|subtotal|invoice|item|descrip|cantidad|precio|sku|messer|date|from|to|vessel)/i.test(tokens.join(' '));
 
   if (conTriplete.length >= 3) {
     candidatas.forEach((c, i) => {
       if (!c.triplete) return;
       const t = c.linea.tokens;
       const { a, b, c: cc } = c.triplete;
-      const refIndex = t.findIndex((token, ix) => ix !== a && ix !== b && ix !== cc && !esNumero(token) && REF_GENERICA.test(token));
+      const refIndex = t.findIndex((token, ix) => ix !== a && ix !== b && ix !== cc && esReferenciaToken(token));
       if (refIndex < 0) return;
-      let unidad = t.find(esTokenUnidad) || '';
+      let unidad = unidadDeLinea(t, a);
       if (!unidad) {
         for (const j of [i - 1, i + 1]) {
           const vecina = candidatas[j];
@@ -349,16 +489,35 @@ export function filasPdfAuto(lineas: LineaPdf[]): FilaDocumento[] {
       }
       const descripcion = t
         .filter((token, ix) => ![a, b, cc, refIndex].includes(ix) && token !== unidad && token !== 'CHI' && !/^([A-Z]{1,3}\.)+$/.test(token))
-        .join(' ');
+        .join(' ')
+        .trim();
+
+      // Si la descripción viene en otra línea del PDF, se toma de las líneas vecinas.
+      let descripcionFinal = descripcion;
+      if (!/[A-Za-z]{3}/.test(descripcionFinal)) {
+        for (const j of [i - 1, i + 1]) {
+          const vecina = candidatas[j];
+          if (!vecina || vecina.triplete || usadasDescripcion.has(j)) continue;
+          if (vecina.linea.pagina !== c.linea.pagina) continue;
+          if (!esTextoNoItem(vecina.linea.tokens)) continue;
+          const texto = vecina.linea.tokens
+            .filter((token) => !esTokenUnidad(token) && !esNumero(token))
+            .join(' ')
+            .trim();
+          if (!/[A-Za-z]{3}/.test(texto)) continue;
+          usadasDescripcion.add(j);
+          descripcionFinal = `${descripcionFinal} ${texto}`.trim();
+        }
+      }
       filas.push({
-        celdas: [aNumero(t[a]), unidad.toUpperCase(), t[refIndex], descripcion, aNumero(t[b]), aNumero(t[cc])],
+        celdas: [aNumero(t[a]), unidad.toUpperCase(), t[refIndex], descripcionFinal, aNumero(t[b]), aNumero(t[cc])],
         ubicacion: `pág. ${c.linea.pagina}`,
       });
     });
   } else {
     candidatas.forEach((c) => {
       const t = c.linea.tokens;
-      const refIndex = t.findIndex((token) => !esNumero(token) && REF_GENERICA.test(token));
+      const refIndex = t.findIndex((token) => esReferenciaToken(token));
       if (refIndex < 0) return;
       const decimales = t
         .map((token, ix) => ({ token, ix }))
@@ -377,6 +536,11 @@ export function filasPdfAuto(lineas: LineaPdf[]): FilaDocumento[] {
         ubicacion: `pág. ${c.linea.pagina}`,
       });
     });
+  }
+
+  if (!filas.length) {
+    const porBloques = filasPdfPorBloques(lineas);
+    if (porBloques.length) return porBloques;
   }
   return filas;
 }

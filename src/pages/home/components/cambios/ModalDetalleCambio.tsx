@@ -1,19 +1,21 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  aprobarSolicitudEtd,
-  rechazarSolicitudEtd,
-  listarEventosEtd,
-  diferenciaDias,
-  type SolicitudEtd,
-  type EventoEtd,
-} from '@/lib/etdCambios';
+  aprobarCambio,
+  rechazarCambio,
+  listarEventosCambio,
+  TIPOS_CAMBIO,
+  type SolicitudCambio,
+  type EventoCambio,
+} from '@/lib/cambiosOrden';
+import { diferenciaDias } from '@/lib/etdCambios';
+import { esClaveCargaListaValidada } from '@/lib/ragaApi';
 import { formatearFechaHora } from '@/lib/etdMotivos';
-import { formatearFechaCorta } from '@/lib/fechas';
-import EstadoEtdBadge, { SyncEtdBadge } from './EstadoEtdBadge';
-import AmbienteEtdBadge from './AmbienteEtdBadge';
+import { formatearFechaCorta, parseFechaSegura } from '@/lib/fechas';
+import EstadoEtdBadge, { SyncEtdBadge } from '@/pages/home/components/EstadoEtdBadge';
+import AmbienteEtdBadge from '@/pages/home/components/AmbienteEtdBadge';
 
-interface ModalDetalleSolicitudEtdProps {
-  solicitud: SolicitudEtd;
+interface ModalDetalleCambioProps {
+  solicitud: SolicitudCambio;
   puedeAprobar: boolean;
   puedeAprobarPropias?: boolean;
   usuarioId: string;
@@ -22,7 +24,30 @@ interface ModalDetalleSolicitudEtdProps {
   onResolved: () => void;
 }
 
-export default function ModalDetalleSolicitudEtd({
+const ETIQUETA_EVENTO: Record<string, string> = {
+  CREATED: 'Solicitud creada',
+  APPROVED: 'Cambio aprobado',
+  REJECTED: 'Cambio rechazado',
+  API_SYNC_ERROR: 'Error de sincronización',
+};
+
+function humanizarEvento(tipo: string): string {
+  return ETIQUETA_EVENTO[tipo] || tipo.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function esFechaValida(valor: string | null): boolean {
+  if (!valor) return false;
+  return !Number.isNaN(parseFechaSegura(valor).getTime()) && /^\d{4}-\d{2}-\d{2}/.test(valor);
+}
+
+function mostrarValor(valor: string | null): string {
+  if (!valor) return '—';
+  const texto = valor.trim();
+  if (/^(true|false)$/i.test(texto)) return /^true$/i.test(texto) ? 'Sí (true)' : 'No (false)';
+  return esFechaValida(valor) ? formatearFechaCorta(valor) : valor;
+}
+
+export default function ModalDetalleCambio({
   solicitud,
   puedeAprobar,
   puedeAprobarPropias = false,
@@ -30,8 +55,8 @@ export default function ModalDetalleSolicitudEtd({
   usuarioNombre,
   onClose,
   onResolved,
-}: ModalDetalleSolicitudEtdProps) {
-  const [eventos, setEventos] = useState<EventoEtd[]>([]);
+}: ModalDetalleCambioProps) {
+  const [eventos, setEventos] = useState<EventoCambio[]>([]);
   const [modo, setModo] = useState<'detalle' | 'confirmar-aprobar' | 'rechazar'>('detalle');
   const [comentario, setComentario] = useState('');
   const [procesando, setProcesando] = useState(false);
@@ -39,27 +64,30 @@ export default function ModalDetalleSolicitudEtd({
   const [exito, setExito] = useState('');
 
   useEffect(() => {
-    listarEventosEtd(solicitud.id)
+    listarEventosCambio(solicitud)
       .then(setEventos)
       .catch(() => setEventos([]));
-  }, [solicitud.id]);
+  }, [solicitud]);
 
-  const esPropia = solicitud.requested_by && solicitud.requested_by === usuarioId;
-  const bloqueadaPorSerPropia = Boolean(esPropia) && !puedeAprobarPropias;
+  const config = TIPOS_CAMBIO[solicitud.tipo];
+  const esPropia = Boolean(solicitud.requested_by && solicitud.requested_by === usuarioId);
+  const bloqueadaPorSerPropia = esPropia && !puedeAprobarPropias;
   const puedeResolver = puedeAprobar && solicitud.status === 'PENDING' && !bloqueadaPorSerPropia;
   const diferencia = diferenciaDias(solicitud.previous_etd_initial, solicitud.proposed_etd_initial);
+  const campo = solicitud.campos[0] || null;
+  const tieneCampoOmitido = solicitud.campos.some((c) => esClaveCargaListaValidada(c.campo));
 
   const confirmarAprobacion = async () => {
     setProcesando(true);
     setError('');
-    const res = await aprobarSolicitudEtd({
-      solicitud,
-      aprobadorId: usuarioId,
-      aprobadorNombre: usuarioNombre,
-    });
+    const res = await aprobarCambio({ solicitud, aprobadorId: usuarioId, aprobadorNombre: usuarioNombre });
     setProcesando(false);
     if (res.ok) {
-      setExito('Cambio aprobado y sincronizado correctamente con Raga.');
+      setExito(
+        res.advertencia
+          ? `Cambio aprobado y sincronizado con Raga. ${res.advertencia}`
+          : 'Cambio aprobado y sincronizado correctamente con Raga.'
+      );
       setTimeout(onResolved, 900);
     } else {
       setError(res.error || 'No se pudo aprobar la solicitud.');
@@ -74,7 +102,7 @@ export default function ModalDetalleSolicitudEtd({
     }
     setProcesando(true);
     setError('');
-    const res = await rechazarSolicitudEtd({
+    const res = await rechazarCambio({
       solicitud,
       revisorId: usuarioId,
       revisorNombre: usuarioNombre,
@@ -93,7 +121,7 @@ export default function ModalDetalleSolicitudEtd({
   const Campo = ({ etiqueta, valor, resaltar = false }: { etiqueta: string; valor: ReactNode; resaltar?: boolean }) => (
     <div className={`rounded-lg border px-4 py-3 ${resaltar ? 'border-teal-200 bg-teal-50' : 'border-gray-200 bg-white'}`}>
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{etiqueta}</p>
-      <div className="mt-1 text-sm font-semibold text-gray-900">{valor}</div>
+      <div className="mt-1 text-sm font-semibold text-gray-900 break-words">{valor}</div>
     </div>
   );
 
@@ -102,8 +130,12 @@ export default function ModalDetalleSolicitudEtd({
       <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2 flex-wrap">
               Detalle de solicitud
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${config.clase}`}>
+                <i className={config.icono}></i>
+                {config.labelCorto}
+              </span>
               <AmbienteEtdBadge env={solicitud.api_env} />
             </h2>
             <p className="text-sm text-gray-500 mt-0.5">ID: {solicitud.id.slice(0, 8).toUpperCase()}</p>
@@ -129,43 +161,74 @@ export default function ModalDetalleSolicitudEtd({
               <p className="text-sm text-emerald-700">{exito}</p>
             </div>
           )}
-
-          {/* Comparación visual de fechas */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Cambio de ETD Inicial</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
-              <Campo etiqueta="ETD Inicial vigente" valor={formatearFechaCorta(solicitud.previous_etd_initial || '') || '—'} />
-              <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col items-center justify-center">
-                <i className="ri-arrow-right-line text-2xl text-teal-600"></i>
-                <span className="text-xs text-gray-500 mt-1">
-                  {diferencia === null
-                    ? 'Diferencia no calculable'
-                    : diferencia === 0
-                    ? 'Sin diferencia'
-                    : `${diferencia > 0 ? '+' : ''}${diferencia} día(s)`}
-                </span>
-              </div>
-              <Campo etiqueta="ETD Inicial solicitado" valor={formatearFechaCorta(solicitud.proposed_etd_initial)} resaltar />
+          {tieneCampoOmitido && solicitud.status === 'PENDING' && !exito && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+              <i className="ri-information-line text-amber-600 mt-0.5"></i>
+              <p className="text-sm text-amber-800">
+                Esta solicitud incluye <strong>Carga Lista Validada</strong>, un dato que no se puede enviar a Raga
+                todavía. Al aprobar se actualizarán solo los demás datos y ese quedará fuera de la sincronización.
+              </p>
             </div>
+          )}
+
+          {/* Comparación del cambio */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">
+              {solicitud.tipo === 'etd_inicial'
+                ? 'Cambio de ETD Inicial'
+                : solicitud.campos.length > 1
+                ? `Cambio de ${config.labelCorto} (${solicitud.campos.length} datos)`
+                : `Cambio de ${campo?.etiqueta || config.labelCorto}`}
+            </h3>
+
+            {solicitud.tipo === 'etd_inicial' ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
+                <Campo etiqueta="ETD Inicial vigente" valor={mostrarValor(solicitud.previous_etd_initial)} />
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col items-center justify-center">
+                  <i className="ri-arrow-right-line text-2xl text-teal-600"></i>
+                  <span className="text-xs text-gray-500 mt-1">
+                    {diferencia === null
+                      ? 'Diferencia no calculable'
+                      : diferencia === 0
+                      ? 'Sin diferencia'
+                      : `${diferencia > 0 ? '+' : ''}${diferencia} día(s)`}
+                  </span>
+                </div>
+                <Campo etiqueta="ETD Inicial solicitado" valor={mostrarValor(solicitud.proposed_etd_initial)} resaltar />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {solicitud.campos.map((c) => (
+                  <div key={c.campo} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
+                    <Campo etiqueta="Valor actual en la orden" valor={mostrarValor(c.valorAnterior)} />
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col items-center justify-center">
+                      <i className="ri-arrow-right-line text-2xl text-teal-600"></i>
+                      <span className="text-xs text-gray-500 mt-1 text-center">{c.etiqueta}</span>
+                    </div>
+                    <Campo etiqueta="Valor solicitado" valor={mostrarValor(c.valorNuevo)} resaltar />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Datos de la PO y la solicitud */}
+          {/* Datos de la orden y la solicitud */}
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Datos de la orden</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <Campo etiqueta="Número de PO" valor={solicitud.order_number} />
               <Campo etiqueta="Compañía" valor={solicitud.trading_company} />
               <Campo etiqueta="Estado" valor={<EstadoEtdBadge estado={solicitud.status} />} />
-              <Campo
-                etiqueta="Entorno Raga"
-                valor={<AmbienteEtdBadge env={solicitud.api_env} />}
-              />
+              <Campo etiqueta="Entorno Raga" valor={<AmbienteEtdBadge env={solicitud.api_env} />} />
+              {solicitud.campo_clave && solicitud.campos.length === 1 && (
+                <Campo etiqueta="Datos modificados" valor={solicitud.campos[0]?.etiqueta || '—'} />
+              )}
               <Campo etiqueta="Motivo del cambio" valor={solicitud.change_reason} />
+              <Campo etiqueta="Explicación adicional" valor={solicitud.other_reason_detail || '—'} />
               <Campo
-                etiqueta="Explicación adicional"
-                valor={solicitud.other_reason_detail || '—'}
+                etiqueta="Sincronización Raga"
+                valor={<SyncEtdBadge status={solicitud.api_sync_status} error={solicitud.api_sync_error} /> || '—'}
               />
-              <Campo etiqueta="Sincronización Raga" valor={<SyncEtdBadge status={solicitud.api_sync_status} error={solicitud.api_sync_error} /> || '—'} />
               <Campo etiqueta="Solicitante" valor={solicitud.requested_by_name || '—'} />
               <Campo etiqueta="Fecha de solicitud" valor={formatearFechaHora(solicitud.requested_at)} />
               <Campo etiqueta="Revisado por" valor={solicitud.reviewed_by_name || '—'} />
@@ -190,8 +253,8 @@ export default function ModalDetalleSolicitudEtd({
                 {eventos.map((ev) => (
                   <li key={ev.id} className="ml-4">
                     <span className="absolute -left-1.5 w-3 h-3 rounded-full bg-teal-500 border-2 border-white"></span>
-                    <p className="text-sm font-medium text-gray-900">{ev.event_type}</p>
-                    {ev.detail && <p className="text-sm text-gray-600">{ev.detail}</p>}
+                    <p className="text-sm font-medium text-gray-900">{humanizarEvento(ev.event_type)}</p>
+                    {ev.detail && <p className="text-sm text-gray-600 break-words">{ev.detail}</p>}
                     <p className="text-xs text-gray-400 mt-0.5">
                       {ev.actor_name ? `${ev.actor_name} · ` : ''}
                       {formatearFechaHora(ev.created_at)}
@@ -245,9 +308,19 @@ export default function ModalDetalleSolicitudEtd({
             {modo === 'confirmar-aprobar' && (
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="text-sm text-gray-700">
-                  ¿Confirmas aprobar el cambio? Se actualizará el ETD Inicial en <strong>Raga</strong> a{' '}
-                  <strong>{formatearFechaCorta(solicitud.proposed_etd_initial)}</strong> en el entorno{' '}
-                  <strong>{solicitud.api_env === 'production' ? 'Producción' : 'QA'}</strong>. Esta acción no se puede deshacer.
+                  ¿Confirmas aprobar el cambio? Se actualizará{' '}
+                  <strong>
+                    {solicitud.tipo === 'etd_inicial'
+                      ? 'el ETD Inicial'
+                      : solicitud.campos.map((c) => c.etiqueta).join(', ')}
+                  </strong>{' '}
+                  en <strong>Raga</strong> a{' '}
+                  <strong>
+                    {solicitud.tipo === 'etd_inicial'
+                      ? mostrarValor(solicitud.proposed_etd_initial)
+                      : solicitud.campos.map((c) => mostrarValor(c.valorNuevo)).join(' / ')}
+                  </strong>{' '}
+                  en el entorno <strong>{solicitud.api_env === 'production' ? 'Producción' : 'QA'}</strong>. Esta acción no se puede deshacer.
                 </p>
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <button
