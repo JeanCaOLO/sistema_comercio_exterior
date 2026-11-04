@@ -69,7 +69,48 @@ export const ROLES: Rol[] = [
   { nombre: 'Documentos', descripcion: 'Dashboard, Lista de Expedientes, CCA, Repositorio Docs y Facturas', color: 'bg-teal-100 text-teal-800' },
   { nombre: 'Expedientes', descripcion: 'Gestión de Dropship, ZF, Lista de Expedientes y Repositorio Docs', color: 'bg-indigo-100 text-indigo-800' },
   { nombre: 'Solicitante', descripcion: 'Solicitudes y carga de documentos', color: 'bg-rose-100 text-rose-800' },
+  { nombre: 'Cliente', descripcion: 'Solo el módulo BL y Contenedor (Agentes de Carga)', color: 'bg-amber-100 text-amber-800' },
 ];
+
+// ─────────────────────────────────────────────────────────────
+// Módulo "Agentes de Carga · BL y Contenedor"
+// Decisión de negocio: solo lo pueden ver el Administrador y el rol Cliente.
+// El rol Cliente, además, no ve ningún otro módulo del sistema.
+// ─────────────────────────────────────────────────────────────
+export const MODULOS_AGENTES_CARGA: string[] = [
+  'carga-bl-dashboard',
+  'carga-bl-actualizar',
+  'carga-bl-historial',
+];
+
+const ROLES_AGENTES_CARGA = ['administrador', 'cliente'];
+
+export function esModuloAgentesCarga(moduloId: string): boolean {
+  return MODULOS_AGENTES_CARGA.includes(moduloId);
+}
+
+// El usuario tiene rol Cliente (aunque además tenga otros roles).
+export function tieneRolCliente(roles: string[]): boolean {
+  return (roles || []).some((rol) => normalizarRol(rol) === 'cliente');
+}
+
+// Cuenta como "solo Cliente": tiene el rol Cliente y no es Administrador.
+// En ese caso únicamente entra al módulo de Agentes de Carga.
+export function esSoloCliente(roles: string[]): boolean {
+  if (!tieneRolCliente(roles)) return false;
+  return !(roles || []).some((rol) => normalizarRol(rol) === 'administrador');
+}
+
+// Indica si la celda rol/módulo de la Matriz de Permisos queda bloqueada.
+// - El Administrador siempre tiene todo.
+// - Los módulos de Agentes de Carga solo se pueden asignar al rol Cliente.
+// - El rol Cliente solo puede tener los módulos de Agentes de Carga.
+export function permisoBloqueado(rol: string, moduloId: string): boolean {
+  const rolNorm = normalizarRol(rol);
+  if (rolNorm === 'administrador') return true;
+  if (esModuloAgentesCarga(moduloId)) return rolNorm !== 'cliente';
+  return rolNorm === 'cliente';
+}
 
 export const PERMISOS_DEFAULT: MatrizPermisos = {
   'Administrador': [
@@ -78,6 +119,7 @@ export const PERMISOS_DEFAULT: MatrizPermisos = {
     'etd-solicitar', 'etd-aprobaciones', 'etd-historial', 'etd-dashboard',
     'carga-lista-solicitar', 'incoterm-solicitar',
     'po-sin-tracking-dashboard', 'po-sin-tracking-solicitar', 'po-sin-tracking-aprobaciones', 'po-sin-tracking-historial',
+    'carga-bl-dashboard', 'carga-bl-actualizar', 'carga-bl-historial',
     'agente-carga', 'control-fechas',
     'comparador-documentos'
   ],
@@ -87,6 +129,7 @@ export const PERMISOS_DEFAULT: MatrizPermisos = {
   'Documentos': ['dashboard', 'lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial', 'carga-lista-solicitar', 'incoterm-solicitar', 'po-sin-tracking-dashboard', 'po-sin-tracking-solicitar', 'po-sin-tracking-historial', 'agente-carga', 'control-fechas', 'comparador-documentos'],
   'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas', 'comparador-documentos'],
   'Solicitante': ['carga-caa', 'documentacion', 'repositorio', 'facturas'],
+  'Cliente': ['carga-bl-dashboard', 'carga-bl-actualizar', 'carga-bl-historial'],
 };
 
 const CLAVE_PERMISOS = 'matriz_permisos';
@@ -176,7 +219,21 @@ export function obtenerModulosPermitidos(roles: string[], matriz: MatrizPermisos
   rolesNorm.forEach((rol) => {
     (mapa[rol] || []).forEach((id) => permitidos.add(id));
   });
-  return Array.from(permitidos);
+
+  // Restricción del módulo de Agentes de Carga (BL y Contenedor):
+  // solo Administrador y Cliente, sin importar lo que diga la matriz guardada.
+  const puedeAgentesCarga = rolesNorm.some((rol) => ROLES_AGENTES_CARGA.includes(rol));
+  let resultado = Array.from(permitidos);
+  if (!puedeAgentesCarga) {
+    resultado = resultado.filter((id) => !esModuloAgentesCarga(id));
+  }
+
+  // El rol Cliente solo ve el módulo de Agentes de Carga y nada más.
+  if (esSoloCliente(roles)) {
+    resultado = [...MODULOS_AGENTES_CARGA];
+  }
+
+  return resultado;
 }
 
 // Carga la matriz de permisos desde la base de datos, con valores por defecto como respaldo
@@ -202,7 +259,12 @@ export async function cargarMatrizPermisos(): Promise<MatrizPermisos> {
     // Fusionar con los defaults para no perder roles/módulos que se agreguen después
     const fusionado: MatrizPermisos = {};
     ROLES.forEach((rol) => {
-      fusionado[rol.nombre] = mapaGuardado[normalizarRol(rol.nombre)] || PERMISOS_DEFAULT[rol.nombre] || [];
+      const lista = mapaGuardado[normalizarRol(rol.nombre)] || PERMISOS_DEFAULT[rol.nombre] || [];
+      // Limpiar combinaciones que ya no están permitidas (por ejemplo, módulos de
+      // Agentes de Carga asignados a roles distintos del Cliente).
+      fusionado[rol.nombre] = normalizarRol(rol.nombre) === 'administrador'
+        ? [...lista]
+        : lista.filter((id) => !permisoBloqueado(rol.nombre, id));
     });
     return fusionado;
   } catch (error) {

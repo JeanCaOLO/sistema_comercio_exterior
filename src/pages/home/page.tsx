@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { PERMISOS_DEFAULT, cargarMatrizPermisos, obtenerModulosPermitidos } from '@/lib/permisos';
+import { PERMISOS_DEFAULT, cargarMatrizPermisos, obtenerModulosPermitidos, esModuloAgentesCarga } from '@/lib/permisos';
 import { ITEM_CONFIGURACION, ITEMS_NAVEGACION, grupoDeVista } from '@/lib/navegacion';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -22,6 +22,8 @@ import type { VistaPoTracking } from './components/po-sin-tracking/types';
 import AnalisisAgenteCarga from './components/agente-carga/AnalisisAgenteCarga';
 import AnalisisControlFechas from './components/control-fechas/AnalisisControlFechas';
 import ComparadorDocumentos from './components/herramientas/ComparadorDocumentos';
+import GestionBlContenedor from './components/bl-contenedor/GestionBlContenedor';
+import type { VistaBlContenedor } from './components/bl-contenedor/types';
 import { verificarSolicitudesEtdAtrasadas, verificarCambiosCampoAtrasados, verificarFechasAtrasadas } from '@/lib/notificaciones';
 import { useSincronizacionRaga } from '@/hooks/useSincronizacionRaga';
 
@@ -60,6 +62,19 @@ const VISTA_PO_TRACKING_A_MODULO: Record<VistaPoTracking, string> = {
   historial: 'po-sin-tracking-historial',
 };
 
+// Vistas del módulo "Agentes de Carga · BL y Contenedor".
+const VISTAS_BL: Record<string, VistaBlContenedor> = {
+  'carga-bl-dashboard': 'dashboard',
+  'carga-bl-actualizar': 'actualizar',
+  'carga-bl-historial': 'historial',
+};
+
+const VISTA_BL_A_MODULO: Record<VistaBlContenedor, string> = {
+  dashboard: 'carga-bl-dashboard',
+  actualizar: 'carga-bl-actualizar',
+  historial: 'carga-bl-historial',
+};
+
 export default function Home() {
   const [activeView, setActiveView] = useState('');
   const [showFormulario, setShowFormulario] = useState(false);
@@ -75,6 +90,9 @@ export default function Home() {
 
   const userRoles = perfil?.roles || [];
   const modulosPermitidos = obtenerModulosPermitidos(userRoles, matrizPermisos);
+  // Un usuario cuyo acceso se limita al módulo de Agentes de Carga (BL y
+  // Contenedor) no recibe campanita ni avisos operativos del resto del sistema.
+  const clientePuro = modulosPermitidos.length > 0 && modulosPermitidos.every((id) => esModuloAgentesCarga(id));
   const vistaPermitida = modulosPermitidos.includes(activeView);
   const userName = perfil?.nombre || user?.email || '';
 
@@ -176,7 +194,7 @@ export default function Home() {
 
   // Recordatorio automático: solicitudes de ETD Inicial con más de 2 días sin aprobar.
   useEffect(() => {
-    if (!usuarioId) return;
+    if (!usuarioId || clientePuro) return;
     verificarSolicitudesEtdAtrasadas();
     verificarCambiosCampoAtrasados();
     verificarFechasAtrasadas();
@@ -186,10 +204,10 @@ export default function Home() {
       verificarFechasAtrasadas();
     }, 15 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [usuarioId]);
+  }, [usuarioId, clientePuro]);
 
   // Sincronización automática con Raga para los expedientes de Dropship.
-  useSincronizacionRaga(Boolean(usuarioId));
+  useSincronizacionRaga(Boolean(usuarioId) && !clientePuro);
 
   const handleLogout = async () => {
     try {
@@ -225,6 +243,7 @@ export default function Home() {
   // Mapea la vista activa del menú (module id) a la sección interna del centro de cambios
   const vistaCambiosActual: VistaCambios = VISTAS_CAMBIOS[activeView] || 'dashboard';
   const vistaPoTrackingActual: VistaPoTracking = VISTAS_PO_TRACKING[activeView] || 'dashboard';
+  const vistaBlActual: VistaBlContenedor = VISTAS_BL[activeView] || 'dashboard';
 
   // Contexto de navegación para la barra superior (solo visual)
   const grupoActual = grupoDeVista(activeView);
@@ -260,7 +279,7 @@ export default function Home() {
               {itemActual?.label || 'Panel'}
             </span>
           </div>
-          {usuarioId && (
+          {usuarioId && !clientePuro && (
             <CampanitaNotificaciones usuarioId={usuarioId} usuarioNombre={userName} usuarioEmail={user.email || ''} usuarioRoles={userRoles} />
           )}
         </div>
@@ -318,6 +337,12 @@ export default function Home() {
                   onCambiarVista={(vista) => setActiveView(VISTA_PO_TRACKING_A_MODULO[vista])}
                   solicitudObjetivoId={solicitudFechasObjetivo}
                   onObjetivoConsumido={() => setSolicitudFechasObjetivo(null)}
+                />
+              )}
+              {VISTAS_BL[activeView] && (
+                <GestionBlContenedor
+                  vista={vistaBlActual}
+                  onCambiarVista={(vista) => setActiveView(VISTA_BL_A_MODULO[vista])}
                 />
               )}
             </>

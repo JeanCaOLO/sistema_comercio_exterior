@@ -41,6 +41,12 @@ const diffDias = (a: Date, b: Date): number => {
   return Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
 };
 
+// Convierte cualquier valor (incluido null/undefined) en texto seguro para comparar
+const texto = (valor: unknown): string => {
+  if (valor === null || valor === undefined) return '';
+  return String(valor);
+};
+
 const esTerminal = (exp: Expediente): boolean => {
   const modulo = (exp.tipo_modulo || '').toLowerCase();
   const estado = (exp.estado_expediente || '').trim();
@@ -169,17 +175,17 @@ export default function ReporteAtrasos() {
 
         return {
           id: exp.id,
-          po: exp.po_tiquetera,
-          ruta: exp.tipo_po,
-          expId: exp.exp_id,
-          modulo: (exp.tipo_modulo || '').toLowerCase(),
-          estado: exp.estado_expediente,
-          responsable: exp.responsable_creacion,
-          solicitante: exp.solicitante,
-          prioridad: exp.prioridad,
+          po: texto(exp.po_tiquetera),
+          ruta: texto(exp.tipo_po),
+          expId: texto(exp.exp_id),
+          modulo: texto(exp.tipo_modulo).toLowerCase(),
+          estado: texto(exp.estado_expediente),
+          responsable: texto(exp.responsable_creacion),
+          solicitante: texto(exp.solicitante),
+          prioridad: texto(exp.prioridad),
           urgente: !!exp.prioridad_urgente,
-          fechaCreacion: exp.created_at || exp.fecha_creacion_expediente,
-          fechaRequerimiento: exp.fecha_requerimiento,
+          fechaCreacion: exp.created_at || exp.fecha_creacion_expediente || '',
+          fechaRequerimiento: texto(exp.fecha_requerimiento),
           aging,
           retraso,
           nivelAging: nivelAging(aging),
@@ -205,13 +211,13 @@ export default function ReporteAtrasos() {
         }
         return {
           id: exp.id,
-          po: exp.po_tiquetera,
-          expId: exp.exp_id,
-          modulo: (exp.tipo_modulo || '').toLowerCase(),
-          responsable: exp.responsable_creacion,
-          solicitante: exp.solicitante,
-          fechaRequerimiento: exp.fecha_requerimiento,
-          fechaLiberacion: exp.fecha_liberacion,
+          po: texto(exp.po_tiquetera),
+          expId: texto(exp.exp_id),
+          modulo: texto(exp.tipo_modulo).toLowerCase(),
+          responsable: texto(exp.responsable_creacion),
+          solicitante: texto(exp.solicitante),
+          fechaRequerimiento: texto(exp.fecha_requerimiento),
+          fechaLiberacion: exp.fecha_liberacion || null,
           retraso
         };
       })
@@ -224,13 +230,13 @@ export default function ReporteAtrasos() {
     if (filtroModulo !== 'todos' && f.modulo !== filtroModulo) return false;
     if (filtroNivel !== 'todos' && f.nivelAging !== filtroNivel) return false;
     if (busqueda) {
-      const term = busqueda.toLowerCase();
+      const term = busqueda.toLowerCase().trim();
       const coincide =
-        f.po.toLowerCase().includes(term) ||
-        f.expId.toLowerCase().includes(term) ||
-        f.responsable.toLowerCase().includes(term) ||
-        f.solicitante.toLowerCase().includes(term) ||
-        f.estado.toLowerCase().includes(term);
+        texto(f.po).toLowerCase().includes(term) ||
+        texto(f.expId).toLowerCase().includes(term) ||
+        texto(f.responsable).toLowerCase().includes(term) ||
+        texto(f.solicitante).toLowerCase().includes(term) ||
+        texto(f.estado).toLowerCase().includes(term);
       if (!coincide) return false;
     }
     return true;
@@ -239,12 +245,12 @@ export default function ReporteAtrasos() {
   const entregadosFiltrados = entregadosConRetraso.filter((f) => {
     if (filtroModulo !== 'todos' && f.modulo !== filtroModulo) return false;
     if (busqueda) {
-      const term = busqueda.toLowerCase();
+      const term = busqueda.toLowerCase().trim();
       const coincide =
-        f.po.toLowerCase().includes(term) ||
-        f.expId.toLowerCase().includes(term) ||
-        f.responsable.toLowerCase().includes(term) ||
-        f.solicitante.toLowerCase().includes(term);
+        texto(f.po).toLowerCase().includes(term) ||
+        texto(f.expId).toLowerCase().includes(term) ||
+        texto(f.responsable).toLowerCase().includes(term) ||
+        texto(f.solicitante).toLowerCase().includes(term);
       if (!coincide) return false;
     }
     return true;
@@ -391,6 +397,26 @@ export default function ReporteAtrasos() {
 
       {/* Filtros */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
+        <div className="relative w-full mb-3">
+          <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
+          <input
+            type="text"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por PO, EXP ID, responsable, solicitante o estado..."
+            className="w-full box-border pl-9 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+          />
+          {busqueda && (
+            <button
+              onClick={() => setBusqueda('')}
+              title="Limpiar búsqueda"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              <i className="ri-close-line"></i>
+            </button>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             {(['todos', 'dropship', 'zf'] as const).map((mod) => (
@@ -426,18 +452,9 @@ export default function ReporteAtrasos() {
             ))}
           </div>
 
-          <div className="relative flex-1 min-w-[200px]">
-            <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-            <input
-              type="text"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar por PO, EXP, responsable..."
-              className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-            />
+          <div className="ml-auto min-w-0">
+            <FiltroFechas inicio={fechaInicio} fin={fechaFin} onChange={(i, f) => { setFechaInicio(i); setFechaFin(f); }} />
           </div>
-
-          <FiltroFechas inicio={fechaInicio} fin={fechaFin} onChange={(i, f) => { setFechaInicio(i); setFechaFin(f); }} />
         </div>
 
         {/* Leyenda semáforo */}

@@ -80,6 +80,14 @@ export const GRUPOS_NAVEGACION: GrupoNavegacion[] = [
         ],
       },
       {
+        titulo: 'Agentes de Carga',
+        items: [
+          { id: 'carga-bl-dashboard', label: 'Dashboard BL y Contenedor', icon: 'ri-dashboard-3-line' },
+          { id: 'carga-bl-actualizar', label: 'Cargar BL y Contenedor', icon: 'ri-ship-2-line' },
+          { id: 'carga-bl-historial', label: 'Historial BL y Contenedor', icon: 'ri-history-line' },
+        ],
+      },
+      {
         titulo: 'Análisis de Carga',
         items: [
           { id: 'agente-carga', label: 'Asignación Agentes de Carga', icon: 'ri-ship-2-line' },

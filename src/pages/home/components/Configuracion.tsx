@@ -100,6 +100,12 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
       nombre: 'Expedientes', 
       descripcion: 'Gestión de Dropship, ZF, Lista de Expedientes y Repositorio Docs',
       color: 'bg-indigo-100 text-indigo-800 border-indigo-300'
+    },
+    { 
+      id: 'cliente', 
+      nombre: 'Cliente', 
+      descripcion: 'Solo el módulo BL y Contenedor (Agentes de Carga)',
+      color: 'bg-amber-100 text-amber-800 border-amber-300'
     }
   ];
 
@@ -828,6 +834,7 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
                                       rol === 'Bodega' ? 'bg-orange-100 text-orange-800' :
                                       rol === 'Documentos' ? 'bg-teal-100 text-teal-800' :
                                       rol === 'Expedientes' ? 'bg-indigo-100 text-indigo-800' :
+                                      rol === 'Cliente' ? 'bg-amber-100 text-amber-800' :
                                       'bg-gray-100 text-gray-800'
                                     }`}
                                   >
@@ -1299,6 +1306,7 @@ export default function Configuracion({ onPermisosActualizados }: ConfiguracionP
                               rol.id === 'bodega' ? 'bg-orange-100 text-orange-800' :
                               rol.id === 'documentos' ? 'bg-teal-100 text-teal-800' :
                               rol.id === 'expedientes' ? 'bg-indigo-100 text-indigo-800' :
+                              rol.id === 'cliente' ? 'bg-amber-100 text-amber-800' :
                               'bg-teal-100 text-teal-800'
                             }`}>
                               {rol.id}

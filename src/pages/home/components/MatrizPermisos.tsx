@@ -10,6 +10,7 @@ import {
   cargarRolesAprobacionEtd,
   guardarRolesAprobacionEtd,
   ROLES_APROBACION_ETD_DEFAULT,
+  permisoBloqueado,
   type MatrizPermisos as MatrizPermisosType,
 } from '@/lib/permisos';
 
@@ -54,7 +55,7 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
   }, []);
 
   const togglePermiso = (rol: string, moduloId: string) => {
-    if (!esAdmin || rol === 'Administrador') return;
+    if (!esAdmin || permisoBloqueado(rol, moduloId)) return;
     setMatriz((prev) => {
       const permisos = prev[rol] || [];
       const nuevo = permisos.includes(moduloId)
@@ -172,6 +173,15 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
         </div>
       )}
 
+      <div className="mb-4 px-4 py-3 bg-teal-50 border border-teal-200 rounded-lg text-sm text-teal-800 flex items-start gap-2">
+        <i className="ri-lock-2-line mt-0.5"></i>
+        <span>
+          El módulo <strong>BL y Contenedor (Agentes de Carga)</strong> está reservado: solo el
+          <strong> Administrador</strong> y el rol <strong>Cliente</strong> pueden verlo. El rol Cliente, además,
+          no tiene acceso a ningún otro módulo.
+        </span>
+      </div>
+
       {/* Leyenda */}
       <div className="flex items-center gap-6 mb-6">
         <div className="flex items-center gap-2">
@@ -239,14 +249,17 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
                   </td>
                   {MODULOS.map((modulo) => {
                     const tienePermiso = permisos.includes(modulo.id);
+                    const bloqueado = permisoBloqueado(rol.nombre, modulo.id);
                     return (
                       <td key={modulo.id} className="py-3 px-2 text-center">
                         <button
                           onClick={() => togglePermiso(rol.nombre, modulo.id)}
-                          disabled={esAdminRol || !esAdmin}
+                          disabled={bloqueado || !esAdmin}
                           title={
                             esAdminRol
                               ? 'El Administrador tiene acceso completo'
+                              : bloqueado
+                              ? 'Este módulo está reservado al Administrador y al rol Cliente'
                               : esAdmin
                               ? 'Clic para alternar permiso'
                               : 'Solo lectura'
@@ -256,11 +269,9 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
                               ? 'bg-teal-500 border-teal-500'
                               : 'bg-gray-100 border-gray-200'
                           } ${
-                            esAdminRol
+                            bloqueado || !esAdmin
                               ? 'cursor-not-allowed'
-                              : esAdmin
-                              ? 'cursor-pointer hover:bg-teal-600 hover:border-teal-600'
-                              : 'cursor-default'
+                              : 'cursor-pointer hover:bg-teal-600 hover:border-teal-600'
                           }`}
                         >
                           {tienePermiso ? (
