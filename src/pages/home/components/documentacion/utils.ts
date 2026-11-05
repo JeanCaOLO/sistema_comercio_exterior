@@ -22,6 +22,30 @@ export const formatearFecha = (dateStr: string): string => {
   });
 };
 
+export type NivelBandeja = 'ok' | 'atencion' | 'critico';
+
+/** Días completos que un registro lleva esperando consolidarse en la bandeja */
+export const diasEnBandeja = (createdAt?: string | null): number => {
+  if (!createdAt) return 0;
+  const inicio = new Date(createdAt).getTime();
+  if (isNaN(inicio)) return 0;
+  const dif = Date.now() - inicio;
+  if (dif <= 0) return 0;
+  return Math.floor(dif / 86400000);
+};
+
+/**
+ * Semáforo de antigüedad en bandeja:
+ * - ok: hasta 3 días (al día)
+ * - atencion: 4 a 7 días (revisar)
+ * - critico: más de 7 días sin consolidar
+ */
+export const nivelBandeja = (dias: number): NivelBandeja => {
+  if (dias > 7) return 'critico';
+  if (dias >= 4) return 'atencion';
+  return 'ok';
+};
+
 export const filtrarDocumentos = (
   documentos: DocumentoCAA[],
   { searchPO, filtroRuta, filtroRapido }: FiltrosDocumentacion
@@ -40,15 +64,19 @@ export const filtrarDocumentos = (
     if (filtroRuta && doc.tipo_po !== filtroRuta) return false;
 
     if (filtroRapido !== 'todos') {
-      const req = calcularRequisitos({
-        doc: doc.doc,
-        blCargado: doc.bl_cargado,
-        packingListCargado: doc.packing_list_cargado,
-        numeroContenedor: doc.numero_contenedor,
-      });
-      if (filtroRapido === 'con-factura' && !req.factura) return false;
-      if (filtroRapido === 'con-contenedor' && !req.contenedor) return false;
-      if (filtroRapido === 'sin-packing' && req.packingList) return false;
+      if (filtroRapido === 'antiguos' && diasEnBandeja(doc.created_at) <= 7) return false;
+
+      if (filtroRapido !== 'antiguos') {
+        const req = calcularRequisitos({
+          doc: doc.doc,
+          blCargado: doc.bl_cargado,
+          packingListCargado: doc.packing_list_cargado,
+          numeroContenedor: doc.numero_contenedor,
+        });
+        if (filtroRapido === 'con-factura' && !req.factura) return false;
+        if (filtroRapido === 'con-contenedor' && !req.contenedor) return false;
+        if (filtroRapido === 'sin-packing' && req.packingList) return false;
+      }
     }
 
     return true;

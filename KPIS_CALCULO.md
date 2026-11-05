@@ -73,7 +73,7 @@ cambio% = (actual - anterior) / anterior * 100
 | **Carga de Trabajo (min)** | Suma de `tiempo_minutos` de todos los expedientes del período. |
 | **Volumen de Líneas OC** | Suma de `lineas_oc` de todos los expedientes del período. |
 | **Promedio → Notificado (DS)** | Ver A.9 (Duración Promedio Asignado → Notificado). |
-| **Pendientes en Documentación** | Cantidad de **filas** (registros) en la tabla `documentos_caa`. |
+| **Pendiente en Bandeja** | Cantidad de **filas** (registros) en la tabla `documentos_caa`, es decir lo que sigue esperando consolidarse en ticket. La tarjeta incluye un botón **Ir a la Bandeja** que abre el módulo Documentación. |
 
 Cada tarjeta (excepto las dos últimas) muestra además el comparativo **vs. mes anterior** y
 **vs. año anterior** (ver 0.3).
@@ -407,6 +407,34 @@ documentosPendientes = total * 3        // BL + packing list + contenedor de cad
   módulo (Dropship / ZF), por **sin expediente**, buscar por PO, EXP ID o solicitante, y exportar a Excel.
 - La lógica vive en `src/lib/kpisDocumentacion.ts` (`cargarKpiDocumentacionCompleta`) y la
   interfaz en `KpiDocumentacionCompleta.tsx`.
+
+### A.15.1 Indicador complementario — POs con Todos los Documentos Listos
+
+- **Universo**: el mismo de la etapa de documentación (tickets en `No Asignado` / `Documentación`
+  + filas de la bandeja `documentos_caa`).
+- **Regla de "completa"**: la PO tiene los **tres documentos obligatorios**:
+  **factura + BL + packing list**. El **número de contenedor ya NO es requisito**
+  (se muestra en el detalle solo como dato informativo, marcado "Opcional").
+- **Fecha de referencia**: la **fecha de carga de la factura** (`created_at` del registro de
+  origen; en tickets consolidados es la fecha del documento más antiguo). El listado y el Excel
+  se ordenan por esa fecha, **de la más antigua a la más nueva**.
+
+```txt
+completa           = tieneFactura AND tieneBl AND tienePackingList
+totalCompletas     = nº de POs completas
+% de la etapa      = round( totalCompletas / totalEtapa * 100 )
+documentosListos   = totalCompletas * 3
+```
+
+- El detalle muestra PO, módulo/origen, estado, expediente creado, **carga de factura**, los
+  checks de factura / BL / packing list / contenedor (opcional) y los documentos pendientes.
+- Se puede exportar a Excel (`reporte-pos-documentacion-completa-*.xlsx`).
+
+> Histórico: antes se exigían **cuatro** requisitos (incluido el número de contenedor), por lo
+> que casi ninguna PO quedaba marcada como lista aunque tuviera toda la documentación cargada.
+
+> La **Bandeja** (módulo Documentación) lista los registros **del más antiguo cargado al más
+> nuevo** (`created_at` ascendente), para que lo que lleva más tiempo esperando quede primero.
 
 > Histórico: antes el indicador evaluaba **todas** las POs de la etapa contra los 4 documentos y
 > las marcaba "completas / incompletas", lo que inflaba el conteo de incompletas (incluía POs sin

@@ -15,6 +15,12 @@ import { parseDocEntries, parsePOs, esFactura, esPackingList } from './documento
 // Además se marca aparte a las POs que tienen la factura cargada pero que
 // TODAVÍA NO generaron su expediente (siguen en la bandeja con "Por Asignar"):
 // antes quedaban mezcladas y no se veían como grupo propio.
+//
+// ── Indicador complementario: documentación completa ──
+// Una PO está "completa" cuando tiene los TRES documentos obligatorios:
+// factura, BL y packing list. El número de contenedor ya NO es requisito
+// para marcarla como lista. La fecha de referencia es la carga de la
+// factura (created_at del registro de origen).
 // ════════════════════════════════════════════════════════════
 
 export const ESTADOS_ETAPA_DOCUMENTACION = ['No Asignado', 'Documentación'];
@@ -32,16 +38,21 @@ export interface FilaDocumentacionPo {
   numeroBl: string;
   numeroContenedor: string;
   cantidadDocumentos: number;
+  /** Fecha en que se cargó la factura (created_at del registro origen). */
+  fechaCargaFactura: string;
   tieneFactura: boolean;
   tieneBl: boolean;
   tienePackingList: boolean;
   tieneContenedor: boolean;
   soloFactura: boolean;
-  /** La PO ya tiene los cuatro requisitos: factura, BL, packing list y contenedor. */
+  /** La PO ya tiene los tres documentos obligatorios: factura, BL y packing list. */
   completa: boolean;
   /** La PO tiene factura cargada pero todavía no generó expediente. */
   sinExpediente: boolean;
+  /** Pendientes considerando los cuatro documentos (incluye contenedor). */
   faltantes: string[];
+  /** Pendientes obligatorios: factura, BL y packing list. */
+  faltantesDocumentacion: string[];
 }
 
 export interface ResultadoDocumentacionCompleta {
@@ -124,6 +135,7 @@ interface DocumentoOrigen {
   numero_bl?: string | null;
   numero_contenedor?: string | null;
   packing_list_cargado?: boolean | null;
+  created_at?: string | null;
 }
 
 /**
@@ -148,14 +160,20 @@ function filasDesdeRegistro(
   const soloFactura =
     tieneFactura && !tieneBl && !tienePackingList && !tieneContenedor;
 
-  // "Completa" = ya cumplió los cuatro requisitos documentales.
-  const completa = tieneFactura && tieneBl && tienePackingList && tieneContenedor;
+  // "Completa" = ya cumplió los TRES requisitos documentales.
+  // El número de contenedor ya no es requisito para darla por lista.
+  const completa = tieneFactura && tieneBl && tienePackingList;
 
   const faltantes: string[] = [];
   if (!tieneFactura) faltantes.push('Factura');
   if (!tieneBl) faltantes.push('BL');
   if (!tienePackingList) faltantes.push('Packing List');
   if (!tieneContenedor) faltantes.push('Contenedor');
+
+  const faltantesDocumentacion: string[] = [];
+  if (!tieneFactura) faltantesDocumentacion.push('Factura');
+  if (!tieneBl) faltantesDocumentacion.push('BL');
+  if (!tienePackingList) faltantesDocumentacion.push('Packing List');
 
   const cantidadDocumentos = entradas.length;
 
@@ -178,6 +196,7 @@ function filasDesdeRegistro(
     numeroBl,
     numeroContenedor,
     cantidadDocumentos,
+    fechaCargaFactura: texto(registro.created_at),
     tieneFactura,
     tieneBl,
     tienePackingList,
@@ -185,7 +204,8 @@ function filasDesdeRegistro(
     soloFactura,
     completa,
     sinExpediente,
-    faltantes
+    faltantes,
+    faltantesDocumentacion
   }));
 }
 
@@ -223,7 +243,15 @@ export function calcularDocumentacionCompleta(
   );
 
   // ── Indicador complementario: documentación completa ──
-  const filasCompletas = todasLasFilas.filter((f) => f.completa);
+  // Se ordena por fecha de carga de factura: primero la más antigua.
+  const filasCompletas = todasLasFilas
+    .filter((f) => f.completa)
+    .sort((a, b) => {
+      if (!a.fechaCargaFactura && !b.fechaCargaFactura) return 0;
+      if (!a.fechaCargaFactura) return 1;
+      if (!b.fechaCargaFactura) return -1;
+      return a.fechaCargaFactura.localeCompare(b.fechaCargaFactura);
+    });
   const totalCompletas = filasCompletas.length;
 
   const porModuloCompletas = filasCompletas.reduce(
@@ -260,7 +288,7 @@ export function calcularDocumentacionCompleta(
     filasCompletas,
     totalCompletas,
     porcentajeCompletas: Math.round((totalCompletas / totalEtapa) * 100),
-    documentosListos: totalCompletas * 4,
+    documentosListos: totalCompletas * 3,
     completasSinExpediente: filasCompletas.filter((f) => f.sinExpediente).length,
     porModuloCompletas,
     porOrigenCompletas
@@ -268,7 +296,7 @@ export function calcularDocumentacionCompleta(
 }
 
 const COLUMNAS_DOCUMENTACION =
-  'id, po_tiquetera, exp_id, solicitante, estado_expediente, tipo_modulo, doc, bl_cargado, numero_bl, numero_contenedor, packing_list_cargado';
+  'id, po_tiquetera, exp_id, solicitante, estado_expediente, tipo_modulo, doc, bl_cargado, numero_bl, numero_contenedor, packing_list_cargado, created_at';
 
 /**
  * Trae las POs en etapa de documentación (tickets no asignados + bandeja)

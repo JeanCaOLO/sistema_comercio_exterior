@@ -27,6 +27,7 @@ const OPCIONES_RAPIDAS = [
   { key: 'con-factura', label: 'Solo con factura', icono: 'ri-bill-line' },
   { key: 'con-contenedor', label: 'Con contenedor', icono: 'ri-truck-line' },
   { key: 'sin-packing', label: 'Sin packing list', icono: 'ri-file-warning-line' },
+  { key: 'antiguos', label: 'Más de 7 días', icono: 'ri-alarm-warning-line' },
 ] as const;
 
 const BarraFiltrosDocumentacion = ({
@@ -96,7 +97,9 @@ const BarraFiltrosDocumentacion = ({
           onClick={() => onFiltroRapidoChange(opcion.key)}
           className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
             filtroRapido === opcion.key
-              ? 'bg-amber-600 border-amber-600 text-white'
+              ? opcion.key === 'antiguos'
+                ? 'bg-rose-600 border-rose-600 text-white'
+                : 'bg-amber-600 border-amber-600 text-white'
               : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
           }`}
         >

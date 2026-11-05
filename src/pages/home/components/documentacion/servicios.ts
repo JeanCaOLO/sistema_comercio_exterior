@@ -7,10 +7,12 @@ import type { DocumentoCAA, ModuloDestino } from '@/pages/home/components/docume
 const TABLA = 'documentos_caa';
 
 export const cargarDocumentosCaa = async (): Promise<DocumentoCAA[]> => {
+  // La bandeja se muestra del más antiguo cargado al más nuevo: lo que lleva
+  // más tiempo esperando queda arriba para priorizar la consolidación.
   const { data, error } = await supabase
     .from(TABLA)
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: true });
 
   if (error) throw error;
   return (data || []) as DocumentoCAA[];

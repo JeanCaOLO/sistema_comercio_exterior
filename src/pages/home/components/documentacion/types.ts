@@ -16,7 +16,7 @@ export interface DocumentoCAA {
   responsable_creacion: string;
 }
 
-export type FiltroRapido = 'todos' | 'con-factura' | 'con-contenedor' | 'sin-packing';
+export type FiltroRapido = 'todos' | 'con-factura' | 'con-contenedor' | 'sin-packing' | 'antiguos';
 
 export type ModuloDestino = 'dropship' | 'zf';
 

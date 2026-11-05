@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { descargarExcel } from '@/lib/exportar';
+import { formatearFechaCorta } from '@/lib/fechas';
 import { etiquetaModulo, type FilaDocumentacionPo } from '@/lib/kpisDocumentacion';
 
 type FiltroDetalle = 'todas' | 'dropship' | 'zf' | 'sin-expediente';
@@ -13,6 +14,8 @@ interface ModalDetalleDocumentosProps {
   resumen: ReactNode;
   nombreArchivo: string;
   tono?: 'amber' | 'teal';
+  /** false = el número de contenedor no se exige para dar la PO por completa. */
+  incluyeContenedor?: boolean;
 }
 
 const Marca = ({ activo }: { activo: boolean }) => (
@@ -48,7 +51,8 @@ export default function ModalDetalleDocumentos({
   filas,
   resumen,
   nombreArchivo,
-  tono = 'amber'
+  tono = 'amber',
+  incluyeContenedor = true
 }: ModalDetalleDocumentosProps) {
   const [filtro, setFiltro] = useState<FiltroDetalle>('todas');
   const [busqueda, setBusqueda] = useState('');
@@ -98,12 +102,15 @@ export default function ModalDetalleDocumentos({
       'Estado': f.estado,
       'Expediente creado': f.sinExpediente ? 'No' : 'Sí',
       'Solicitante': f.solicitante || '—',
+      'Carga de Factura': f.fechaCargaFactura ? formatearFechaCorta(f.fechaCargaFactura) : '—',
       'Factura': f.tieneFactura ? 'Sí' : 'No',
       'BL': f.tieneBl ? 'Sí' : 'No',
       'Packing List': f.tienePackingList ? 'Sí' : 'No',
-      'Contenedor': f.tieneContenedor ? 'Sí' : 'No',
+      'Contenedor': f.tieneContenedor ? 'Sí' : incluyeContenedor ? 'No' : 'Opcional',
       'Documentos en el registro': f.cantidadDocumentos,
-      'Documentos pendientes': f.faltantes.length > 0 ? f.faltantes.join(', ') : '-'
+      'Documentos pendientes': (incluyeContenedor ? f.faltantes : f.faltantesDocumentacion).length > 0
+        ? (incluyeContenedor ? f.faltantes : f.faltantesDocumentacion).join(', ')
+        : '-'
     }));
     descargarExcel(nombreArchivo, datos);
   };
@@ -181,6 +188,7 @@ export default function ModalDetalleDocumentos({
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Módulo / Origen</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Estado</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Expediente</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Carga de Factura</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Factura</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">BL</th>
                 <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Packing List</th>
@@ -223,18 +231,31 @@ export default function ModalDetalleDocumentos({
                       </span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                    {fila.fechaCargaFactura ? formatearFechaCorta(fila.fechaCargaFactura) : '—'}
+                  </td>
                   <td className="px-4 py-3 text-center"><Marca activo={fila.tieneFactura} /></td>
                   <td className="px-4 py-3 text-center"><Marca activo={fila.tieneBl} /></td>
                   <td className="px-4 py-3 text-center"><Marca activo={fila.tienePackingList} /></td>
-                  <td className="px-4 py-3 text-center"><Marca activo={fila.tieneContenedor} /></td>
+                  <td className="px-4 py-3 text-center">
+                    {fila.tieneContenedor ? (
+                      <Marca activo />
+                    ) : incluyeContenedor ? (
+                      <Marca activo={false} />
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[11px] font-medium whitespace-nowrap">
+                        Opcional
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1 max-w-[240px]">
-                      {fila.faltantes.length === 0 ? (
+                      {(incluyeContenedor ? fila.faltantes : fila.faltantesDocumentacion).length === 0 ? (
                         <span className="inline-block px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-full text-[11px] font-medium whitespace-nowrap">
                           Documentación completa
                         </span>
                       ) : (
-                        fila.faltantes.map((doc) => (
+                        (incluyeContenedor ? fila.faltantes : fila.faltantesDocumentacion).map((doc) => (
                           <span
                             key={doc}
                             className="inline-block px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-full text-[11px] font-medium whitespace-nowrap"
@@ -252,7 +273,7 @@ export default function ModalDetalleDocumentos({
               ))}
               {filasFiltradas.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={10} className="px-6 py-12 text-center text-gray-400">
                     <i className="ri-inbox-line text-4xl mb-2"></i>
                     <p className="text-sm">No hay POs para mostrar con este filtro</p>
                   </td>

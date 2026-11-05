@@ -218,8 +218,9 @@ export default function KpiDocumentacionCompleta() {
         meta={
           <>
             POs en etapa de documentación que ya tienen la
-            <strong> factura, el BL, el packing list y el número de contenedor cargados</strong>,
-            es decir con el juego documental completo
+            <strong> factura, el BL y el packing list cargados</strong>.
+            El número de contenedor <strong>ya no es requisito</strong> y la fecha de referencia es la
+            <strong> fecha de carga de la factura</strong>
           </>
         }
         badge={badgeCompletas}
@@ -260,8 +261,8 @@ export default function KpiDocumentacionCompleta() {
                   icono: resultado.totalCompletas > 0 ? 'ri-checkbox-circle-fill' : 'ri-error-warning-fill',
                   texto:
                     resultado.totalCompletas > 0
-                      ? 'Factura + BL + packing list + contenedor'
-                      : 'Ninguna PO completó los cuatro requisitos',
+                      ? 'Factura + BL + packing list'
+                      : 'Ninguna PO completó los tres requisitos',
                   colorClass: resultado.totalCompletas > 0 ? 'text-teal-700' : 'text-amber-700'
                 }}
                 nota={resultado.totalCompletas > 0 ? 'Haz clic para ver el detalle' : undefined}
@@ -274,8 +275,8 @@ export default function KpiDocumentacionCompleta() {
                 valor={resultado.documentosListos}
                 sufijo="docs"
                 valorClass="text-gray-800"
-                linea={{ icono: 'ri-file-check-line', texto: 'Cuatro requisitos por cada PO lista', colorClass: 'text-gray-600' }}
-                footer="Factura, BL, packing list y contenedor"
+                linea={{ icono: 'ri-file-check-line', texto: 'Tres requisitos por cada PO lista', colorClass: 'text-gray-600' }}
+                footer="Factura, BL y packing list"
               />
 
               <TarjetaDesglose
@@ -314,8 +315,8 @@ export default function KpiDocumentacionCompleta() {
               <div className="mt-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                 <i className="ri-information-line text-amber-600 text-lg flex-shrink-0"></i>
                 <p className="text-xs text-amber-800">
-                  Ninguna de las {resultado.totalEtapa} POs en etapa tiene el juego documental completo:
-                  todavía falta factura, BL, packing list o número de contenedor en todas ellas.
+                  Ninguna de las {resultado.totalEtapa} POs en etapa tiene la documentación completa:
+                  todavía falta factura, BL o packing list en todas ellas.
                 </p>
               </div>
             )}
@@ -361,10 +362,11 @@ export default function KpiDocumentacionCompleta() {
         abierto={detalle === 'completa'}
         onCerrar={() => setDetalle(null)}
         titulo="POs con Todos los Documentos Listos"
-        subtitulo="POs en etapa de documentación con factura, BL, packing list y contenedor cargados"
+        subtitulo="POs en etapa de documentación con factura, BL y packing list cargados (ordenadas por fecha de carga de factura, de la más antigua a la más nueva)"
         filas={resultado.filasCompletas}
         nombreArchivo={`reporte-pos-documentacion-completa-${new Date().toISOString().split('T')[0]}.xlsx`}
         tono="teal"
+        incluyeContenedor={false}
         resumen={
           <>
             <div className="text-center">

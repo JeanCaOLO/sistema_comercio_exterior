@@ -1,4 +1,4 @@
-// Sección 1 del Dashboard: expedientes en general + pendientes de Documentación.
+// Sección 1 del Dashboard: expedientes en general + pendientes en la bandeja.
 
 import KPICard from '@/pages/home/components/KPICard';
 import EncabezadoSeccion from './EncabezadoSeccion';
@@ -15,12 +15,17 @@ export default function SeccionExpedientesGeneral({
   comparativos,
   documentosPendientes,
 }: Props) {
+  // Lleva al módulo Bandeja (Documentación) desde el Dashboard.
+  const irABandeja = () => {
+    window.dispatchEvent(new CustomEvent('navigateTo', { detail: { view: 'documentacion' } }));
+  };
+
   return (
     <>
       <EncabezadoSeccion
         icono="ri-folder-chart-line"
         titulo="Expedientes · Visión General"
-        descripcion="Volumen del período y POs que todavía esperan documentación"
+        descripcion="Volumen del período y documentación que sigue esperando en la bandeja"
         chips={[`${kpiData.totalSolicitudes} expedientes`, 'Todos los módulos']}
       />
 
@@ -34,10 +39,13 @@ export default function SeccionExpedientesGeneral({
           subtitle={`vs año anterior: ${comparativos.totalSolicitudes.anoAnterior}`}
         />
         <KPICard
-          title="Pendientes en Documentación"
+          title="Pendiente en Bandeja"
           value={documentosPendientes}
-          icon="ri-folder-open-line"
+          icon="ri-inbox-archive-line"
           color="bg-orange-500"
+          subtitle="Registros cargados esperando consolidarse en ticket"
+          actionLabel="Ir a la Bandeja"
+          onAction={irABandeja}
         />
       </div>
     </>
