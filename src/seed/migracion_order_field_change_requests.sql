@@ -57,15 +57,75 @@ create index if not exists order_field_change_events_request_idx
 alter table public.order_field_change_requests enable row level security;
 alter table public.order_field_change_events enable row level security;
 
+-- ============================================================
+-- Permiso para SOLICITAR cambios de campos (carga lista / incoterm).
+-- Se resuelve contra la Matriz de Permisos guardada en
+-- configuracion_sistema: alcanza con que alguno de los roles del
+-- usuario tenga asignado el módulo 'carga-lista-solicitar'.
+-- De esta forma, cualquier rol al que el administrador le habilite
+-- el módulo puede crear solicitudes, no solo Documentos.
+-- ============================================================
+create or replace function public.puede_solicitar_cambio_campo()
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  with yo as (
+    select u.id, u.rol
+    from public.usuarios u
+    where u.id = auth.uid()
+       or lower(u.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    limit 1
+  ),
+  roles_usuario as (
+    select distinct lower(trim(r.nombre)) as rol
+    from yo
+    join public.usuario_roles ur on ur.usuario_id = yo.id
+    join public.roles r on r.id = ur.rol_id
+    union
+    select lower(trim(replace(x, '_', ' ')))
+    from yo, unnest(string_to_array(coalesce(yo.rol, ''), ',')) as x
+  ),
+  matriz as (
+    select valor::jsonb as m
+    from public.configuracion_sistema
+    where clave = 'matriz_permisos'
+    limit 1
+  )
+  select exists (
+    select 1
+    from roles_usuario ru
+    where ru.rol <> ''
+      and (
+        ru.rol = 'administrador'
+        or ru.rol like 'administrador%'
+        or exists (
+          select 1
+          from matriz,
+               jsonb_each(matriz.m) as e(clave, modulos)
+          where lower(trim(replace(e.clave, '_', ' '))) = ru.rol
+            and jsonb_typeof(e.modulos) = 'array'
+            and e.modulos ? 'carga-lista-solicitar'
+        )
+        or (
+          not exists (select 1 from matriz)
+          and ru.rol in ('documentos', 'expedientes')
+        )
+      )
+  );
+$function$;
+
 drop policy if exists order_field_change_requests_select on public.order_field_change_requests;
 create policy order_field_change_requests_select on public.order_field_change_requests
   for select to authenticated
-  using (public.puede_gestionar_etd());
+  using (public.puede_gestionar_etd() or public.puede_solicitar_cambio_campo());
 
 drop policy if exists order_field_change_requests_insert on public.order_field_change_requests;
 create policy order_field_change_requests_insert on public.order_field_change_requests
   for insert to authenticated
-  with check (public.puede_gestionar_etd());
+  with check (public.puede_solicitar_cambio_campo());
 
 drop policy if exists order_field_change_requests_update on public.order_field_change_requests;
 create policy order_field_change_requests_update on public.order_field_change_requests
@@ -76,9 +136,23 @@ create policy order_field_change_requests_update on public.order_field_change_re
 drop policy if exists order_field_change_events_select on public.order_field_change_events;
 create policy order_field_change_events_select on public.order_field_change_events
   for select to authenticated
-  using (public.puede_gestionar_etd());
+  using (public.puede_gestionar_etd() or public.puede_solicitar_cambio_campo());
 
 drop policy if exists order_field_change_events_insert on public.order_field_change_events;
 create policy order_field_change_events_insert on public.order_field_change_events
   for insert to authenticated
-  with check (public.puede_gestionar_etd());
+  with check (
+    public.puede_gestionar_etd()
+    or (
+      public.puede_solicitar_cambio_campo()
+      and exists (
+        select 1
+        from public.order_field_change_requests r
+        where r.id = order_field_change_events.request_id
+          and (
+            r.requested_by = auth.uid()
+            or lower(coalesce(r.requested_by_name, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
+          )
+      )
+    )
+  );
