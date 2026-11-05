@@ -1,6 +1,7 @@
 // Tarjeta de tiempos promedio entre estados, con selector de módulo.
 
 import BarChartTiempos from '@/pages/home/components/BarChartTiempos';
+import { descargarExcelHojas } from '@/lib/exportar';
 import { formatearTiempo } from './utils';
 import type { FiltroModuloTiempos, TiempoEntreEstados } from './types';
 
@@ -22,27 +23,96 @@ const colorModulo = (modulo: FiltroModuloTiempos): 'teal' | 'sky' | 'violet' => 
   return 'teal';
 };
 
+const etiquetaModulo = (modulo: FiltroModuloTiempos): string => {
+  if (modulo === 'dropship') return 'Dropship';
+  if (modulo === 'zf') return 'Zona Franca';
+  return 'Todos los módulos';
+};
+
 export default function TiemposPromedioEstados({ tiempos, filtroModulo, onFiltroModulo }: Props) {
+  // Reporte descargable: cuánto tarda en promedio un tiquete en cada estado.
+  const descargarReporte = () => {
+    const filas = tiempos.map((item) => ({
+      'Estado': item.desde,
+      'Pasa a': item.hasta,
+      'Transición': `${item.desde} → ${item.hasta}`,
+      'Tiempo promedio (min)': Math.round(item.minutosPromedio),
+      'Tiempo promedio (horas)': Number((item.minutosPromedio / 60).toFixed(2)),
+      'Tiempo promedio (días)': Number((item.minutosPromedio / 1440).toFixed(2)),
+      'Tiempo promedio (legible)': formatearTiempo(item.minutosPromedio),
+      'Tiquetes medidos': item.cantidad,
+      'Módulo': etiquetaModulo(filtroModulo),
+      'Fuente del dato': item.fuente === 'real' ? 'Datos reales' : 'Estimación',
+    }));
+
+    const totalTiquetes = tiempos.reduce((acc, item) => acc + item.cantidad, 0);
+    const promedioGeneral =
+      tiempos.length > 0
+        ? tiempos.reduce((acc, item) => acc + item.minutosPromedio, 0) / tiempos.length
+        : 0;
+
+    const resumen = [
+      {
+        'Resumen': 'Transiciones analizadas',
+        'Valor': tiempos.length,
+      },
+      {
+        'Resumen': 'Tiquetes medidos (suma de transiciones)',
+        'Valor': totalTiquetes,
+      },
+      {
+        'Resumen': 'Tiempo promedio entre estados',
+        'Valor': formatearTiempo(promedioGeneral),
+      },
+      {
+        'Resumen': 'Módulo',
+        'Valor': etiquetaModulo(filtroModulo),
+      },
+      {
+        'Resumen': 'Fecha de generación',
+        'Valor': new Date().toLocaleString('es-CO'),
+      },
+    ];
+
+    descargarExcelHojas(
+      `reporte-tiempos-promedio-estados-${filtroModulo}-${new Date().toISOString().split('T')[0]}.xlsx`,
+      [
+        { nombre: 'Detalle', filas },
+        { nombre: 'Resumen', filas: resumen },
+      ]
+    );
+  };
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6">
       <div className="flex items-start justify-between mb-4 gap-4">
         <h3 className="text-lg font-semibold text-gray-900">Tiempos Promedio Entre Estados</h3>
         <div className="flex items-center gap-2 flex-shrink-0">
           {tiempos.length > 0 && (
-            <span
-              className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                tiempos[0]?.fuente === 'real'
-                  ? 'bg-teal-100 text-teal-700'
-                  : 'bg-amber-100 text-amber-700'
-              }`}
-            >
-              <i
-                className={`mr-1 ${
-                  tiempos[0]?.fuente === 'real' ? 'ri-database-2-line' : 'ri-calculator-line'
+            <>
+              <span
+                className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                  tiempos[0]?.fuente === 'real'
+                    ? 'bg-teal-100 text-teal-700'
+                    : 'bg-amber-100 text-amber-700'
                 }`}
-              ></i>
-              {tiempos[0]?.fuente === 'real' ? 'Datos reales' : 'Estimación'}
-            </span>
+              >
+                <i
+                  className={`mr-1 ${
+                    tiempos[0]?.fuente === 'real' ? 'ri-database-2-line' : 'ri-calculator-line'
+                  }`}
+                ></i>
+                {tiempos[0]?.fuente === 'real' ? 'Datos reales' : 'Estimación'}
+              </span>
+              <button
+                onClick={descargarReporte}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors cursor-pointer whitespace-nowrap"
+                title="Descargar el reporte en Excel"
+              >
+                <i className="ri-download-2-line"></i>
+                Descargar Excel
+              </button>
+            </>
           )}
         </div>
       </div>
