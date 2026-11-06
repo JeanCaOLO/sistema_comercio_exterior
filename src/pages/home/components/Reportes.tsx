@@ -2,9 +2,10 @@ import { useState } from 'react';
 import ReporteAtrasos from './ReporteAtrasos';
 import ReporteRuta from './ReporteRuta';
 import ReporteCiclo from './ReporteCiclo';
+import ReporteHistorialTiquetes from './ReporteHistorialTiquetes';
 
 export default function Reportes() {
-  const [activeTab, setActiveTab] = useState<'atrasos' | 'ruta' | 'ciclo'>('atrasos');
+  const [activeTab, setActiveTab] = useState<'atrasos' | 'ruta' | 'ciclo' | 'historial'>('atrasos');
 
   return (
     <div className="p-8">
@@ -43,14 +44,25 @@ export default function Reportes() {
           <i className="ri-timer-line mr-1.5"></i>
           Ciclo Asig→Notif
         </button>
+        <button
+          onClick={() => setActiveTab('historial')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+            activeTab === 'historial' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <i className="ri-history-line mr-1.5"></i>
+          Historial de Tíquetes
+        </button>
       </div>
 
       {activeTab === 'atrasos' ? (
         <ReporteAtrasos />
       ) : activeTab === 'ruta' ? (
         <ReporteRuta />
-      ) : (
+      ) : activeTab === 'ciclo' ? (
         <ReporteCiclo />
+      ) : (
+        <ReporteHistorialTiquetes />
       )}
     </div>
   );
