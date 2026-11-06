@@ -1,5 +1,5 @@
 import type { MovimientoHistorial } from './types';
-import { etiquetaModulo, fechaHora, texto } from './utils';
+import { etiquetaModulo, fechaHora, formatearMinutos, texto } from './utils';
 
 interface Props {
   movimientos: MovimientoHistorial[];
@@ -17,8 +17,13 @@ export default function TablaMovimientos({ movimientos, total }: Props) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-gray-900">Todos los movimientos</h2>
-        <span className="text-sm text-gray-500">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Todos los movimientos</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Cada cambio con su tiempo transcurrido desde el movimiento anterior
+          </p>
+        </div>
+        <span className="text-sm text-gray-500 whitespace-nowrap">
           {movimientos.length} de {total} movimientos
         </span>
       </div>
@@ -28,6 +33,7 @@ export default function TablaMovimientos({ movimientos, total }: Props) {
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Fecha y hora</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Tiempo desde anterior</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">PO / EXP</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Módulo</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Estado actual</th>
@@ -39,7 +45,7 @@ export default function TablaMovimientos({ movimientos, total }: Props) {
           <tbody className="divide-y divide-gray-100">
             {movimientos.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-16 text-center text-gray-400">
+                <td colSpan={8} className="px-6 py-16 text-center text-gray-400">
                   <i className="ri-inbox-line text-4xl mb-2"></i>
                   <p className="text-sm">No hay movimientos con los filtros seleccionados</p>
                 </td>
@@ -53,6 +59,16 @@ export default function TablaMovimientos({ movimientos, total }: Props) {
                   <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
                     {fechaHora(mov.fechaCambio)}
                   </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {mov.minutosDesdeAnterior === null ? (
+                      <span className="text-[11px] text-gray-400">—</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-sky-50 text-sky-800 border border-sky-100">
+                        <i className="ri-timer-flash-line"></i>
+                        {formatearMinutos(mov.minutosDesdeAnterior)}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="text-sm font-medium text-gray-900 whitespace-nowrap">{mov.po}</div>
                     <div className="text-xs text-gray-500 whitespace-nowrap">EXP {mov.expId}</div>
@@ -64,7 +80,14 @@ export default function TablaMovimientos({ movimientos, total }: Props) {
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-700 whitespace-nowrap">{mov.estadoActual}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-100">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                        mov.esCambioEstado
+                          ? 'bg-amber-100 text-amber-900 border-amber-200'
+                          : 'bg-teal-50 text-teal-800 border-teal-100'
+                      }`}
+                    >
+                      {mov.esCambioEstado && <i className="ri-route-line mr-1"></i>}
                       {mov.campoModificado}
                     </span>
                   </td>

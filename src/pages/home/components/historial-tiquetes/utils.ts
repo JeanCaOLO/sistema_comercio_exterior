@@ -1,5 +1,19 @@
 import type { FiltrosHistorial, MovimientoHistorial, TiqueteHistorial } from './types';
 
+/** Orden natural del flujo de estados de un tíquete. */
+export const ORDEN_ESTADOS: string[] = [
+  'No Asignado',
+  'Asignado',
+  'En Proceso',
+  'Liberación',
+  'Facturación',
+  'Recepción de Carga',
+  'Notificado',
+  'Espera de Respuesta',
+  'Visto Listo',
+  'Completado',
+];
+
 export const FILTROS_INICIALES: FiltrosHistorial = {
   busqueda: '',
   modulo: 'todos',
@@ -53,6 +67,31 @@ export const diasDesde = (fecha?: string | null): number | null => {
   if (Number.isNaN(d.getTime())) return null;
   return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
 };
+
+/** Formatea una cantidad de minutos en un texto legible (días / horas / minutos). */
+export const formatearMinutos = (minutos?: number | null): string => {
+  if (minutos === null || minutos === undefined || Number.isNaN(minutos)) return '—';
+  if (minutos <= 0) return 'menos de 1 min';
+  const total = Math.round(minutos);
+  const dias = Math.floor(total / 1440);
+  const horas = Math.floor((total % 1440) / 60);
+  const mins = total % 60;
+  if (dias > 0) return `${dias} d ${horas} h`;
+  if (horas > 0) return `${horas} h ${mins} min`;
+  return `${mins} min`;
+};
+
+/** Minutos entre dos fechas (null si alguna no es válida). */
+export const minutosEntre = (desde?: string | null, hasta?: string | null): number | null => {
+  if (!desde || !hasta) return null;
+  const a = new Date(desde).getTime();
+  const b = new Date(hasta).getTime();
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.max(0, Math.round((b - a) / 60000));
+};
+
+export const esCambioDeEstado = (campo: string): boolean =>
+  campo.trim().toLowerCase() === 'estado';
 
 const coincide = (valores: unknown[], termino: string): boolean =>
   valores.some((valor) => texto(valor).toLowerCase().includes(termino));

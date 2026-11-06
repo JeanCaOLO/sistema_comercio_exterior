@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import type { TiqueteHistorial } from './types';
-import { etiquetaModulo, fechaHora, texto } from './utils';
+import { etiquetaModulo, fechaHora, formatearMinutos } from './utils';
+import LineaTiempo from './LineaTiempo';
+import RutaEstados from './RutaEstados';
 
 interface Props {
   tiquetes: TiqueteHistorial[];
 }
-
-const LIMITE_VISIBLE = 12;
 
 const chipModulo = (modulo: string): string =>
   modulo === 'dropship'
@@ -24,10 +24,8 @@ const colorAntiguedad = (dias: number | null): string => {
 
 export default function VistaPorTiquete({ tiquetes }: Props) {
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
-  const [verTodo, setVerTodo] = useState<Record<string, boolean>>({});
 
-  const alternar = (id: string) =>
-    setAbiertos((prev) => ({ ...prev, [id]: !prev[id] }));
+  const alternar = (id: string) => setAbiertos((prev) => ({ ...prev, [id]: !prev[id] }));
 
   if (tiquetes.length === 0) {
     return (
@@ -42,11 +40,6 @@ export default function VistaPorTiquete({ tiquetes }: Props) {
     <div className="space-y-3">
       {tiquetes.map((tiquete) => {
         const abierto = Boolean(abiertos[tiquete.expedienteId]);
-        const mostrarTodo = Boolean(verTodo[tiquete.expedienteId]);
-        const visibles = mostrarTodo
-          ? tiquete.movimientos
-          : tiquete.movimientos.slice(0, LIMITE_VISIBLE);
-        const ocultos = tiquete.movimientos.length - visibles.length;
 
         return (
           <div
@@ -105,6 +98,23 @@ export default function VistaPorTiquete({ tiquetes }: Props) {
                     Solicitud: {tiquete.fechaSolicitud ? fechaHora(tiquete.fechaSolicitud) : '—'}
                   </span>
                 </div>
+
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-100 whitespace-nowrap">
+                    <i className="ri-route-line"></i>
+                    {tiquete.estadosRecorridos} estados recorridos
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-800 border border-sky-100 whitespace-nowrap">
+                    <i className="ri-timer-line"></i>
+                    Ciclo: {formatearMinutos(tiquete.minutosCiclo)}
+                  </span>
+                  {tiquete.minutosEstadoActual !== null && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-100 whitespace-nowrap">
+                      <i className="ri-map-pin-2-line"></i>
+                      En {tiquete.estadoActual}: {formatearMinutos(tiquete.minutosEstadoActual)}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-col items-end gap-1 flex-shrink-0">
@@ -130,85 +140,15 @@ export default function VistaPorTiquete({ tiquetes }: Props) {
             </button>
 
             {abierto && (
-              <div className="border-t border-gray-100 px-4 py-4 bg-gray-50/60">
-                {tiquete.movimientos.length === 0 ? (
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <i className="ri-information-line text-gray-400"></i>
-                    Este tíquete no tiene movimientos registrados en el historial.
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-3">
-                      {visibles.map((mov, index) => (
-                        <div
-                          key={mov.id || `${tiquete.expedienteId}-${index}`}
-                          className="relative pl-6"
-                        >
-                          <span className="absolute left-0 top-1.5 w-2.5 h-2.5 rounded-full bg-teal-500 ring-4 ring-teal-100"></span>
-                          {index < visibles.length - 1 && (
-                            <span className="absolute left-[4px] top-5 bottom-[-14px] w-px bg-teal-200"></span>
-                          )}
-
-                          <div className="bg-white border border-gray-200 rounded-lg px-3.5 py-3">
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2 min-w-0">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-100 whitespace-nowrap">
-                                  {mov.campoModificado}
-                                </span>
-                                <span className="text-[11px] text-gray-400 whitespace-nowrap">
-                                  <i className="ri-time-line mr-1"></i>
-                                  {fechaHora(mov.fechaCambio)}
-                                </span>
-                              </div>
-                              <span className="text-[11px] text-gray-600 whitespace-nowrap">
-                                <i className="ri-user-line mr-1"></i>
-                                {mov.usuario}
-                              </span>
-                            </div>
-
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-50 text-red-700 border border-red-100 break-all">
-                                <span className="font-medium">Anterior:</span>{' '}
-                                {texto(mov.valorAnterior) || 'N/A'}
-                              </span>
-                              <i className="ri-arrow-right-line text-gray-400 flex-shrink-0"></i>
-                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 break-all">
-                                <span className="font-medium">Nuevo:</span>{' '}
-                                {texto(mov.valorNuevo) || 'N/A'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {ocultos > 0 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setVerTodo((prev) => ({ ...prev, [tiquete.expedienteId]: true }))
-                        }
-                        className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        <i className="ri-arrow-down-s-line"></i>
-                        Ver {ocultos} movimiento{ocultos === 1 ? '' : 's'} más
-                      </button>
-                    )}
-
-                    {mostrarTodo && tiquete.movimientos.length > LIMITE_VISIBLE && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setVerTodo((prev) => ({ ...prev, [tiquete.expedienteId]: false }))
-                        }
-                        className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        <i className="ri-arrow-up-s-line"></i>
-                        Ocultar movimientos
-                      </button>
-                    )}
-                  </>
-                )}
+              <div className="border-t border-gray-100 p-4 bg-gray-50/60 space-y-3">
+                <RutaEstados
+                  ruta={tiquete.ruta}
+                  estadoActual={tiquete.estadoActual}
+                  minutosCiclo={tiquete.minutosCiclo}
+                  estadosRecorridos={tiquete.estadosRecorridos}
+                  totalCambiosEstado={tiquete.totalCambiosEstado}
+                />
+                <LineaTiempo tiquete={tiquete} />
               </div>
             )}
           </div>

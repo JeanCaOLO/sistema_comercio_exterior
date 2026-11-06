@@ -28,6 +28,38 @@ export interface HistorialRaw {
   fecha_cambio: string | null;
 }
 
+export interface EstadoPeriodoRaw {
+  id: string;
+  expediente_id: string;
+  estado_anterior: string | null;
+  estado_nuevo: string | null;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+  minutos_transcurridos: number | null;
+}
+
+/** Tramo de permanencia en un estado (fuente: expedientes_tiempos_estados). */
+export interface EstadoPeriodo {
+  id: string;
+  estadoAnterior: string;
+  estadoNuevo: string;
+  fechaInicio: string | null;
+  fechaFin: string | null;
+  minutos: number | null;
+}
+
+/** Etapa de la ruta completa de un tíquete, con su tiempo de permanencia. */
+export interface EtapaRuta {
+  estado: string;
+  orden: number;
+  fechaInicio: string | null;
+  fechaFin: string | null;
+  minutos: number | null;
+  visitado: boolean;
+  esActual: boolean;
+  veces: number;
+}
+
 export interface MovimientoHistorial {
   id: string;
   expedienteId: string;
@@ -44,6 +76,10 @@ export interface MovimientoHistorial {
   usuarioEmail: string;
   fechaCambio: string;
   fechaSolicitud: string;
+  /** Minutos transcurridos desde el movimiento cronológicamente anterior. */
+  minutosDesdeAnterior: number | null;
+  /** Indica si el movimiento es un cambio de estado del tíquete. */
+  esCambioEstado: boolean;
 }
 
 export interface TiqueteHistorial {
@@ -65,6 +101,14 @@ export interface TiqueteHistorial {
   usuarios: string[];
   campos: string[];
   movimientos: MovimientoHistorial[];
+  /** Ruta completa de estados por la que pasó el tíquete. */
+  ruta: EtapaRuta[];
+  estadosRecorridos: number;
+  /** Suma de minutos en todos los estados visitados. */
+  minutosCiclo: number | null;
+  minutosEstadoActual: number | null;
+  /** Cantidad de cambios de estado registrados en el historial. */
+  totalCambiosEstado: number;
 }
 
 export interface FiltrosHistorial {

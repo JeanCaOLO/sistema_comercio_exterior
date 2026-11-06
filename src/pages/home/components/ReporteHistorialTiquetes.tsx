@@ -13,6 +13,7 @@ import {
   etiquetaModulo,
   fechaHora,
   filtrarTiquetes,
+  formatearMinutos,
   listarOpciones,
   movimientosPlanos,
   ordenarTiquetes,
@@ -51,6 +52,13 @@ export default function ReporteHistorialTiquetes() {
   const totalMovimientos = movimientos.length;
   const promedio = totalTiquetes > 0 ? (totalMovimientos / totalTiquetes).toFixed(1) : '0.0';
   const sinMovimientos = filtrados.filter((t) => t.totalMovimientosHistoricos === 0).length;
+
+  const conCiclo = filtrados.filter((t) => typeof t.minutosCiclo === 'number' && t.minutosCiclo > 0);
+  const promedioCiclo =
+    conCiclo.length > 0
+      ? Math.round(conCiclo.reduce((acc, t) => acc + (t.minutosCiclo || 0), 0) / conCiclo.length)
+      : null;
+  const totalEstadosRecorridos = filtrados.reduce((acc, t) => acc + t.estadosRecorridos, 0);
 
   const totalPaginasTiquetes = Math.max(1, Math.ceil(ordenados.length / POR_PAGINA_TIQUETES));
   const totalPaginasMovimientos = Math.max(1, Math.ceil(movimientos.length / POR_PAGINA_MOVIMIENTOS));
@@ -93,11 +101,14 @@ export default function ReporteHistorialTiquetes() {
 
     const filasMovimientos = movimientos.map((mov) => ({
       'Fecha del movimiento': fechaHora(mov.fechaCambio),
+      'Tiempo desde el movimiento anterior':
+        mov.minutosDesdeAnterior === null ? '—' : formatearMinutos(mov.minutosDesdeAnterior),
       PO: mov.po,
       'EXP ID': mov.expId,
       Módulo: etiquetaModulo(mov.modulo),
       'Estado actual': mov.estadoActual,
       'Campo modificado': mov.campoModificado,
+      '¿Cambio de estado?': mov.esCambioEstado ? 'Sí' : 'No',
       'Valor anterior': mov.valorAnterior || 'N/A',
       'Valor nuevo': mov.valorNuevo || 'N/A',
       Usuario: mov.usuario,
@@ -116,6 +127,14 @@ export default function ReporteHistorialTiquetes() {
       Solicitante: tiquete.solicitante,
       Responsable: tiquete.responsable,
       'Fecha solicitud': tiquete.fechaSolicitud ? fechaHora(tiquete.fechaSolicitud) : '',
+      'Estados recorridos': tiquete.estadosRecorridos,
+      'Ruta de estados': tiquete.ruta
+        .filter((etapa) => etapa.visitado)
+        .map((etapa) => etapa.estado)
+        .join(' → '),
+      'Tiempo total del ciclo': formatearMinutos(tiquete.minutosCiclo),
+      'Tiempo en estado actual': formatearMinutos(tiquete.minutosEstadoActual),
+      'Cambios de estado': tiquete.totalCambiosEstado,
       'Total movimientos': tiquete.totalMovimientos,
       'Primer movimiento': fechaHora(tiquete.primerCambio),
       'Último movimiento': fechaHora(tiquete.ultimoCambio),
@@ -125,6 +144,24 @@ export default function ReporteHistorialTiquetes() {
       'Campos modificados': tiquete.campos.join(', '),
     }));
 
+    const filasEstados = ordenados.flatMap((tiquete) =>
+      tiquete.ruta
+        .filter((etapa) => etapa.visitado)
+        .map((etapa) => ({
+          PO: tiquete.po,
+          'EXP ID': tiquete.expId,
+          Módulo: etiquetaModulo(tiquete.modulo),
+          'Orden en el flujo': etapa.orden + 1,
+          Estado: etapa.estado,
+          'Entró': etapa.fechaInicio ? fechaHora(etapa.fechaInicio) : '',
+          'Salió': etapa.fechaFin ? fechaHora(etapa.fechaFin) : 'Sigue aquí',
+          'Tiempo en el estado': formatearMinutos(etapa.minutos),
+          'Minutos en el estado': etapa.minutos ?? '',
+          'Es estado actual': etapa.esActual ? 'Sí' : 'No',
+          'Veces que pasó por el estado': etapa.veces,
+        }))
+    );
+
     const filasResumen = [
       { Concepto: 'Fecha de generación', Valor: fechaHora(new Date().toISOString()) },
       { Concepto: 'Filtros aplicados', Valor: descripcionFiltros },
@@ -132,6 +169,9 @@ export default function ReporteHistorialTiquetes() {
       { Concepto: 'Tíquetes sin movimientos', Valor: sinMovimientos },
       { Concepto: 'Movimientos registrados', Valor: totalMovimientos },
       { Concepto: 'Promedio de movimientos por tíquete', Valor: promedio },
+      { Concepto: 'Tiempo promedio del ciclo', Valor: formatearMinutos(promedioCiclo) },
+      { Concepto: 'Tíquetes con tiempos registrados', Valor: conCiclo.length },
+      { Concepto: 'Estados recorridos en total', Valor: totalEstadosRecorridos },
     ];
 
     const sufijoModulo = filtros.modulo === 'todos' ? 'todos' : filtros.modulo;
@@ -139,6 +179,7 @@ export default function ReporteHistorialTiquetes() {
     descargarExcelHojas(`historial-tiquetes-${sufijoModulo}-${hoyLocal()}.xlsx`, [
       { nombre: 'Resumen', filas: filasResumen },
       { nombre: 'Por Tíquete', filas: filasTiquetes },
+      { nombre: 'Ruta de Estados', filas: filasEstados },
       { nombre: 'Movimientos', filas: filasMovimientos },
     ]);
   };
@@ -165,7 +206,8 @@ export default function ReporteHistorialTiquetes() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Historial de Tíquetes</h1>
           <p className="text-gray-500 mt-1 text-sm">
-            Movimiento histórico de cada tíquete, incluidos los antiguos, con filtros y descarga a Excel
+            Todos los estados por los que pasó cada tíquete, con sus tiempos, y el historial completo
+            de movimientos. Incluye tíquetes antiguos, con filtros y descarga a Excel
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -206,7 +248,7 @@ export default function ReporteHistorialTiquetes() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-500">Tíquetes en el reporte</p>
@@ -238,6 +280,21 @@ export default function ReporteHistorialTiquetes() {
           </div>
           <p className="text-3xl font-bold text-gray-900 mt-2">{promedio}</p>
           <p className="text-xs text-gray-500 mt-1">movimientos en promedio</p>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">Tiempo promedio del ciclo</p>
+            <div className="w-10 h-10 bg-sky-50 rounded-lg flex items-center justify-center">
+              <i className="ri-timer-line text-sky-600 text-xl"></i>
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-gray-900 mt-2 whitespace-nowrap">
+            {promedioCiclo === null ? '—' : formatearMinutos(promedioCiclo)}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            {conCiclo.length} tíquete{conCiclo.length === 1 ? '' : 's'} con tiempos registrados
+          </p>
         </div>
 
         <div className={`rounded-xl border p-5 ${sinMovimientos > 0 ? 'bg-red-50/60 border-red-200' : 'bg-white border-gray-200'}`}>
