@@ -77,7 +77,8 @@ export const ESTADOS_CAMBIO_BL: Record<EstadoCambioBl, {
   },
 };
 
-// Estados del tablero Dropship que los agentes de carga completan.
+// Estados en los que los agentes de carga pueden completar el BL y el
+// contenedor. Incluye Dropship y ZF (ZF no tiene "Liberación").
 export const ESTADOS_DROPSHIP_BL = [
   'Asignado',
   'En Proceso',
@@ -86,6 +87,10 @@ export const ESTADOS_DROPSHIP_BL = [
   'Liberado',
   'LIBERADO',
 ];
+
+export const ESTADOS_ZF_BL = ['Asignado', 'En Proceso', 'Espera de Respuesta'];
+
+export const ESTADOS_EN_OPERACION_BL = [...ESTADOS_DROPSHIP_BL, ...ESTADOS_ZF_BL];
 
 export const NOMBRES_CANDIDATOS_BL = ['bill_of_lading', 'mbl_number', 'hbl_number'];
 export const NOMBRES_CANDIDATOS_CONTENEDOR = ['container_number', 'container'];
@@ -273,15 +278,16 @@ export interface TicketPendienteBl {
   numero_bl: string | null;
   numero_contenedor: string | null;
   estado_expediente: string | null;
+  tipo_modulo: string | null;
 }
 
 export async function listarTicketsPendientesBl(): Promise<TicketPendienteBl[]> {
   try {
     const { data, error } = await supabase
       .from('expedientes')
-      .select('id, exp_id, po_tiquetera, numero_bl, numero_contenedor, estado_expediente')
-      .eq('tipo_modulo', 'dropship')
-      .in('estado_expediente', ESTADOS_DROPSHIP_BL)
+      .select('id, exp_id, po_tiquetera, numero_bl, numero_contenedor, estado_expediente, tipo_modulo')
+      .in('tipo_modulo', ['dropship', 'zf'])
+      .in('estado_expediente', ESTADOS_EN_OPERACION_BL)
       .limit(600);
 
     if (error || !data) return [];

@@ -6,10 +6,25 @@ interface PendientesBlProps {
   onCargar: (po: string) => void;
 }
 
+function EtiquetaModulo({ modulo }: { modulo: string | null }) {
+  const esZf = modulo === 'zf';
+  return (
+    <span
+      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+        esZf ? 'bg-sky-50 text-sky-700' : 'bg-teal-50 text-teal-700'
+      }`}
+    >
+      {esZf ? 'ZF' : 'Dropship'}
+    </span>
+  );
+}
+
 export default function PendientesBl({ tickets, cargando, onCargar }: PendientesBlProps) {
   const sinBl = tickets.filter((t) => !t.numero_bl).length;
   const sinContenedor = tickets.filter((t) => !t.numero_contenedor).length;
   const sinAmbos = tickets.filter((t) => !t.numero_bl && !t.numero_contenedor).length;
+  const dropship = tickets.filter((t) => t.tipo_modulo !== 'zf').length;
+  const zf = tickets.filter((t) => t.tipo_modulo === 'zf').length;
   const visibles = tickets.slice(0, 7);
 
   return (
@@ -19,7 +34,7 @@ export default function PendientesBl({ tickets, cargando, onCargar }: Pendientes
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Tickets por completar</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Expedientes Dropship en operación a los que les falta BL o contenedor.
+              Expedientes Dropship y ZF en operación a los que les falta BL o contenedor.
             </p>
           </div>
           <span className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-50 text-amber-600 flex-shrink-0">
@@ -29,6 +44,12 @@ export default function PendientesBl({ tickets, cargando, onCargar }: Pendientes
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
             {tickets.length} pendientes
+          </span>
+          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">
+            {dropship} Dropship
+          </span>
+          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">
+            {zf} ZF
           </span>
           <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700">
             {sinBl} sin BL
@@ -60,6 +81,7 @@ export default function PendientesBl({ tickets, cargando, onCargar }: Pendientes
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-gray-900">{t.exp_id || 'Sin EXP'}</p>
+                    <EtiquetaModulo modulo={t.tipo_modulo} />
                     <span className="text-[10px] font-semibold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full whitespace-nowrap">
                       {t.estado_expediente || '—'}
                     </span>

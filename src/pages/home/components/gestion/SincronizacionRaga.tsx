@@ -9,12 +9,14 @@ import {
   type CoberturaEmbarque,
   type CorridaSincronizacion,
   type ProgresoBarrido,
+  type ModuloRagaSync,
   type ResumenBarrido,
 } from '@/lib/ragaSync';
 import CoberturaEmbarqueRaga from './CoberturaEmbarqueRaga';
 
 interface SincronizacionRagaProps {
   onSincronizado?: () => void;
+  tipoModulo?: ModuloRagaSync;
 }
 
 function formatearFecha(iso: string | null | undefined): string {
@@ -29,7 +31,12 @@ function formatearFecha(iso: string | null | undefined): string {
   });
 }
 
-export default function SincronizacionRaga({ onSincronizado }: SincronizacionRagaProps) {
+export default function SincronizacionRaga({ onSincronizado, tipoModulo = 'dropship' }: SincronizacionRagaProps) {
+  const esZf = tipoModulo === 'zf';
+  const nombreModulo = esZf ? 'ZF' : 'Dropship';
+  const estadosTexto = esZf
+    ? 'Asignado, En Proceso y Espera de Respuesta'
+    : 'Asignado, En Proceso y Liberación';
   const [ultima, setUltima] = useState<CorridaSincronizacion | null>(null);
   const [control, setControl] = useState({ rastreados: 0, conDatos: 0, conError: 0 });
   const [cobertura, setCobertura] = useState<CoberturaEmbarque>(crearCoberturaVacia);
@@ -45,13 +52,13 @@ export default function SincronizacionRaga({ onSincronizado }: SincronizacionRag
     const [corrida, resumen, coberturaActual] = await Promise.all([
       obtenerUltimaCorrida(),
       obtenerResumenControl(),
-      obtenerCoberturaEmbarque(),
+      obtenerCoberturaEmbarque(tipoModulo),
     ]);
     setUltima(corrida);
     setControl(resumen);
     setCobertura(coberturaActual);
     setCargandoCobertura(false);
-  }, []);
+  }, [tipoModulo]);
 
   useEffect(() => {
     cargarEstado();
@@ -118,18 +125,19 @@ export default function SincronizacionRaga({ onSincronizado }: SincronizacionRag
                 barrido cada 6 h
               </span>
               <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[11px] font-medium whitespace-nowrap">
-                Dropship
+                Dropship y ZF
               </span>
             </div>
 
             {abierto ? (
               <p className="text-xs text-gray-500 mt-1 max-w-2xl">
-                Recorre <strong className="font-semibold text-gray-700">todos</strong> los tickets en{' '}
-                <strong className="font-semibold text-gray-700">Asignado</strong>,{' '}
-                <strong className="font-semibold text-gray-700">En Proceso</strong> y{' '}
-                <strong className="font-semibold text-gray-700">Liberación</strong>, en lotes con pausa entre uno y
-                otro dentro de una ventana de 6 horas, y completa el N° de BL, el N° de Contenedor, el ETD con el
-                ATD y la ETA Real con el ATA. A las 6 horas vuelve a barrer para retomar los que aún no tenían el dato.
+                Recorre <strong className="font-semibold text-gray-700">todos</strong> los tickets {nombreModulo} en{' '}
+                <strong className="font-semibold text-gray-700">{estadosTexto}</strong>, en lotes con pausa entre uno
+                y otro dentro de una ventana de 6 horas, y completa{' '}
+                {esZf
+                  ? 'el N° de BL y el N° de Contenedor con los datos de Raga.'
+                  : 'el N° de BL, el N° de Contenedor, el ETD con el ATD y la ETA Real con el ATA.'}{' '}
+                A las 6 horas vuelve a barrer para retomar los que aún no tenían el dato.
               </p>
             ) : (
               <div className="flex items-center gap-3 mt-1 flex-wrap text-[11px] text-gray-500">
@@ -219,7 +227,11 @@ export default function SincronizacionRaga({ onSincronizado }: SincronizacionRag
             )}
           </div>
 
-          <CoberturaEmbarqueRaga cobertura={cobertura} cargando={cargandoCobertura} />
+          <CoberturaEmbarqueRaga
+            cobertura={cobertura}
+            cargando={cargandoCobertura}
+            tipoModulo={tipoModulo}
+          />
 
           {error && (
             <div className="mt-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">

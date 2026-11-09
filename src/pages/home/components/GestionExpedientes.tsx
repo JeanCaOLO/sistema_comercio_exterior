@@ -800,9 +800,7 @@ export default function GestionExpedientes({
         )}
       </div>
 
-      {tipoModulo === 'dropship' && (
-        <SincronizacionRaga onSincronizado={recargaSilenciosa} />
-      )}
+      <SincronizacionRaga onSincronizado={recargaSilenciosa} tipoModulo={tipoModulo} />
 
       {showSuccess && (
         <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">

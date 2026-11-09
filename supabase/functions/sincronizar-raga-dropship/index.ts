@@ -1,12 +1,14 @@
 // ============================================================
 // EDGE FUNCTION: sincronizar-raga-dropship
 //
-// Sincroniza los expedientes de Dropship (Asignado, En Proceso y
-// Liberación) contra la API de Raga y completa el ticket con:
+// Sincroniza los expedientes de Dropship y de Zona Franca (ZF) en sus
+// estados operativos contra la API de Raga y completa el ticket con:
 //   - N° de BL          <- bill_of_lading | mbl_number | hbl_number
 //   - N° de Contenedor  <- container_number
-//   - ETD               <- date_atd   (salida real)
-//   - ETA Real          <- date_ata   (arribo real)
+//   - ETD               <- date_atd   (salida real, solo Dropship)
+//   - ETA Real          <- date_ata   (arribo real, solo Dropship)
+// ZF no maneja ETD, así que en ese módulo solo se escriben el BL y el
+// contenedor.
 //
 // Diseñada para NO saturar la API ni la base:
 //   - Barrido por lotes: cada corrida procesa un lote acotado por tiempo y
@@ -35,7 +37,13 @@ const corsHeaders = {
 const DEFAULT_PROD_URL = 'https://next.ologistics.com';
 
 // Estados del tablero Dropship que participan de la sincronización.
-const ESTADOS_EN_ALCANCE = ['Asignado', 'En Proceso', 'Liberación', 'Liberacion', 'Liberado', 'LIBERADO'];
+const ESTADOS_DROPSHIP_EN_ALCANCE = ['Asignado', 'En Proceso', 'Liberación', 'Liberacion', 'Liberado', 'LIBERADO'];
+
+// ZF no tiene "Liberación": se sincroniza mientras el tíquete sigue abierto.
+const ESTADOS_ZF_EN_ALCANCE = ['Asignado', 'En Proceso', 'Espera de Respuesta'];
+
+const ESTADOS_EN_ALCANCE = [...ESTADOS_DROPSHIP_EN_ALCANCE, ...ESTADOS_ZF_EN_ALCANCE];
+const MODULOS_EN_ALCANCE = ['dropship', 'zf'];
 
 const INTERVALO_MINUTOS = 360;            // ventana de 6 h por ticket
 const LIMITE_DEFECTO = 20;                // tickets por lote
@@ -171,11 +179,11 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4) Traer únicamente los tickets de Dropship en los estados pedidos.
+    // 4) Traer únicamente los tickets de Dropship y ZF en los estados pedidos.
     const { data: expedientes, error: errorExp } = await db
       .from('expedientes')
       .select('id, po_tiquetera, numero_bl, numero_contenedor, etd, eta_real, estado_expediente, solicitante, responsable_creacion, tipo_modulo')
-      .eq('tipo_modulo', 'dropship')
+      .in('tipo_modulo', MODULOS_EN_ALCANCE)
       .in('estado_expediente', ESTADOS_EN_ALCANCE)
       .order('updated_at', { ascending: true })
       .limit(600);
@@ -184,9 +192,14 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: `No se pudieron leer los expedientes: ${errorExp.message}` }, 500);
     }
 
-    const lista = (expedientes || []) as unknown as ExpedienteFila[];
+    // Cada módulo conserva su propio alcance: ZF no amplía los estados de Dropship.
+    const lista = ((expedientes || []) as unknown as ExpedienteFila[]).filter((exp) => {
+      const estado = texto(exp.estado_expediente);
+      if (texto(exp.tipo_modulo) === 'zf') return ESTADOS_ZF_EN_ALCANCE.includes(estado);
+      return ESTADOS_DROPSHIP_EN_ALCANCE.includes(estado);
+    });
     if (lista.length === 0) {
-      return json({ ok: true, tickets_revisados: 0, mensaje: 'No hay tickets de Dropship en los estados configurados.' });
+      return json({ ok: true, tickets_revisados: 0, mensaje: 'No hay tickets de Dropship ni ZF en los estados configurados.' });
     }
 
     // 5) Control por ticket (para respetar el intervalo de 6 horas).
@@ -343,6 +356,8 @@ Deno.serve(async (req: Request) => {
       }
 
       // 7) Calcular únicamente lo que cambia.
+      // ZF no tiene ETD: en ese módulo solo se completa el BL y el contenedor.
+      const esZf = texto(exp.tipo_modulo) === 'zf';
       const cambios: Record<string, { antes: string; despues: string }> = {};
 
       const blActual = texto(exp.numero_bl);
@@ -353,11 +368,11 @@ Deno.serve(async (req: Request) => {
       if (datos.contenedor && datos.contenedor !== contActual) {
         cambios.numero_contenedor = { antes: contActual, despues: datos.contenedor };
       }
-      // Raga manda: si hay ATD/ATA se sobrescribe la fecha del ticket.
-      if (datos.atd && datos.atd !== soloFecha(exp.etd)) {
+      // Raga manda: si hay ATD/ATA se sobrescribe la fecha del ticket (Dropship).
+      if (!esZf && datos.atd && datos.atd !== soloFecha(exp.etd)) {
         cambios.etd = { antes: soloFecha(exp.etd), despues: datos.atd };
       }
-      if (datos.ata && datos.ata !== soloFecha(exp.eta_real)) {
+      if (!esZf && datos.ata && datos.ata !== soloFecha(exp.eta_real)) {
         cambios.eta_real = { antes: soloFecha(exp.eta_real), despues: datos.ata };
       }
 
@@ -398,7 +413,7 @@ Deno.serve(async (req: Request) => {
           pendientesAviso.push({
             expedienteId: exp.id,
             po: exp.po_tiquetera,
-            mensaje: mensajeSincronizacion(exp.po_tiquetera, cambios),
+            mensaje: mensajeSincronizacion(exp.po_tiquetera, cambios, exp.tipo_modulo),
             nombres: [exp.solicitante, exp.responsable_creacion],
           });
         }
@@ -578,18 +593,17 @@ function texto(valor: unknown): string {
 // ¿El ticket ya tiene los 4 datos que aporta Raga?
 // Los incompletos se consultan primero en cada barrido.
 function ticketCompleto(exp: ExpedienteFila): boolean {
-  return Boolean(
-    texto(exp.numero_bl) &&
-    texto(exp.numero_contenedor) &&
-    soloFecha(exp.etd) &&
-    soloFecha(exp.eta_real),
-  );
+  const tieneBlYContenedor = Boolean(texto(exp.numero_bl) && texto(exp.numero_contenedor));
+  // ZF no maneja ETD ni ETA Real desde Raga: con BL y contenedor ya está completo.
+  if (texto(exp.tipo_modulo) === 'zf') return tieneBlYContenedor;
+  return tieneBlYContenedor && Boolean(soloFecha(exp.etd) && soloFecha(exp.eta_real));
 }
 
 // Construye el texto del aviso según lo que Raga completó o corrigió.
 function mensajeSincronizacion(
   po: string | null,
   cambios: Record<string, { antes: string; despues: string }>,
+  tipoModulo: string | null,
 ): string {
   const partes: string[] = [];
   if (cambios.numero_bl) partes.push(`N° de BL ${cambios.numero_bl.despues}`);
@@ -600,7 +614,8 @@ function mensajeSincronizacion(
   const detalle = partes.length > 0 ? partes.join(' · ') : 'datos del embarque';
   const soloCompletado = Object.values(cambios).every((c) => !c.antes);
   const accion = soloCompletado ? 'completó' : 'actualizó';
-  return `Raga ${accion} datos del ticket ${po || 'sin PO'} (Dropship): ${detalle}.`;
+  const modulo = texto(tipoModulo) === 'zf' ? 'ZF' : 'Dropship';
+  return `Raga ${accion} datos del ticket ${po || 'sin PO'} (${modulo}): ${detalle}.`;
 }
 
 // Inserta los avisos de la campanita: solicitante, responsable y los correos globales.

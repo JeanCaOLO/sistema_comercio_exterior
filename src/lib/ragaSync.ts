@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
 // ============================================================
-// SINCRONIZACIÓN CON RAGA (DROPSHIP)
+// SINCRONIZACIÓN CON RAGA (DROPSHIP Y ZF)
 // El navegador nunca llama a Raga: siempre pasa por la Edge Function
 // "sincronizar-raga-dropship", que aplica los límites de frecuencia,
 // el bloqueo de corridas y el registro en el historial.
@@ -306,6 +306,17 @@ export const ESTADOS_EN_ALCANCE_DROPSHIP = [
   'LIBERADO',
 ];
 
+// ZF no tiene "Liberación": se sincroniza mientras el tíquete sigue abierto.
+export const ESTADOS_EN_ALCANCE_ZF = ['Asignado', 'En Proceso', 'Espera de Respuesta'];
+
+// Estados que barre Raga en ambos módulos.
+export const ESTADOS_EN_ALCANCE_RAGA = [
+  ...ESTADOS_EN_ALCANCE_DROPSHIP,
+  ...ESTADOS_EN_ALCANCE_ZF,
+];
+
+export type ModuloRagaSync = 'dropship' | 'zf';
+
 // Cobertura de datos de embarque de los tickets Dropship en alcance.
 export interface CoberturaEmbarque {
   total: number;
@@ -329,15 +340,18 @@ export const crearCoberturaVacia = (): CoberturaEmbarque => ({
 
 const tieneTexto = (valor: unknown): boolean => String(valor ?? '').trim().length > 0;
 
-// Cuenta, entre los tickets Dropship en los estados que barre Raga,
+// Cuenta, entre los tickets en los estados que barre Raga,
 // cuántos ya tienen todo y cuántos siguen sin BL, sin contenedor o sin fechas.
-export async function obtenerCoberturaEmbarque(): Promise<CoberturaEmbarque> {
+export async function obtenerCoberturaEmbarque(
+  tipoModulo: ModuloRagaSync = 'dropship'
+): Promise<CoberturaEmbarque> {
   try {
+    const estados = tipoModulo === 'zf' ? ESTADOS_EN_ALCANCE_ZF : ESTADOS_EN_ALCANCE_DROPSHIP;
     const { data, error } = await supabase
       .from('expedientes')
       .select('id, numero_bl, numero_contenedor, etd, eta_real')
-      .eq('tipo_modulo', 'dropship')
-      .in('estado_expediente', ESTADOS_EN_ALCANCE_DROPSHIP);
+      .eq('tipo_modulo', tipoModulo)
+      .in('estado_expediente', estados);
 
     if (error || !data) return crearCoberturaVacia();
 
@@ -353,7 +367,10 @@ export async function obtenerCoberturaEmbarque(): Promise<CoberturaEmbarque> {
 
     const sinBl = filas.filter((f) => !tieneTexto(f.numero_bl)).length;
     const sinContenedor = filas.filter((f) => !tieneTexto(f.numero_contenedor)).length;
-    const sinFechas = filas.filter((f) => !tieneTexto(f.etd) || !tieneTexto(f.eta_real)).length;
+    // ZF no maneja ETD: solo se controla la ETA Real.
+    const sinFechas = tipoModulo === 'zf'
+      ? filas.filter((f) => !tieneTexto(f.eta_real)).length
+      : filas.filter((f) => !tieneTexto(f.etd) || !tieneTexto(f.eta_real)).length;
     const pendientes = filas.filter(
       (f) => !tieneTexto(f.numero_bl) || !tieneTexto(f.numero_contenedor)
     ).length;

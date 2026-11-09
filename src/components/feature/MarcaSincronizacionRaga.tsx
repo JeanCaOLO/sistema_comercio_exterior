@@ -1,5 +1,5 @@
 // Marca visual "Actualizado por Raga" con la fecha de la última sincronización.
-// Se muestra en el detalle del ticket (Dropship) sin intervenir en la edición.
+// Se muestra en el detalle del ticket (Dropship y ZF) sin intervenir en la edición.
 
 import { useRagaSyncExpediente } from '@/hooks/useRagaSyncExpediente';
 

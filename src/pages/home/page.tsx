@@ -170,11 +170,24 @@ export default function Home() {
     };
 
     // Al hacer clic en un aviso de la sincronización con Raga se abre el ticket
-    // de Dropship que se completó con BL, contenedor o fechas reales.
-    const handleAbrirExpedienteRaga = (event: any) => {
+    // que se completó con BL, contenedor o fechas reales, en su módulo
+    // correspondiente (Dropship o ZF).
+    const handleAbrirExpedienteRaga = async (event: any) => {
       const id = event.detail?.id;
-      setActiveView('gestion-dropship');
-      setExpedienteRagaObjetivo(typeof id === 'string' && id ? id : null);
+      if (typeof id !== 'string' || !id) return;
+
+      let modulo = event.detail?.tipo_modulo;
+      if (modulo !== 'dropship' && modulo !== 'zf') {
+        const { data } = await supabase
+          .from('expedientes')
+          .select('tipo_modulo')
+          .eq('id', id)
+          .maybeSingle();
+        modulo = data?.tipo_modulo || 'dropship';
+      }
+
+      setActiveView(modulo === 'zf' ? 'gestion-zf' : 'gestion-dropship');
+      setExpedienteRagaObjetivo(id);
     };
 
     window.addEventListener('openFormularioExpediente', handleOpenFormulario);
@@ -311,6 +324,8 @@ export default function Home() {
                   onNuevoExpediente={() => setShowFormulario(true)}
                   refreshTrigger={refreshExpedientes}
                   tipoModulo="zf"
+                  expedienteObjetivoId={expedienteRagaObjetivo}
+                  onObjetivoConsumido={() => setExpedienteRagaObjetivo(null)}
                 />
               )}
               {activeView === 'lista-expedientes' && <ListaExpedientes />}

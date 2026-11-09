@@ -1,11 +1,12 @@
 // Resumen visual de la cobertura de datos de embarque en los tickets que barre Raga.
 
 import { useState } from 'react';
-import type { CoberturaEmbarque } from '@/lib/ragaSync';
+import type { CoberturaEmbarque, ModuloRagaSync } from '@/lib/ragaSync';
 
 interface Props {
   cobertura: CoberturaEmbarque;
   cargando?: boolean;
+  tipoModulo?: ModuloRagaSync;
 }
 
 interface MiniDatoProps {
@@ -39,10 +40,12 @@ function MiniDato({ icono, etiqueta, valor, tono, sufijo }: MiniDatoProps) {
   );
 }
 
-export default function CoberturaEmbarqueRaga({ cobertura, cargando }: Props) {
+export default function CoberturaEmbarqueRaga({ cobertura, cargando, tipoModulo = 'dropship' }: Props) {
   const { total, completos, sinBl, sinContenedor, sinFechas, pendientes, porcentajeCompletos } =
     cobertura;
   const [abierto, setAbierto] = useState(true);
+  const esZf = tipoModulo === 'zf';
+  const nombreModulo = esZf ? 'ZF' : 'Dropship';
 
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/70">
@@ -60,7 +63,7 @@ export default function CoberturaEmbarqueRaga({ cobertura, cargando }: Props) {
             Cobertura de datos de embarque
           </p>
           <span className="text-[11px] text-gray-500 hidden sm:inline">
-            · tickets Dropship en los estados que barre Raga
+            · tickets {nombreModulo} en los estados que barre Raga
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -90,7 +93,7 @@ export default function CoberturaEmbarqueRaga({ cobertura, cargando }: Props) {
             </div>
             <p className="mt-1 text-[11px] text-gray-500">
               {total === 0
-                ? 'No hay tickets Dropship en los estados que barre la sincronización.'
+                ? `No hay tickets ${nombreModulo} en los estados que barre la sincronización.`
                 : pendientes === 0
                   ? 'Todos los tickets ya tienen N° de BL y N° de Contenedor.'
                   : `Quedan ${pendientes} ticket(s) sin N° de BL o sin N° de Contenedor para que Raga intente completar.`}
@@ -101,7 +104,12 @@ export default function CoberturaEmbarqueRaga({ cobertura, cargando }: Props) {
             <MiniDato icono="ri-checkbox-circle-line" etiqueta="Completos (BL + contenedor)" valor={completos} tono="ok" />
             <MiniDato icono="ri-file-text-line" etiqueta="Sin N° de BL" valor={sinBl} tono="alerta" />
             <MiniDato icono="ri-box-3-line" etiqueta="Sin N° de Contenedor" valor={sinContenedor} tono="alerta" />
-            <MiniDato icono="ri-calendar-line" etiqueta="Sin ETD o ETA Real" valor={sinFechas} tono="neutro" />
+            <MiniDato
+              icono="ri-calendar-line"
+              etiqueta={esZf ? 'Sin ETA Real' : 'Sin ETD o ETA Real'}
+              valor={sinFechas}
+              tono="neutro"
+            />
           </div>
         </div>
       )}

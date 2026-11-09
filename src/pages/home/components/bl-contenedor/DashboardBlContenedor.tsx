@@ -209,7 +209,7 @@ export default function DashboardBlContenedor({ onIrA, onCargar }: DashboardBlCo
             <Kpi
               titulo="Tickets por completar"
               valor={pendientes.length}
-              detalle="Dropship en operación sin BL o contenedor"
+              detalle="Dropship y ZF en operación sin BL o contenedor"
               icono="ri-error-warning-line"
               claseIcono={pendientes.length > 0 ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-500'}
               claseValor={pendientes.length > 0 ? 'text-amber-700' : 'text-gray-900'}

@@ -110,8 +110,8 @@ export default function ModalDetalleExpediente({
           </div>
         )}
 
-        {/* Marca de la última sincronización con Raga (solo Dropship) */}
-        {esDropship && (
+        {/* Marca de la última sincronización con Raga (Dropship y ZF) */}
+        {(esDropship || esZf) && (
           <div className="px-6 pt-4">
             <MarcaSincronizacionRaga expedienteId={expediente.id} />
           </div>

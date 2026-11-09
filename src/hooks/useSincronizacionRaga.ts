@@ -12,7 +12,7 @@ const ESPERA_INICIAL_MS = 8000;         // deja que la app termine de cargar
 const REVISION_MS = 5 * 60 * 1000;      // revisa cada 5 minutos
 const LIMITE_POR_LOTE = 20;             // tickets por lote (mismo tope del servidor)
 
-// Dispara el barrido automático con Raga para los tickets de Dropship.
+// Dispara el barrido automático con Raga para los tickets de Dropship y ZF.
 // Ventana de 6 horas: se recorren TODOS los tickets de esos estados en lotes
 // espaciados. Si el barrido queda a medias, se retoma a los pocos minutos.
 export function useSincronizacionRaga(activo: boolean): void {
