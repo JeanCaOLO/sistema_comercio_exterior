@@ -3,7 +3,6 @@ import {
   buscarPurchaseOrder,
   normalizarListaPos,
   normalizarFecha,
-  clavesDePoCompletas,
   detectarClaveCampo,
   detectarCamposCargaLista,
   RAGA_ENV_LABEL,
@@ -36,14 +35,6 @@ interface SolicitarCambioCampoProps {
 }
 
 const ETIQUETA_INCOTERM = 'Incoterm de compra';
-
-function humanizarClave(clave: string): string {
-  return clave
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^\w/, (c) => c.toUpperCase());
-}
 
 function valorTexto(valor: unknown): string {
   if (valor === null || valor === undefined) return '';
@@ -103,7 +94,6 @@ export default function SolicitarCambioCampo({
   const [indice, setIndice] = useState(0);
 
   const [propuestas, setPropuestas] = useState<PropuestasCargaLista>({});
-  const [claveManual, setClaveManual] = useState('');
   const [nuevoValor, setNuevoValor] = useState('');
   const [motivo, setMotivo] = useState('');
   const [otroDetalle, setOtroDetalle] = useState('');
@@ -138,9 +128,9 @@ export default function SolicitarCambioCampo({
     }, []);
   }, [camposCargaLista, propuestas, tipo]);
 
-  const claveIncoterm = claveManual || detectarClaveCampo(po, 'incoterm') || '';
+  // El campo del incoterm se detecta solo en la orden; el usuario no lo elige.
+  const claveIncoterm = detectarClaveCampo(po, 'incoterm') || '';
   const valorActualIncoterm = po && claveIncoterm ? valorTexto(po[claveIncoterm]) : '';
-  const clavesDisponibles = useMemo(() => clavesDePoCompletas(po), [po]);
 
   const resumen = tipo === 'carga_lista'
     ? cambiosCargaLista.map((c) => ({
@@ -158,7 +148,6 @@ export default function SolicitarCambioCampo({
     setListaPos([]);
     setIndice(0);
     setPropuestas({});
-    setClaveManual('');
     setNuevoValor('');
     setMotivo('');
     setOtroDetalle('');
@@ -230,7 +219,7 @@ export default function SolicitarCambioCampo({
         }
       }
     } else {
-      if (!claveIncoterm) return 'Indicá cuál campo de la orden corresponde al incoterm.';
+      if (!claveIncoterm) return 'No pudimos identificar el campo del incoterm en esta orden. Verificá la PO en Raga.';
       if (!nuevoValor.trim()) return 'Selecciona el nuevo incoterm.';
       if (valorActualIncoterm && iguales(nuevoValor, valorActualIncoterm, false)) {
         return 'El nuevo valor debe ser diferente al actual.';
@@ -396,7 +385,7 @@ export default function SolicitarCambioCampo({
                 {listaPos.map((p, i) => (
                   <button
                     key={i}
-                    onClick={() => { setIndice(i); setClaveManual(''); setPropuestas({}); }}
+                    onClick={() => { setIndice(i); setPropuestas({}); }}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors cursor-pointer whitespace-nowrap ${
                       i === indice
                         ? 'bg-teal-600 text-white border-teal-600'
@@ -446,21 +435,6 @@ export default function SolicitarCambioCampo({
                       <p className="mt-1 text-base font-bold text-gray-900 break-words">
                         {mostrarValor(valorActualIncoterm || null)}
                       </p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Campo de la orden que contiene este dato <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={claveIncoterm}
-                        onChange={(e) => setClaveManual(e.target.value)}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm cursor-pointer"
-                      >
-                        <option value="">Selecciona una columna...</option>
-                        {clavesDisponibles.map((k) => (
-                          <option key={k} value={k}>{humanizarClave(k)}</option>
-                        ))}
-                      </select>
                     </div>
                   </>
                 )}
