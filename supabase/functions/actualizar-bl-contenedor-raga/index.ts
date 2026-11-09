@@ -249,6 +249,16 @@ Deno.serve(async (req: Request) => {
 // Raga
 // ─────────────────────────────────────────────────────────────
 
+const FALTA_TOKEN = 'Falta configurar el token de acceso de Raga en el backend (RAGA_API_TOKEN).';
+
+// Raga exige un token de acceso (formato Sanctum: "12|xxxx"). Vive como
+// secreto del backend y nunca llega al navegador.
+function cabecerasRaga(extra: Record<string, string> = {}): Record<string, string> | null {
+  const token = (Deno.env.get('RAGA_API_TOKEN') || '').trim();
+  if (!token) return null;
+  return { ...extra, Authorization: `Bearer ${token}` };
+}
+
 async function consultarPo(
   baseUrl: string,
   orderNumber: string,
@@ -257,7 +267,9 @@ async function consultarPo(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const url = `${baseUrl}/api/purchase-orders?order_number=${encodeURIComponent(orderNumber)}`;
-    const resp = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: controller.signal });
+    const cabeceras = cabecerasRaga({ Accept: 'application/json' });
+    if (!cabeceras) return { ok: false, error: FALTA_TOKEN };
+    const resp = await fetch(url, { method: 'GET', headers: cabeceras, signal: controller.signal });
     const cuerpo = await resp.text();
     if (!resp.ok) return { ok: false, error: `Raga respondió ${resp.status}: ${detalleUpstream(cuerpo)}` };
 
@@ -295,9 +307,11 @@ async function actualizarCampo(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const url = `${baseUrl}/api/purchase-orders/${encodeURIComponent(orderNumber)}`;
+    const cabeceras = cabecerasRaga({ 'Content-Type': 'application/json', Accept: 'application/json' });
+    if (!cabeceras) return { ok: false, error: FALTA_TOKEN };
     const resp = await fetch(url, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: cabeceras,
       // Un solo dato por petición: Raga aplica Carbon::parse al valor recibido.
       body: JSON.stringify({ trading_company: tradingCompany, [clave]: valor }),
       signal: controller.signal,

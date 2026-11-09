@@ -70,7 +70,9 @@ Deno.serve(async (req: Request) => {
       if (!orderNumber) return json({ ok: false, error: 'Falta el número de orden (order_number).' }, 400);
 
       const url = `${baseUrl}/api/purchase-orders?order_number=${encodeURIComponent(orderNumber)}`;
-      const resp = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+      const cabeceras = cabecerasRaga({ Accept: 'application/json' });
+      if (!cabeceras) return json({ ok: false, error: FALTA_TOKEN }, 500);
+      const resp = await fetch(url, { method: 'GET', headers: cabeceras });
       const texto = await resp.text();
 
       if (!resp.ok) {
@@ -93,9 +95,11 @@ Deno.serve(async (req: Request) => {
       }
 
       const url = `${baseUrl}/api/purchase-orders/${encodeURIComponent(orderNumber)}`;
+      const cabeceras = cabecerasRaga({ 'Content-Type': 'application/json', Accept: 'application/json' });
+      if (!cabeceras) return json({ ok: false, error: FALTA_TOKEN }, 500);
       const resp = await fetch(url, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: cabeceras,
         // Actualización parcial: solo el ETD Inicial y la compañía identificadora.
         body: JSON.stringify({ trading_company: tradingCompany, date_etd_initial: dateEtdInitial }),
       });
@@ -153,9 +157,11 @@ Deno.serve(async (req: Request) => {
       }
 
       const url = `${baseUrl}/api/purchase-orders/${encodeURIComponent(orderNumber)}`;
+      const cabeceras = cabecerasRaga({ 'Content-Type': 'application/json', Accept: 'application/json' });
+      if (!cabeceras) return json({ ok: false, error: FALTA_TOKEN }, 500);
       const resp = await fetch(url, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: cabeceras,
         body: JSON.stringify({ trading_company: tradingCompany, ...fields }),
       });
       const texto = await resp.text();
@@ -178,6 +184,20 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: mensaje }, 500);
   }
 });
+
+// ─────────────────────────────────────────────────────────────
+// Autenticación con Raga
+// Raga exige un token de acceso (formato Sanctum: "12|xxxx"). Vive como
+// secreto del backend (RAGA_API_TOKEN) y nunca llega al navegador.
+// ─────────────────────────────────────────────────────────────
+
+const FALTA_TOKEN = 'Falta configurar el token de acceso de Raga en el backend (RAGA_API_TOKEN).';
+
+function cabecerasRaga(extra: Record<string, string> = {}): Record<string, string> | null {
+  const token = (Deno.env.get('RAGA_API_TOKEN') || '').trim();
+  if (!token) return null;
+  return { ...extra, Authorization: `Bearer ${token}` };
+}
 
 // Normaliza el entorno recibido desde el cliente. Producción es el valor por defecto.
 function resolverEntorno(valor: unknown, porDefecto: string | undefined): 'qa' | 'production' {
