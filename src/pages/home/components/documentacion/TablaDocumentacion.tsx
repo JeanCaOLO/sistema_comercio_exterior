@@ -3,8 +3,11 @@ import { EncabezadosDocumentos, CeldasDocumentos } from '@/pages/home/components
 import {
   contarDocumentos,
   formatearFecha,
+  formatearFechaCorta,
+  tiempoDesdeSincronizacion,
   diasEnBandeja,
   nivelBandeja,
+  estaListoParaConsolidar,
 } from '@/pages/home/components/documentacion/utils';
 import type { DocumentoCAA } from '@/pages/home/components/documentacion/types';
 
@@ -86,7 +89,18 @@ const FilaDocumentacion = memo(({ doc, seleccionado, onToggle, onAbrirRepositori
       />
     </td>
     <td className="px-3 py-3">
-      <div className="text-sm font-semibold text-gray-900">{doc.po_tiquetera}</div>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-gray-900">{doc.po_tiquetera}</span>
+        {estaListoParaConsolidar(doc) && (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold whitespace-nowrap"
+            title="Ya tiene factura, packing list y BL: listo para consolidar"
+          >
+            <i className="ri-checkbox-circle-fill text-[9px]"></i>
+            Listo
+          </span>
+        )}
+      </div>
       {(doc.numero_bl || doc.numero_contenedor) && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
           {doc.numero_bl && (
@@ -113,6 +127,46 @@ const FilaDocumentacion = memo(({ doc, seleccionado, onToggle, onAbrirRepositori
       >
         {doc.tipo_modulo === 'dropship' ? 'Dropship' : 'ZF'}
       </span>
+    </td>
+    <td className="px-3 py-3 whitespace-nowrap">
+      {doc.etapa ? (
+        <span
+          className="inline-flex items-center gap-1.5 max-w-[190px] px-2.5 py-0.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-800 text-xs font-medium"
+          title={`Etapa del embarque según Raga · ${tiempoDesdeSincronizacion(doc.raga_sync_at)}`}
+        >
+          <span className="w-3 h-3 flex items-center justify-center">
+            <i className="ri-route-line text-[10px]"></i>
+          </span>
+          <span className="truncate">{doc.etapa}</span>
+        </span>
+      ) : (
+        <span
+          className="text-xs text-gray-400"
+          title="La Etapa se completa automáticamente desde Raga cada 2 horas"
+        >
+          —
+        </span>
+      )}
+    </td>
+    <td className="px-3 py-3 whitespace-nowrap">
+      {doc.atd ? (
+        <div title={`ATD (zarpe real) según Raga · ${tiempoDesdeSincronizacion(doc.raga_sync_at)}`}>
+          <div className="text-sm font-medium text-gray-900">{formatearFechaCorta(doc.atd)}</div>
+          <div className="text-[10px] text-gray-400">{tiempoDesdeSincronizacion(doc.raga_sync_at)}</div>
+        </div>
+      ) : doc.etd ? (
+        <div title="Raga todavía no registra el ATD (zarpe real). Se muestra el ETD estimado como referencia.">
+          <div className="text-xs text-gray-400">Sin ATD</div>
+          <div className="text-[10px] text-gray-400">ETD {formatearFechaCorta(doc.etd)}</div>
+        </div>
+      ) : (
+        <span
+          className="text-xs text-gray-400"
+          title="El ATD se completa automáticamente desde Raga cada 2 horas"
+        >
+          —
+        </span>
+      )}
     </td>
     <td className="px-3 py-3">
       <div className="text-xs text-gray-600 max-w-[200px] truncate" title={doc.tipo_po}>
@@ -217,6 +271,8 @@ const TablaDocumentacion = ({
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">POs Asociadas</th>
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">EXP ID</th>
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Módulo</th>
+            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Etapa</th>
+            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">ATD Raga</th>
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Ruta Logística</th>
             <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">Solicitante</th>
             <EncabezadosDocumentos />

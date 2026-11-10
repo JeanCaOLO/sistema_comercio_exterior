@@ -10,6 +10,7 @@ import {
 } from '@/pages/home/components/documentacion/servicios';
 import {
   contarDocumentos,
+  etapasDeDocumentos,
   filtrarDocumentos,
   paginar,
   rutasDeDocumentos,
@@ -41,6 +42,7 @@ export const useDocumentacion = () => {
 
   const [searchPO, setSearchPO] = useState('');
   const [filtroRuta, setFiltroRuta] = useState('');
+  const [filtroEtapa, setFiltroEtapa] = useState('');
   const [filtroRapido, setFiltroRapido] = useState<FiltroRapido>('todos');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -86,6 +88,19 @@ export const useDocumentacion = () => {
     obtenerNombreUsuario().then(setUsuarioActual);
   }, [cargarDocumentos]);
 
+  // Recarga sin spinner: se usa cuando Raga termina de completar Etapa y ETD.
+  const recargarSilenciosa = useCallback(async () => {
+    const data = await recargarDocumentosCaa();
+    if (data) setDocumentos(data);
+  }, []);
+
+  // La sincronización con Raga puede terminar desde cualquier vista.
+  useEffect(() => {
+    const alSincronizar = () => { void recargarSilenciosa(); };
+    window.addEventListener('bandejaRagaSyncCompletada', alSincronizar);
+    return () => window.removeEventListener('bandejaRagaSyncCompletada', alSincronizar);
+  }, [recargarSilenciosa]);
+
   // Red de seguridad: si la carga se queda colgada más de 15s, salimos del loading
   useEffect(() => {
     if (!loading) {
@@ -104,11 +119,11 @@ export const useDocumentacion = () => {
   // Volver a la primera página al cambiar filtros
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchPO, filtroRuta, filtroRapido]);
+  }, [searchPO, filtroRuta, filtroEtapa, filtroRapido]);
 
   const documentosFiltrados = useMemo(
-    () => filtrarDocumentos(documentos, { searchPO, filtroRuta, filtroRapido }),
-    [documentos, searchPO, filtroRuta, filtroRapido]
+    () => filtrarDocumentos(documentos, { searchPO, filtroRuta, filtroEtapa, filtroRapido }),
+    [documentos, searchPO, filtroRuta, filtroEtapa, filtroRapido]
   );
 
   const paginacion = useMemo(
@@ -117,8 +132,9 @@ export const useDocumentacion = () => {
   );
 
   const rutasDisponibles = useMemo(() => rutasDeDocumentos(documentos), [documentos]);
+  const etapasDisponibles = useMemo(() => etapasDeDocumentos(documentos), [documentos]);
 
-  const hayFiltrosActivos = !!searchPO || !!filtroRuta || filtroRapido !== 'todos';
+  const hayFiltrosActivos = !!searchPO || !!filtroRuta || !!filtroEtapa || filtroRapido !== 'todos';
 
   const puedeEliminar = !!user?.email && EMAILS_AUTORIZADOS_ELIMINAR.includes(user.email);
 
@@ -212,8 +228,10 @@ export const useDocumentacion = () => {
     documentos,
     documentosFiltrados,
     rutasDisponibles,
+    etapasDisponibles,
     paginacion,
     contarDocumentos,
+    recargarSilenciosa,
     // estado de carga / mensajes
     loading,
     loadTimeout,
@@ -226,6 +244,8 @@ export const useDocumentacion = () => {
     setSearchPO,
     filtroRuta,
     setFiltroRuta,
+    filtroEtapa,
+    setFiltroEtapa,
     filtroRapido,
     setFiltroRapido,
     hayFiltrosActivos,

@@ -26,6 +26,7 @@ import GestionBlContenedor from './components/bl-contenedor/GestionBlContenedor'
 import type { VistaBlContenedor } from './components/bl-contenedor/types';
 import { verificarSolicitudesEtdAtrasadas, verificarCambiosCampoAtrasados, verificarFechasAtrasadas } from '@/lib/notificaciones';
 import { useSincronizacionRaga } from '@/hooks/useSincronizacionRaga';
+import { useSincronizacionBandeja } from '@/hooks/useSincronizacionBandeja';
 
 // Vistas del menú que pertenecen al centro unificado de cambios de órdenes.
 const VISTAS_CAMBIOS: Record<string, VistaCambios> = {
@@ -221,6 +222,9 @@ export default function Home() {
 
   // Sincronización automática con Raga para los expedientes de Dropship.
   useSincronizacionRaga(Boolean(usuarioId) && !clientePuro);
+
+  // Etapa y ETD de la bandeja: se refrescan cada 2 horas desde Raga.
+  useSincronizacionBandeja({ activo: Boolean(usuarioId) && !clientePuro });
 
   const handleLogout = async () => {
     try {

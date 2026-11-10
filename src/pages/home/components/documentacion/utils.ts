@@ -22,6 +22,37 @@ export const formatearFecha = (dateStr: string): string => {
   });
 };
 
+/** Fecha sin hora (para el ETD de la bandeja). Acepta YYYY-MM-DD o ISO. */
+export const formatearFechaCorta = (valor?: string | null): string => {
+  const texto = (valor || '').trim();
+  if (!texto) return '';
+  const soloFecha = /^(\d{4})-(\d{2})-(\d{2})/.exec(texto);
+  const fecha = soloFecha
+    ? new Date(Number(soloFecha[1]), Number(soloFecha[2]) - 1, Number(soloFecha[3]))
+    : new Date(texto);
+  if (isNaN(fecha.getTime())) return '';
+  return fecha.toLocaleDateString('es-ES', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+/** Hace cuánto se sincronizó con Raga, en texto corto. */
+export const tiempoDesdeSincronizacion = (valor?: string | null): string => {
+  const texto = (valor || '').trim();
+  if (!texto) return 'Sin sincronizar';
+  const t = new Date(texto).getTime();
+  if (isNaN(t)) return 'Sin sincronizar';
+  const minutos = Math.floor((Date.now() - t) / 60000);
+  if (minutos < 1) return 'Ahora';
+  if (minutos < 60) return `Hace ${minutos} min`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `Hace ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  return `Hace ${dias} d`;
+};
+
 export type NivelBandeja = 'ok' | 'atencion' | 'critico';
 
 /** Días completos que un registro lleva esperando consolidarse en la bandeja */
@@ -48,7 +79,7 @@ export const nivelBandeja = (dias: number): NivelBandeja => {
 
 export const filtrarDocumentos = (
   documentos: DocumentoCAA[],
-  { searchPO, filtroRuta, filtroRapido }: FiltrosDocumentacion
+  { searchPO, filtroRuta, filtroEtapa, filtroRapido }: FiltrosDocumentacion
 ): DocumentoCAA[] => {
   const term = searchPO.trim().toLowerCase();
 
@@ -63,10 +94,13 @@ export const filtrarDocumentos = (
 
     if (filtroRuta && doc.tipo_po !== filtroRuta) return false;
 
+    if (filtroEtapa && (doc.etapa || '').trim() !== filtroEtapa) return false;
+
     if (filtroRapido !== 'todos') {
       if (filtroRapido === 'antiguos' && diasEnBandeja(doc.created_at) <= 7) return false;
+      if (filtroRapido === 'listos' && !estaListoParaConsolidar(doc)) return false;
 
-      if (filtroRapido !== 'antiguos') {
+      if (filtroRapido !== 'antiguos' && filtroRapido !== 'listos') {
         const req = calcularRequisitos({
           doc: doc.doc,
           blCargado: doc.bl_cargado,
@@ -85,6 +119,29 @@ export const filtrarDocumentos = (
 
 export const rutasDeDocumentos = (documentos: DocumentoCAA[]): string[] =>
   [...new Set(documentos.map((doc) => doc.tipo_po).filter(Boolean))].sort();
+
+/** Etapas presentes en la bandeja, para el filtro por etapa. */
+export const etapasDeDocumentos = (documentos: DocumentoCAA[]): string[] =>
+  [...new Set(documentos.map((doc) => (doc.etapa || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'es'));
+
+/**
+ * Un registro está listo para consolidar cuando ya tiene los tres documentos
+ * clave: factura, packing list y BL. Esos son los que hay que empujar primero
+ * para que no sigan esperando en la bandeja.
+ */
+export const estaListoParaConsolidar = (doc: DocumentoCAA): boolean => {
+  const req = calcularRequisitos({
+    doc: doc.doc,
+    blCargado: doc.bl_cargado,
+    packingListCargado: doc.packing_list_cargado,
+    numeroContenedor: doc.numero_contenedor,
+  });
+  return req.factura && req.packingList && req.bl;
+};
+
+export const contarListosParaConsolidar = (documentos: DocumentoCAA[]): number =>
+  documentos.filter(estaListoParaConsolidar).length;
 
 export const paginar = <T,>(items: T[], pagina: number, porPagina: number) => {
   const totalPaginas = Math.ceil(items.length / porPagina);

@@ -6,6 +6,61 @@ import type { DocumentoCAA, ModuloDestino } from '@/pages/home/components/docume
 
 const TABLA = 'documentos_caa';
 
+/**
+ * Columnas reales de la tabla `expedientes`.
+ * La bandeja (`documentos_caa`) tiene campos extra como validación de Raga
+ * (etapa, atd, raga_sync_at…) que NO existen en el ticket. Copiar la fila
+ * completa rompía la consolidación, así que solo se envían estos campos.
+ */
+const CAMPOS_EXPEDIENTE = [
+  'po_tiquetera',
+  'tipo_po',
+  'solicitante',
+  'fecha_solicitud',
+  'prioridad',
+  'prioridad_urgente',
+  'dificultad',
+  'tiempo_minutos',
+  'dias_entrega',
+  'fecha_requerimiento',
+  'exp_id',
+  'lineas_oc',
+  'fecha_creacion_expediente',
+  'estado_expediente',
+  'responsable_creacion',
+  'instrucciones_adicionales',
+  'created_at',
+  'doc',
+  'motivo_urgencia',
+  'motivo_revision',
+  'fecha_apertura',
+  'fecha_liberacion',
+  'tiempo_real_minutos',
+  'dias_entrega_real',
+  'usuario_creador',
+  'usuario_modificador',
+  'tipo_modulo',
+  'eta_real',
+  'etd',
+  'transito_corto',
+  'ok_pais',
+  'bl_cargado',
+  'aplica_tlc',
+  'incidente',
+  'comentario_incidente',
+  'fecha_notificado',
+  'fecha_ok_pais',
+  'fecha_visto_listo',
+  'finiquito',
+  'mcg',
+  'cargador_documentos',
+  'numero_bl',
+  'numero_contenedor',
+  'packing_list_cargado',
+  'recibo_delzof_fecha',
+  'recibo_delzof_numero',
+];
+
 export const cargarDocumentosCaa = async (): Promise<DocumentoCAA[]> => {
   // La bandeja se muestra del más antiguo cargado al más nuevo: lo que lleva
   // más tiempo esperando queda arriba para priorizar la consolidación.
@@ -135,13 +190,15 @@ export const consolidarDocumentos = async (
   const entradasConsolidadas = combinarEntradas(todasLasEntradas);
 
   const primerDoc = (docsCAA as any[])[0];
-  const {
-    id: _id,
-    tc_cargado: _tc,
-    created_at: _createdAt,
-    responsable_creacion: _respCreacion,
-    ...basePayload
-  } = primerDoc;
+
+  // Solo se copian campos que existen en `expedientes`.
+  const basePayload: Record<string, unknown> = CAMPOS_EXPEDIENTE.reduce<Record<string, unknown>>(
+    (acc, campo) => {
+      if (primerDoc && campo in primerDoc) acc[campo] = primerDoc[campo];
+      return acc;
+    },
+    {},
+  );
 
   // ─── Auditoría original ───
   const cargadoresUnicos = [...new Set((docsCAA as any[]).map((d) => d.responsable_creacion).filter(Boolean))];

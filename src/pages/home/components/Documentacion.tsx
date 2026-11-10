@@ -6,12 +6,25 @@ import BarraFiltrosDocumentacion from '@/pages/home/components/documentacion/Bar
 import TablaDocumentacion from '@/pages/home/components/documentacion/TablaDocumentacion';
 import ModalConfirmarEliminarDocumentos from '@/pages/home/components/documentacion/ModalConfirmarEliminarDocumentos';
 import ModalPreguntaMcg from '@/pages/home/components/documentacion/ModalPreguntaMcg';
+import PanelSincronizacionBandeja from '@/pages/home/components/documentacion/PanelSincronizacionBandeja';
 import { useDocumentacion } from '@/pages/home/components/documentacion/useDocumentacion';
+import { contarListosParaConsolidar } from '@/pages/home/components/documentacion/utils';
+import { useSincronizacionBandeja } from '@/hooks/useSincronizacionBandeja';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Documentacion() {
   const doc = useDocumentacion();
+  const { perfil } = useAuth();
+  const esAdministrador = perfil?.roles?.includes('Administrador') ?? false;
+  const sync = useSincronizacionBandeja({
+    activo: !doc.loading,
+    onCompletado: doc.recargarSilenciosa,
+  });
 
   if (doc.loading) return <CargandoDocumentacion />;
+
+  const totalListos = contarListosParaConsolidar(doc.documentos);
+  const viendoListos = doc.filtroRapido === 'listos';
 
   return (
     <div className="p-8">
@@ -55,12 +68,26 @@ export default function Documentacion() {
 
       {doc.documentos.length > 0 && (
         <>
+          <PanelSincronizacionBandeja
+            sincronizando={sync.sincronizando}
+            progreso={sync.progreso}
+            ultimaSincronizacion={sync.ultimaSincronizacion}
+            proximaSincronizacion={sync.proximaSincronizacion}
+            error={sync.error}
+            mensaje={sync.mensaje}
+            onSincronizar={() => { void sync.sincronizarAhora(); }}
+            puedeSincronizar={esAdministrador}
+          />
+
           <BarraFiltrosDocumentacion
             searchPO={doc.searchPO}
             onSearchChange={doc.setSearchPO}
             filtroRuta={doc.filtroRuta}
             onRutaChange={doc.setFiltroRuta}
             rutasDisponibles={doc.rutasDisponibles}
+            filtroEtapa={doc.filtroEtapa}
+            onEtapaChange={doc.setFiltroEtapa}
+            etapasDisponibles={doc.etapasDisponibles}
             filtroRapido={doc.filtroRapido}
             onFiltroRapidoChange={doc.setFiltroRapido}
             targetModulo={doc.targetModulo}
@@ -76,6 +103,32 @@ export default function Documentacion() {
             onGenerar={() => doc.setShowMCGPrompt(true)}
             generando={doc.generando}
           />
+
+          {totalListos > 0 && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <span className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-100 flex-shrink-0">
+                  <i className="ri-checkbox-circle-line text-emerald-700 text-base"></i>
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-emerald-900">
+                    {totalListos} registro{totalListos === 1 ? '' : 's'} ya tiene{totalListos === 1 ? '' : 'n'} factura, packing list y BL
+                  </p>
+                  <p className="text-xs text-emerald-700 mt-0.5">
+                    Documentación completa: se pueden consolidar ahora mismo en un ticket.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => doc.setFiltroRapido(viendoListos ? 'todos' : 'listos')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <i className={viendoListos ? 'ri-list-unordered' : 'ri-filter-line'}></i>
+                {viendoListos ? 'Ver todos' : 'Ver solo estos'}
+              </button>
+            </div>
+          )}
 
           {doc.documentosFiltrados.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">

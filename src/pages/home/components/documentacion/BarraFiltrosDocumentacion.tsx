@@ -6,6 +6,9 @@ interface BarraFiltrosDocumentacionProps {
   filtroRuta: string;
   onRutaChange: (valor: string) => void;
   rutasDisponibles: string[];
+  filtroEtapa: string;
+  onEtapaChange: (valor: string) => void;
+  etapasDisponibles: string[];
   filtroRapido: FiltroRapido;
   onFiltroRapidoChange: (valor: FiltroRapido) => void;
   targetModulo: ModuloDestino;
@@ -24,6 +27,7 @@ interface BarraFiltrosDocumentacionProps {
 
 const OPCIONES_RAPIDAS = [
   { key: 'todos', label: 'Todos', icono: 'ri-list-check' },
+  { key: 'listos', label: 'Listos para consolidar', icono: 'ri-checkbox-circle-line' },
   { key: 'con-factura', label: 'Solo con factura', icono: 'ri-bill-line' },
   { key: 'con-contenedor', label: 'Con contenedor', icono: 'ri-truck-line' },
   { key: 'sin-packing', label: 'Sin packing list', icono: 'ri-file-warning-line' },
@@ -36,6 +40,9 @@ const BarraFiltrosDocumentacion = ({
   filtroRuta,
   onRutaChange,
   rutasDisponibles,
+  filtroEtapa,
+  onEtapaChange,
+  etapasDisponibles,
   filtroRapido,
   onFiltroRapidoChange,
   targetModulo,
@@ -88,6 +95,22 @@ const BarraFiltrosDocumentacion = ({
       <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
     </div>
 
+    {/* Etapa del embarque */}
+    <div className="relative min-w-[200px]">
+      <i className="ri-route-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
+      <select
+        value={filtroEtapa}
+        onChange={(e) => onEtapaChange(e.target.value)}
+        className="w-full pl-9 pr-9 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent appearance-none bg-white cursor-pointer"
+      >
+        <option value="">Todas las etapas</option>
+        {etapasDisponibles.map((etapa) => (
+          <option key={etapa} value={etapa}>{etapa}</option>
+        ))}
+      </select>
+      <i className="ri-arrow-down-s-line absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
+    </div>
+
     {/* Filtros rápidos de completitud */}
     <div className="flex items-center gap-2 flex-wrap">
       {OPCIONES_RAPIDAS.map((opcion) => (
@@ -99,7 +122,9 @@ const BarraFiltrosDocumentacion = ({
             filtroRapido === opcion.key
               ? opcion.key === 'antiguos'
                 ? 'bg-rose-600 border-rose-600 text-white'
-                : 'bg-amber-600 border-amber-600 text-white'
+                : opcion.key === 'listos'
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : 'bg-amber-600 border-amber-600 text-white'
               : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
           }`}
         >

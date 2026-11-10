@@ -8,6 +8,7 @@ import { useAutocorrector } from '@/hooks/useAutocorrector';
 import { parsePOs, normalizarPO } from '@/lib/documentos';
 import type { DocEntry } from '@/lib/documentos';
 import { subirDocumento } from '@/lib/storageDocumentos';
+import { sincronizarDocumentosBandeja } from '@/lib/ragaBandeja';
 
 const USUARIOS_CARGA_CAA = ['lchavala', 'smcdonald', 'mpaniagua'];
 
@@ -355,6 +356,15 @@ export default function CargaDocumentosCAA() {
       }
       // ─── FIN AUDITORÍA ───
 
+      // === Etapa y ETD desde Raga ===
+      // Apenas la fila entra a la bandeja se piden los dos datos, sin esperar
+      // el barrido de las 2 horas. El envío no bloquea el guardado.
+      void sincronizarDocumentosBandeja([docCAA.id]).then((res) => {
+        if (!res.ok) {
+          console.warn('[Bandeja] No se pudo obtener Etapa/ETD desde Raga:', res.error);
+        }
+      });
+
       // === Notificación ===
       crearNotificacion({
         poTiquetera: posCombinadas,
@@ -462,6 +472,10 @@ export default function CargaDocumentosCAA() {
                 Los documentos y POs se guardaron en el módulo <strong>"Documentación"</strong>.{' '}
                 Desde allí podrás seleccionarlos y <strong>generar el ticket</strong> que creará el expediente en el Kanban de{' '}
                 <strong>{solicitudesCreadas[0]?.modulo === 'dropship' ? 'Dropship' : 'ZF'}</strong> cuando estés listo.
+              </p>
+              <p className="text-green-700 text-xs mb-4 flex items-center gap-1.5">
+                <i className="ri-refresh-line"></i>
+                La Etapa y el ETD se están consultando en Raga y aparecerán en la bandeja en unos segundos.
               </p>
               <div className="bg-white rounded-lg p-4 border border-green-200">
                 <div className="flex items-center gap-2 mb-3">
