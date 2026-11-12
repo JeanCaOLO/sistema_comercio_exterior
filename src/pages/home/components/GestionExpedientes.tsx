@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase';
 import { crearNotificacion, notificarComentario } from '@/lib/notificaciones';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
+import { useSoloLectura } from '@/hooks/useSoloLectura';
+import AvisoSoloLectura from '@/components/feature/AvisoSoloLectura';
 import { parseDocEntries, type DocEntry } from '@/lib/documentos';
 import ModalDocumentosExpediente from '@/pages/home/components/ModalDocumentosExpediente';
 import CargandoTablero from './gestion/CargandoTablero';
@@ -51,6 +53,7 @@ export default function GestionExpedientes({
 }: GestionExpedientesProps) {
   const { perfil } = useAuth();
   const esAdmin = perfil?.roles?.includes('Administrador') ?? false;
+  const soloLectura = useSoloLectura();
   const { corregir } = useAutocorrector();
 
   const {
@@ -588,6 +591,11 @@ export default function GestionExpedientes({
 
   // ── Arrastrar y soltar en el kanban ──
   const handleDragStart = (e: React.DragEvent, expediente: Expediente) => {
+    // En modo consulta no se puede mover ningún expediente de etapa.
+    if (soloLectura) {
+      e.preventDefault();
+      return;
+    }
     setDraggedItem(expediente);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -599,6 +607,12 @@ export default function GestionExpedientes({
 
   const handleDrop = async (e: React.DragEvent, nuevoEstado: string) => {
     e.preventDefault();
+
+    // En modo consulta no se permiten cambios de estado.
+    if (soloLectura) {
+      setDraggedItem(null);
+      return;
+    }
 
     if (!draggedItem || draggedItem.estado_expediente === nuevoEstado) {
       setDraggedItem(null);
@@ -785,7 +799,7 @@ export default function GestionExpedientes({
           <h1 className="text-3xl font-bold text-gray-900">{tituloModulo}</h1>
           <p className="text-gray-500 mt-2">Administra y da seguimiento a todos los expedientes</p>
         </div>
-        {tipoModulo !== 'dropship' && (
+        {!soloLectura && tipoModulo !== 'dropship' && (
           <button
             type="button"
             onClick={() => {
@@ -800,7 +814,11 @@ export default function GestionExpedientes({
         )}
       </div>
 
-      <SincronizacionRaga onSincronizado={recargaSilenciosa} tipoModulo={tipoModulo} />
+      {soloLectura ? (
+        <AvisoSoloLectura detalle="Puedes revisar el tablero, abrir cada expediente, ver su historial y sus documentos. No puedes mover etapas, editar datos, subir archivos ni eliminar expedientes." />
+      ) : (
+        <SincronizacionRaga onSincronizado={recargaSilenciosa} tipoModulo={tipoModulo} />
+      )}
 
       {showSuccess && (
         <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">
@@ -877,6 +895,7 @@ export default function GestionExpedientes({
         uploadingFiles={uploadingFiles}
         uploadedFiles={uploadedFiles}
         esAdmin={esAdmin}
+        soloLectura={soloLectura}
         corregir={corregir}
         onClose={cerrarModal}
         onChange={handleChange}

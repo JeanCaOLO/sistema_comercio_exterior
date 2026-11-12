@@ -20,6 +20,8 @@ interface Props {
   uploadingFiles: boolean;
   rutas: RutaLogistica[];
   responsables: string[];
+  /** Modo consulta: oculta editar y eliminar. */
+  soloLectura?: boolean;
   onClose: () => void;
   onEdit: () => void;
   onCancelarEdicion: () => void;
@@ -36,6 +38,7 @@ export default function ModalDetalleLista({
   uploadingFiles,
   rutas,
   responsables,
+  soloLectura = false,
   onClose,
   onEdit,
   onCancelarEdicion,
@@ -454,22 +457,26 @@ export default function ModalDetalleLista({
             <div className="md:col-span-2 flex justify-end gap-3 pt-4 border-t">
               {!editMode ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={onEdit}
-                    className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer whitespace-nowrap"
-                  >
-                    <i className="ri-edit-line mr-2"></i>
-                    Editar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDelete(expediente.id)}
-                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors cursor-pointer whitespace-nowrap"
-                  >
-                    <i className="ri-delete-bin-line mr-2"></i>
-                    Eliminar
-                  </button>
+                  {!soloLectura && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={onEdit}
+                        className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <i className="ri-edit-line mr-2"></i>
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(expediente.id)}
+                        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <i className="ri-delete-bin-line mr-2"></i>
+                        Eliminar
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={onClose}

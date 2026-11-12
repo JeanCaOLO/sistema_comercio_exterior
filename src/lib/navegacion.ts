@@ -71,6 +71,14 @@ export const GRUPOS_NAVEGACION: GrupoNavegacion[] = [
         ],
       },
       {
+        titulo: 'Cambios de Etapa PO',
+        items: [
+          { id: 'etapa-solicitar', label: 'Mover de Etapa PO', icon: 'ri-kanban-view' },
+          { id: 'etapa-aprobaciones', label: 'Aprobaciones de Etapa', icon: 'ri-checkbox-multiple-line' },
+          { id: 'etapa-historial', label: 'Historial de Etapas', icon: 'ri-history-line' },
+        ],
+      },
+      {
         titulo: 'PO sin Tracking',
         items: [
           { id: 'po-sin-tracking-dashboard', label: 'Dashboard PO sin Tracking', icon: 'ri-dashboard-3-line' },

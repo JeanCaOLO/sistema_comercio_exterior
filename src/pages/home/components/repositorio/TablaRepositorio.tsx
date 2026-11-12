@@ -13,6 +13,8 @@ interface FilaRepositorioProps {
   registro: RegistroRepositorio;
   expandida: boolean;
   downloadingId: string | null;
+  /** Modo consulta: no permite abrir la edición. */
+  soloLectura?: boolean;
   onToggleExpandir: (id: string) => void;
   onDescargar: (url: string, fileName: string) => void;
   onEditar: (registro: RegistroRepositorio) => void;
@@ -23,6 +25,7 @@ const FilaRepositorio = memo(({
   registro,
   expandida,
   downloadingId,
+  soloLectura = false,
   onToggleExpandir,
   onDescargar,
   onEditar,
@@ -34,14 +37,18 @@ const FilaRepositorio = memo(({
   return (
     <Fragment>
       <tr
-        onClick={() => onEditar(registro)}
-        className="group hover:bg-amber-50/40 transition-colors cursor-pointer"
-        title="Clic para editar este registro"
+        onClick={() => {
+          if (!soloLectura) onEditar(registro);
+        }}
+        className={`group hover:bg-amber-50/40 transition-colors ${soloLectura ? '' : 'cursor-pointer'}`}
+        title={soloLectura ? 'Solo lectura' : 'Clic para editar este registro'}
       >
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-gray-900">{registro.po_tiquetera}</span>
-            <i className="ri-edit-line text-xs text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+            {!soloLectura && (
+              <i className="ri-edit-line text-xs text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+            )}
           </div>
         </td>
         <td className="px-3 py-3 whitespace-nowrap">
@@ -115,18 +122,20 @@ const FilaRepositorio = memo(({
           <span className="text-xs text-gray-500">{formatearFecha(registro.created_at)}</span>
         </td>
         <td className="px-3 py-3 text-center whitespace-nowrap">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditar(registro);
-            }}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-amber-700 bg-amber-50 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors cursor-pointer whitespace-nowrap"
-            title="Editar registro"
-          >
-            <i className="ri-edit-line"></i>
-            Editar
-          </button>
+          {!soloLectura && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditar(registro);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-amber-700 bg-amber-50 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors cursor-pointer whitespace-nowrap"
+              title="Editar registro"
+            >
+              <i className="ri-edit-line"></i>
+              Editar
+            </button>
+          )}
         </td>
         <td className="px-3 py-3 text-center whitespace-nowrap">
           <button
@@ -174,6 +183,7 @@ interface TablaRepositorioProps {
   downloadingId: string | null;
   cargando: boolean;
   hayFiltrosActivos: boolean;
+  soloLectura?: boolean;
   onToggleExpandir: (id: string) => void;
   onDescargar: (url: string, fileName: string) => void;
   onEditar: (registro: RegistroRepositorio) => void;
@@ -187,6 +197,7 @@ const TablaRepositorio = ({
   downloadingId,
   cargando,
   hayFiltrosActivos,
+  soloLectura = false,
   onToggleExpandir,
   onDescargar,
   onEditar,
@@ -244,6 +255,7 @@ const TablaRepositorio = ({
                 registro={registro}
                 expandida={filasExpandidas.has(registro.id)}
                 downloadingId={downloadingId}
+                soloLectura={soloLectura}
                 onToggleExpandir={onToggleExpandir}
                 onDescargar={onDescargar}
                 onEditar={onEditar}

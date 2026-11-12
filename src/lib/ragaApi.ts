@@ -97,6 +97,48 @@ export function actualizarEtdInicialRaga(params: {
   });
 }
 
+// Cambia la etapa (estado de kanban) de una PO en Raga.
+// SOLO debe ejecutarse tras una aprobación autorizada.
+// La función del backend RELEE la PO después de escribir y solo devuelve ok
+// cuando la etapa cambió de verdad (Raga puede responder 200 sin aplicar nada).
+export function actualizarEtapaRaga(params: {
+  orderNumber: string;
+  tradingCompany: string;
+  fieldKey: string;
+  statusValue: string;
+  statusId?: string | null;
+  statusName?: string | null;
+  apiEnv?: RagaEnv;
+  requestId?: string;
+}) {
+  return invocarRaga<unknown>({
+    action: 'update-kanban-status',
+    order_number: params.orderNumber,
+    trading_company: params.tradingCompany,
+    field_key: params.fieldKey,
+    status_value: params.statusValue,
+    status_id: params.statusId || null,
+    status_name: params.statusName || null,
+    api_env: params.apiEnv || 'production',
+    request_id: params.requestId || null,
+  });
+}
+
+// Diagnóstico de solo lectura: devuelve los campos de etapa que expone Raga
+// para una PO. Sirve para confirmar qué campo/valor representa el kanban.
+export interface DiagnosticoEtapaRaga {
+  campos_etapa: Record<string, string>;
+  claves_orden: string[];
+}
+
+export function diagnosticarEtapaRaga(orderNumber: string, apiEnv: RagaEnv = 'production') {
+  return invocarRaga<DiagnosticoEtapaRaga>({
+    action: 'diagnose-kanban',
+    order_number: orderNumber,
+    api_env: apiEnv,
+  });
+}
+
 // --- Utilidades de normalización (la forma exacta del JSON puede variar) ---
 
 export interface ResultadoActualizacionCampos {

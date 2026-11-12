@@ -2,12 +2,12 @@ import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'r
 import {
   analizarCarga,
   formatearEntero,
-  guardarCargaVigente,
   parsearArchivoExcel,
   SIN_PROVEEDOR,
   type MetaCarga,
   type ResultadoParseo,
 } from '@/lib/agenteCarga';
+import { guardarDetalleCarga } from '@/lib/agenteCargaPeriodos';
 
 interface ModalCargarExcelProps {
   usuario: string;
@@ -76,7 +76,7 @@ export default function ModalCargarExcel({
     setProgreso(0);
     setError('');
     try {
-      await guardarCargaVigente(lectura.pos, archivo.name, usuario, (avance) => setProgreso(avance));
+      await guardarDetalleCarga(lectura.pos, archivo.name, usuario, (avance) => setProgreso(avance));
       onGuardado();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar la carga.');
@@ -98,7 +98,7 @@ export default function ModalCargarExcel({
             <div>
               <h2 className="text-base font-semibold text-gray-900">Cargar Excel de POs</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Al guardar se reemplaza la carga vigente; la anterior queda como referencia de comparación.
+                Al guardar se actualiza el detalle de cada periodo de asignación del archivo.
               </p>
             </div>
           </div>
@@ -116,8 +116,8 @@ export default function ModalCargarExcel({
             <div className="rounded-lg border border-gray-200 px-4 py-3 flex items-start gap-2.5">
               <i className="ri-history-line text-gray-400 mt-0.5"></i>
               <p className="text-xs text-gray-600 leading-relaxed">
-                Carga vigente: <span className="font-medium text-gray-800">{metaActual.archivo}</span> ·{' '}
-                {formatearEntero(totalActual)} POs ·{' '}
+                Última carga: <span className="font-medium text-gray-800">{metaActual.archivo}</span> ·{' '}
+                {formatearEntero(totalActual)} POs guardadas ·{' '}
                 {new Date(metaActual.cargadoAt).toLocaleString('es-CR')}
               </p>
             </div>
@@ -212,10 +212,9 @@ export default function ModalCargarExcel({
               <div className="rounded-lg bg-teal-50 border border-teal-100 px-4 py-3 flex items-start gap-2.5">
                 <i className="ri-information-line text-teal-600 mt-0.5"></i>
                 <p className="text-xs text-teal-800 leading-relaxed">
-                  Se guardarán <strong>{formatearEntero(lectura.pos.length)} POs</strong> y se
-                  reemplazará la carga vigente por completo
-                  {metaActual ? ` (${formatearEntero(totalActual)} POs del archivo ${metaActual.archivo})` : ''}.
-                  La carga anterior se conserva solo como referencia para el bloque de comparación.
+                  Se guardarán <strong>{formatearEntero(lectura.pos.length)} POs</strong> clasificadas por el mes de su
+                  Fecha Asignación Agente de Carga. Solo se reemplaza el detalle de los periodos que vienen en el
+                  archivo; los demás meses quedan intactos.
                   {sinAsignar > 0 && (
                     <> {formatearEntero(sinAsignar)} de esas POs no tienen Proveedor de Servicio asignado, así que
                       quedan fuera del análisis por defecto (puedes incluirlas con el interruptor de la tabla).</>
@@ -259,7 +258,7 @@ export default function ModalCargarExcel({
             className="px-4 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <i className="ri-save-3-line mr-1.5"></i>
-            {guardando ? 'Guardando...' : 'Reemplazar carga'}
+            {guardando ? 'Guardando...' : 'Guardar detalle'}
           </button>
         </div>
       </div>

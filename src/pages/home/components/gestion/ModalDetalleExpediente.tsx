@@ -16,6 +16,8 @@ interface Props {
   uploadingFiles: boolean;
   uploadedFiles: File[];
   esAdmin: boolean;
+  /** Modo consulta: oculta editar, eliminar y devolver. */
+  soloLectura?: boolean;
   corregir: (elemento: HTMLTextAreaElement, aplicar: (valor: string) => void) => Promise<void>;
   onClose: () => void;
   onChange: (field: string, value: any) => void;
@@ -46,6 +48,7 @@ export default function ModalDetalleExpediente({
   uploadingFiles,
   uploadedFiles,
   esAdmin,
+  soloLectura = false,
   corregir,
   onClose,
   onChange,
@@ -943,23 +946,27 @@ export default function ModalDetalleExpediente({
             <div className="md:col-span-2 flex justify-end gap-3 pt-4 border-t">
               {!editMode ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={onEdit}
-                    className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer whitespace-nowrap"
-                  >
-                    <i className="ri-edit-line mr-2"></i>
-                    Editar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDelete(expediente.id)}
-                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors cursor-pointer whitespace-nowrap"
-                  >
-                    <i className="ri-delete-bin-line mr-2"></i>
-                    Eliminar
-                  </button>
-                  {esAdmin && expediente.estado_expediente === 'No Asignado' && (
+                  {!soloLectura && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={onEdit}
+                        className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <i className="ri-edit-line mr-2"></i>
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(expediente.id)}
+                        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <i className="ri-delete-bin-line mr-2"></i>
+                        Eliminar
+                      </button>
+                    </>
+                  )}
+                  {esAdmin && !soloLectura && expediente.estado_expediente === 'No Asignado' && (
                     <button
                       type="button"
                       onClick={onDevolver}

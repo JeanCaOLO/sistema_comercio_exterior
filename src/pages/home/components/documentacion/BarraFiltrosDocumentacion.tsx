@@ -20,6 +20,8 @@ interface BarraFiltrosDocumentacionProps {
   pagina: number;
   totalPaginas: number;
   puedeEliminar: boolean;
+  /** Modo consulta: oculta selección de destino, eliminar y consolidar. */
+  soloLectura?: boolean;
   onEliminar: () => void;
   onGenerar: () => void;
   generando: boolean;
@@ -54,6 +56,7 @@ const BarraFiltrosDocumentacion = ({
   pagina,
   totalPaginas,
   puedeEliminar,
+  soloLectura = false,
   onEliminar,
   onGenerar,
   generando,
@@ -135,31 +138,33 @@ const BarraFiltrosDocumentacion = ({
     </div>
 
     {/* Módulo destino */}
-    <div className="flex items-center gap-3">
-      <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Enviar a:</span>
-      <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => onModuloChange('dropship')}
-          className={`px-4 py-2 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-            targetModulo === 'dropship' ? 'bg-teal-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <i className="ri-ship-line mr-1.5"></i>
-          Dropship
-        </button>
-        <button
-          type="button"
-          onClick={() => onModuloChange('zf')}
-          className={`px-4 py-2 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-            targetModulo === 'zf' ? 'bg-sky-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <i className="ri-building-line mr-1.5"></i>
-          ZF
-        </button>
+    {!soloLectura && (
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Enviar a:</span>
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => onModuloChange('dropship')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+              targetModulo === 'dropship' ? 'bg-teal-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <i className="ri-ship-line mr-1.5"></i>
+            Dropship
+          </button>
+          <button
+            type="button"
+            onClick={() => onModuloChange('zf')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+              targetModulo === 'zf' ? 'bg-sky-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <i className="ri-building-line mr-1.5"></i>
+            ZF
+          </button>
+        </div>
       </div>
-    </div>
+    )}
 
     <div className="flex-1"></div>
 
@@ -173,7 +178,7 @@ const BarraFiltrosDocumentacion = ({
       <span className="text-gray-500">Pág. {pagina} de {Math.max(1, totalPaginas)}</span>
     </span>
 
-    {puedeEliminar && (
+    {puedeEliminar && !soloLectura && (
       <button
         type="button"
         onClick={onEliminar}
@@ -185,26 +190,28 @@ const BarraFiltrosDocumentacion = ({
       </button>
     )}
 
-    <button
-      type="button"
-      onClick={onGenerar}
-      disabled={selectedCount === 0 || generando}
-      className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 ${
-        targetModulo === 'dropship' ? 'bg-teal-600 text-white hover:bg-teal-700' : 'bg-sky-600 text-white hover:bg-sky-700'
-      }`}
-    >
-      {generando ? (
-        <>
-          <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin flex-shrink-0"></div>
-          Generando...
-        </>
-      ) : (
-        <>
-          <i className="ri-send-plane-line"></i>
-          Consolidar en 1 Ticket ({selectedCount} filas)
-        </>
-      )}
-    </button>
+    {!soloLectura && (
+      <button
+        type="button"
+        onClick={onGenerar}
+        disabled={selectedCount === 0 || generando}
+        className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-colors cursor-pointer whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 ${
+          targetModulo === 'dropship' ? 'bg-teal-600 text-white hover:bg-teal-700' : 'bg-sky-600 text-white hover:bg-sky-700'
+        }`}
+      >
+        {generando ? (
+          <>
+            <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin flex-shrink-0"></div>
+            Generando...
+          </>
+        ) : (
+          <>
+            <i className="ri-send-plane-line"></i>
+            Consolidar en 1 Ticket ({selectedCount} filas)
+          </>
+        )}
+      </button>
+    )}
   </div>
 );
 

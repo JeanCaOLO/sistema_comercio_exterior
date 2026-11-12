@@ -4,6 +4,7 @@ import { cargarRutasActivas, type RutaLogistica } from '../../../lib/rutas';
 import { crearNotificacion, notificarCargaCAA } from '../../../lib/notificaciones';
 import { hoyLocal } from '../../../lib/fechas';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useSoloLectura } from '@/hooks/useSoloLectura';
 import { useAutocorrector } from '@/hooks/useAutocorrector';
 import { parsePOs, normalizarPO } from '@/lib/documentos';
 import type { DocEntry } from '@/lib/documentos';
@@ -32,6 +33,7 @@ interface SolicitudCreada {
 
 export default function CargaDocumentosCAA() {
   const { perfil } = useAuth();
+  const soloLectura = useSoloLectura();
   const { corregir } = useAutocorrector();
   const [tipoModulo, setTipoModulo] = useState<'dropship' | 'zf' | null>(null);
   const [tipoRuta, setTipoRuta] = useState<string>('');
@@ -408,6 +410,40 @@ export default function CargaDocumentosCAA() {
     setSolicitudesCreadas([]);
     setError(null);
   };
+
+  if (soloLectura) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto">
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 flex items-center justify-center bg-teal-100 rounded-lg">
+              <i className="ri-file-upload-line text-teal-700 text-xl"></i>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Carga de Documentos CAA</h1>
+              <p className="text-gray-500 text-sm">Sube documentos y asócialos a POs — se crearán solicitudes automáticamente en el Kanban</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-sky-50 border border-sky-200 rounded-xl p-6">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-sky-100 rounded-full flex-shrink-0">
+              <i className="ri-eye-line text-sky-700 text-2xl"></i>
+            </div>
+            <div>
+              <h3 className="text-sky-900 font-bold text-lg mb-1">Modo consulta</h3>
+              <p className="text-sky-800 text-sm">
+                Tu rol permite únicamente visualizar la información. La carga de documentos y de POs está deshabilitada.
+              </p>
+              <p className="text-sky-700 text-xs mt-1">
+                Puedes revisar los documentos ya cargados desde <strong>Bandeja</strong> o <strong>Repositorio Docs</strong>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!autorizado) {
     return (

@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   analizarCarga,
-  cargarCargaVigente,
-  cargarComparativoVigente,
   compararCargas,
-  etiquetaPeriodo,
-  filtrarPorAsignacion,
   formatearEntero,
   PAISES_INFO,
   PAISES_ORDEN,
@@ -15,9 +11,20 @@ import {
   type MetaComparativo,
   type PoCarga,
 } from '@/lib/agenteCarga';
+import {
+  PERIODO_SIN_FECHA,
+  cargarCargaPorPeriodo,
+  cargarDetalleRango,
+  cargarPeriodoAnterior,
+  clavesEnRango,
+  etiquetaPeriodoCarga,
+  etiquetaRangoCarga,
+  listarPeriodos,
+  type PeriodoCarga,
+} from '@/lib/agenteCargaPeriodos';
 import TarjetasResumen from './TarjetasResumen';
 import IndicadorSinProveedor from './IndicadorSinProveedor';
-import FiltroAsignacion from './FiltroAsignacion';
+import FiltroAsignacion, { type ModoSeleccionPeriodo } from './FiltroAsignacion';
 import TablaAsignacion from './TablaAsignacion';
 import ComparacionCarga from './ComparacionCarga';
 import DistribucionCarga from './DistribucionCarga';
@@ -36,12 +43,19 @@ interface SeleccionDetalle {
 const COLUMNAS_REQUERIDAS = [
   'N° Orden de Compra (PO)',
   'Proveedor de Servicio',
+  'Fecha Asignación Agente de Carga',
   'Ruta Logística',
   'Puerto de Arribo',
 ];
 
 export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProps) {
-  const [cargando, setCargando] = useState(true);
+  const [periodos, setPeriodos] = useState<PeriodoCarga[]>([]);
+  const [periodo, setPeriodo] = useState('');
+  const [modo, setModo] = useState<ModoSeleccionPeriodo>('periodo');
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
+  const [cargandoPeriodos, setCargandoPeriodos] = useState(true);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [error, setError] = useState('');
   const [pos, setPos] = useState<PoCarga[]>([]);
   const [meta, setMeta] = useState<MetaCarga | null>(null);
@@ -50,47 +64,119 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
   const [seleccion, setSeleccion] = useState<SeleccionDetalle | null>(null);
   const [comparativoFilas, setComparativoFilas] = useState<FilaComparativo[]>([]);
   const [metaComparativo, setMetaComparativo] = useState<MetaComparativo | null>(null);
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
+  const cargarPeriodos = useCallback(async (preferido?: string) => {
+    setCargandoPeriodos(true);
     setError('');
     try {
-      const [carga, comparativo] = await Promise.all([
-        cargarCargaVigente(),
-        cargarComparativoVigente(),
-      ]);
-      setPos(carga.pos);
-      setMeta(carga.meta);
-      setComparativoFilas(comparativo.filas);
-      setMetaComparativo(comparativo.meta);
+      const lista = await listarPeriodos();
+      setPeriodos(lista);
+      const conDetalle = lista.filter((p) => p.periodo !== PERIODO_SIN_FECHA);
+      const objetivo = preferido && lista.some((p) => p.periodo === preferido)
+        ? preferido
+        : conDetalle[0]?.periodo || lista[0]?.periodo || '';
+      setPeriodo(objetivo);
+      setDesde((previo) => (lista.some((p) => p.periodo === previo) ? previo : objetivo));
+      setHasta((previo) => (lista.some((p) => p.periodo === previo) ? previo : objetivo));
+      return { lista, objetivo };
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cargar la información guardada.');
-      setPos([]);
-      setMeta(null);
-      setComparativoFilas([]);
-      setMetaComparativo(null);
+      setError(err instanceof Error ? err.message : 'No se pudo cargar la lista de periodos.');
+      setPeriodos([]);
+      setPeriodo('');
+      return { lista: [] as PeriodoCarga[], objetivo: '' };
     } finally {
-      setCargando(false);
+      setCargandoPeriodos(false);
     }
   }, []);
 
   useEffect(() => {
-    cargar();
-  }, [cargar]);
+    cargarPeriodos();
+  }, [cargarPeriodos]);
 
-  const filtrado = useMemo(() => filtrarPorAsignacion(pos, { desde, hasta }), [pos, desde, hasta]);
-  const posFiltradas = filtrado.pos;
+  const periodosReales = useMemo(
+    () => periodos.filter((p) => p.periodo !== PERIODO_SIN_FECHA).map((p) => p.periodo),
+    [periodos]
+  );
+
+  const clavesSeleccionadas = useMemo(() => {
+    if (modo === 'periodo') return periodo ? [periodo] : [];
+    if (!desde || !hasta) return [];
+    return clavesEnRango(periodos, desde, hasta);
+  }, [modo, periodo, desde, hasta, periodos]);
+
+  const claveSeleccion = clavesSeleccionadas.join('|');
+
+  const etiquetaSeleccion = useMemo(() => {
+    if (clavesSeleccionadas.length === 0) return 'Sin periodo';
+    if (clavesSeleccionadas.length === 1 && clavesSeleccionadas[0] === PERIODO_SIN_FECHA) {
+      return etiquetaPeriodoCarga(PERIODO_SIN_FECHA);
+    }
+    return etiquetaRangoCarga(clavesSeleccionadas);
+  }, [clavesSeleccionadas]);
+
+  useEffect(() => {
+    const claves = claveSeleccion ? claveSeleccion.split('|') : [];
+    if (claves.length === 0) {
+      setPos([]);
+      setMeta(null);
+      setComparativoFilas([]);
+      setMetaComparativo(null);
+      return undefined;
+    }
+
+    let cancelado = false;
+    setCargandoDetalle(true);
+    setError('');
+
+    (async () => {
+      try {
+        const detalle = claves.length === 1
+          ? await cargarCargaPorPeriodo(claves[0])
+          : await cargarDetalleRango(claves);
+        if (cancelado) return;
+        setPos(detalle.pos);
+        setMeta(detalle.meta);
+
+        if (claves[0] === PERIODO_SIN_FECHA) {
+          setComparativoFilas([]);
+          setMetaComparativo(null);
+          return;
+        }
+
+        const anterior = await cargarPeriodoAnterior(claves[0], periodos);
+        if (cancelado) return;
+        setComparativoFilas(anterior.filas);
+        setMetaComparativo(anterior.meta);
+      } catch (err) {
+        if (cancelado) return;
+        setError(err instanceof Error ? err.message : 'No se pudo cargar el detalle del periodo.');
+        setPos([]);
+        setMeta(null);
+        setComparativoFilas([]);
+        setMetaComparativo(null);
+      } finally {
+        if (!cancelado) setCargandoDetalle(false);
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [claveSeleccion, periodos]);
+
+  // Al cambiar de periodo se vuelve a excluir a las POs sin proveedor.
+  useEffect(() => {
+    setIncluirSinAsignar(false);
+  }, [claveSeleccion]);
 
   const sinAsignar = useMemo(
-    () => posFiltradas.filter((p) => p.proveedorServicio === SIN_PROVEEDOR).length,
-    [posFiltradas]
+    () => pos.filter((p) => p.proveedorServicio === SIN_PROVEEDOR).length,
+    [pos]
   );
 
   const sinAsignarPorPais = useMemo(() => {
     const mapa = new Map<string, number>();
-    posFiltradas.forEach((p) => {
+    pos.forEach((p) => {
       if (p.proveedorServicio !== SIN_PROVEEDOR) return;
       mapa.set(p.paisDestino, (mapa.get(p.paisDestino) || 0) + 1);
     });
@@ -98,13 +184,11 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
       .filter((pais) => mapa.has(pais))
       .map((pais) => ({ pais: pais as string, cantidad: mapa.get(pais) || 0 }))
       .sort((a, b) => b.cantidad - a.cantidad);
-  }, [posFiltradas]);
+  }, [pos]);
 
   const posBase = useMemo(
-    () => (incluirSinAsignar
-      ? posFiltradas
-      : posFiltradas.filter((p) => p.proveedorServicio !== SIN_PROVEEDOR)),
-    [posFiltradas, incluirSinAsignar]
+    () => (incluirSinAsignar ? pos : pos.filter((p) => p.proveedorServicio !== SIN_PROVEEDOR)),
+    [pos, incluirSinAsignar]
   );
 
   const analisis = useMemo(
@@ -112,17 +196,19 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
     [posBase]
   );
 
-  const periodoLabel = useMemo(() => {
-    if (desde || hasta) {
-      const formato = (valor: string) => {
-        if (!valor) return '—';
-        const [anio, mes, dia] = valor.split('-');
-        return `${dia}/${mes}/${anio}`;
-      };
-      return `${formato(desde)} a ${formato(hasta)}`;
-    }
-    return etiquetaPeriodo(meta?.cargadoAt || new Date().toISOString());
-  }, [desde, hasta, meta]);
+  const rangoFechas = useMemo(() => {
+    const fechas = pos
+      .map((p) => (p.fechaAsignacion ? p.fechaAsignacion.slice(0, 10) : ''))
+      .filter(Boolean)
+      .sort();
+    return { min: fechas[0] || null, max: fechas[fechas.length - 1] || null };
+  }, [pos]);
+
+  const periodoLabel = etiquetaSeleccion;
+  const totalHistorico = useMemo(
+    () => periodos.reduce((acc, p) => acc + p.totalPos, 0),
+    [periodos]
+  );
 
   const comparativo = useMemo(
     () => compararCargas(posBase, comparativoFilas, metaComparativo),
@@ -132,8 +218,7 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
   const detalle = useMemo(() => {
     if (!seleccion) return null;
     const { proveedorServicio, pais } = seleccion;
-    // Las POs sin proveedor no están en la base filtrada, se toman del universo completo.
-    const universo = proveedorServicio === SIN_PROVEEDOR ? posFiltradas : posBase;
+    const universo = proveedorServicio === SIN_PROVEEDOR ? pos : posBase;
     const filtradas = universo.filter((p) => {
       const coincideProveedor = !proveedorServicio || p.proveedorServicio === proveedorServicio;
       const coincidePais = !pais || p.paisDestino === pais;
@@ -143,15 +228,46 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
     if (proveedorServicio) partes.push(proveedorServicio);
     if (pais) partes.push(PAISES_INFO[pais]?.nombre || pais);
     return {
-      titulo: partes.length > 0 ? partes.join(' · ') : 'Todas las POs cargadas',
+      titulo: partes.length > 0 ? partes.join(' · ') : `Todas las POs de ${periodoLabel}`,
       subtitulo: `${formatearEntero(filtradas.length)} POs · ${periodoLabel}`,
       pos: filtradas,
     };
-  }, [seleccion, posFiltradas, posBase, periodoLabel]);
+  }, [seleccion, pos, posBase, periodoLabel]);
 
   const abrirDetalle = (proveedorServicio: string, pais: string | null) => {
     setSeleccion({ proveedorServicio, pais });
   };
+
+  const cambiarModo = (nuevo: ModoSeleccionPeriodo) => {
+    setModo(nuevo);
+    if (nuevo !== 'rango') return;
+    const base = periodo && periodo !== PERIODO_SIN_FECHA ? periodo : periodosReales[0] || '';
+    const inicio = !desde || desde === PERIODO_SIN_FECHA ? base : desde;
+    const fin = !hasta || hasta === PERIODO_SIN_FECHA ? base : hasta;
+    if (inicio > fin) {
+      setDesde(fin);
+      setHasta(inicio);
+    } else {
+      setDesde(inicio);
+      setHasta(fin);
+    }
+  };
+
+  const cambiarDesde = (valor: string) => {
+    setDesde(valor);
+    if (hasta && valor > hasta) setHasta(valor);
+  };
+
+  const cambiarHasta = (valor: string) => {
+    setHasta(valor);
+    if (desde && valor < desde) setDesde(valor);
+  };
+
+  const recargarTodo = async (preferido?: string) => {
+    await cargarPeriodos(preferido);
+  };
+
+  const cargando = cargandoPeriodos || cargandoDetalle;
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -164,14 +280,14 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Asignación Agentes de Carga</h1>
             <p className="text-sm text-gray-500 mt-0.5 max-w-2xl">
-              Carga el Excel de POs y obtén la asignación por Proveedor de Servicio y País Destino.
-              El archivo trae el histórico completo, así que cada carga reemplaza la anterior.
+              Consulta un mes o el acumulado de varios meses, con el detalle por Proveedor de Servicio y País
+              Destino. Cada PO queda guardada en el mes de su Fecha Asignación Agente de Carga.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
           <button
-            onClick={cargar}
+            onClick={() => recargarTodo(periodo)}
             className="px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors whitespace-nowrap cursor-pointer"
           >
             <i className="ri-refresh-line mr-1.5"></i>Actualizar
@@ -191,7 +307,7 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
           <div className="flex-1">
             <p className="text-sm text-red-700">{error}</p>
             <button
-              onClick={cargar}
+              onClick={() => recargarTodo(periodo)}
               className="mt-2 text-sm font-medium text-red-700 underline cursor-pointer"
             >
               Reintentar
@@ -200,162 +316,162 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
         </div>
       )}
 
-      {cargando ? (
+      {cargandoPeriodos ? (
         <div className="bg-white rounded-xl border border-gray-200 py-20 text-center">
           <i className="ri-loader-4-line animate-spin text-3xl text-teal-600"></i>
-          <p className="mt-3 text-sm text-gray-500">Cargando el análisis guardado...</p>
+          <p className="mt-3 text-sm text-gray-500">Cargando los periodos guardados...</p>
         </div>
-      ) : pos.length === 0 ? (
+      ) : periodos.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 px-6 py-14 text-center">
           <div className="w-16 h-16 mx-auto flex items-center justify-center rounded-full bg-teal-50 text-teal-600">
             <i className="ri-file-excel-2-line text-3xl"></i>
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mt-4">
-            {pos.length === 0 ? 'Todavía no hay una carga cargada' : 'Todas las POs están sin proveedor asignado'}
-          </h2>
+          <h2 className="text-lg font-semibold text-gray-900 mt-4">Todavía no hay una carga cargada</h2>
           <p className="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
-            {pos.length === 0
-              ? 'Sube el Excel de POs Activas y el sistema armará automáticamente la tabla de asignación de carga por proveedor de servicio y país destino.'
-              : 'La carga se guardó, pero ninguna PO tiene un Proveedor de Servicio. Puedes incluir esas POs para ver la distribución por país destino.'}
+            Sube el Excel de POs Activas y el sistema armará la asignación de carga por proveedor de servicio y
+            país destino, guardando el detalle de cada periodo.
           </p>
           <button
-            onClick={() => (pos.length === 0 ? setModalCarga(true) : setIncluirSinAsignar(true))}
+            onClick={() => setModalCarga(true)}
             className="mt-5 px-5 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer"
           >
-            <i className={`${pos.length === 0 ? 'ri-upload-2-line' : 'ri-eye-line'} mr-1.5`}></i>
-            {pos.length === 0 ? 'Subir Excel' : 'Incluir POs sin proveedor'}
+            <i className="ri-upload-2-line mr-1.5"></i>Subir Excel
           </button>
 
-          {pos.length === 0 && (
-            <div className="mt-8 max-w-xl mx-auto text-left bg-gray-50/70 border border-gray-100 rounded-xl p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-                Columnas que se usan del archivo
-              </p>
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {COLUMNAS_REQUERIDAS.map((columna) => (
-                  <li key={columna} className="flex items-center gap-2 text-xs text-gray-600">
-                    <i className="ri-check-line text-teal-600"></i>
-                    {columna}
-                  </li>
-                ))}
-              </ul>
-              <p className="text-[11px] text-gray-400 mt-3 leading-relaxed">
-                El país destino se deduce de la Ruta Logística y del Puerto de Arribo. Las rutas de Zona Franca
-                se agrupan como ZF.
-              </p>
-            </div>
-          )}
+          <div className="mt-8 max-w-xl mx-auto text-left bg-gray-50/70 border border-gray-100 rounded-xl p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+              Columnas que se usan del archivo
+            </p>
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {COLUMNAS_REQUERIDAS.map((columna) => (
+                <li key={columna} className="flex items-center gap-2 text-xs text-gray-600">
+                  <i className="ri-check-line text-teal-600"></i>
+                  {columna}
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-gray-400 mt-3 leading-relaxed">
+              El país destino se deduce de la Ruta Logística y del Puerto de Arribo. Las rutas de Zona Franca
+              se agrupan como ZF.
+            </p>
+          </div>
         </div>
       ) : (
         <>
           <FiltroAsignacion
+            periodos={periodos}
+            modo={modo}
+            periodo={periodo}
             desde={desde}
             hasta={hasta}
-            onDesde={setDesde}
-            onHasta={setHasta}
-            onLimpiar={() => {
-              setDesde('');
-              setHasta('');
-            }}
+            etiquetaSeleccion={etiquetaSeleccion}
+            mesesSeleccionados={clavesSeleccionadas.filter((c) => c !== PERIODO_SIN_FECHA).length}
+            onCambiarModo={cambiarModo}
+            onSeleccionarPeriodo={setPeriodo}
+            onCambiarDesde={cambiarDesde}
+            onCambiarHasta={cambiarHasta}
             totalPos={pos.length}
-            enRango={posFiltradas.length}
-            sinFecha={filtrado.sinFecha}
-            fueraRango={filtrado.fueraRango}
-            activo={filtrado.activo}
+            totalHistorico={totalHistorico}
+            minFecha={rangoFechas.min}
+            maxFecha={rangoFechas.max}
+            cargando={cargandoDetalle}
           />
 
-          {!analisis ? (
+          {cargandoDetalle ? (
+            <div className="bg-white rounded-xl border border-gray-200 py-20 text-center">
+              <i className="ri-loader-4-line animate-spin text-3xl text-teal-600"></i>
+              <p className="mt-3 text-sm text-gray-500">Cargando el detalle de {periodoLabel}...</p>
+            </div>
+          ) : !analisis ? (
             <div className="bg-white rounded-xl border border-gray-200 px-6 py-14 text-center">
               <div className="w-16 h-16 mx-auto flex items-center justify-center rounded-full bg-gray-100 text-gray-500">
                 <i className="ri-calendar-close-line text-3xl"></i>
               </div>
               <h2 className="text-lg font-semibold text-gray-900 mt-4">
-                {posFiltradas.length === 0
-                  ? 'No hay POs en el periodo seleccionado'
-                  : 'Todas las POs del periodo están sin proveedor asignado'}
+                {clavesSeleccionadas.length === 0
+                  ? 'Elegí el rango de meses a consultar'
+                  : pos.length === 0
+                    ? `No hay detalle guardado para ${periodoLabel}`
+                    : 'Todas las POs del periodo están sin proveedor asignado'}
               </h2>
               <p className="text-sm text-gray-500 mt-1 max-w-lg mx-auto">
-                {posFiltradas.length === 0
-                  ? 'Ajustá las fechas Desde y Hasta, o volvé a Todo el histórico para ver la carga completa.'
-                  : 'Las POs del periodo no tienen Proveedor de Servicio. Podés incluirlas para ver la distribución por país destino.'}
+                {clavesSeleccionadas.length === 0
+                  ? 'En el modo rango elegí un mes de inicio y un mes de fin para ver el acumulado de la asignación.'
+                  : pos.length === 0
+                    ? 'Elegí otro periodo en el selector o volvé a cargar el Excel para completar el detalle.'
+                    : 'Las POs del periodo no tienen Proveedor de Servicio. Podés incluirlas para ver la distribución por país destino.'}
               </p>
-              <button
-                onClick={() => {
-                  if (posFiltradas.length === 0) {
-                    setDesde('');
-                    setHasta('');
-                    return;
-                  }
-                  setIncluirSinAsignar(true);
-                }}
-                className="mt-5 px-5 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer"
-              >
-                <i className={`${posFiltradas.length === 0 ? 'ri-history-line' : 'ri-eye-line'} mr-1.5`}></i>
-                {posFiltradas.length === 0 ? 'Ver todo el histórico' : 'Incluir POs sin proveedor'}
-              </button>
+              {pos.length > 0 && (
+                <button
+                  onClick={() => setIncluirSinAsignar(true)}
+                  className="mt-5 px-5 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <i className="ri-eye-line mr-1.5"></i>Incluir POs sin proveedor
+                </button>
+              )}
             </div>
           ) : (
             <>
-          <TarjetasResumen analisis={analisis} />
+              <TarjetasResumen analisis={analisis} />
 
-          <IndicadorSinProveedor
-            sinAsignar={sinAsignar}
-            total={posFiltradas.length}
-            porPais={sinAsignarPorPais}
-            incluirSinAsignar={incluirSinAsignar}
-            onToggle={() => setIncluirSinAsignar((v) => !v)}
-            onVerDetalle={() => setSeleccion({ proveedorServicio: SIN_PROVEEDOR, pais: null })}
-          />
+              <IndicadorSinProveedor
+                sinAsignar={sinAsignar}
+                total={pos.length}
+                porPais={sinAsignarPorPais}
+                incluirSinAsignar={incluirSinAsignar}
+                onToggle={() => setIncluirSinAsignar((v) => !v)}
+                onVerDetalle={() => setSeleccion({ proveedorServicio: SIN_PROVEEDOR, pais: null })}
+              />
 
-          <TablaAsignacion
-            analisis={analisis}
-            periodo={periodoLabel}
-            meta={meta}
-            sinAsignar={sinAsignar}
-            incluirSinAsignar={incluirSinAsignar}
-            onToggleSinAsignar={() => setIncluirSinAsignar((v) => !v)}
-            onVerDetalle={abrirDetalle}
-            onCargarExcel={() => setModalCarga(true)}
-          />
+              <TablaAsignacion
+                analisis={analisis}
+                periodo={periodoLabel}
+                meta={meta}
+                sinAsignar={sinAsignar}
+                incluirSinAsignar={incluirSinAsignar}
+                onToggleSinAsignar={() => setIncluirSinAsignar((v) => !v)}
+                onVerDetalle={abrirDetalle}
+                onCargarExcel={() => setModalCarga(true)}
+              />
 
-          {filtrado.activo ? (
-            <div className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex items-start gap-2">
-              <i className="ri-information-line text-gray-400 mt-0.5"></i>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                La comparación con la carga anterior se calcula sobre el histórico completo, así que se oculta
-                mientras hay un periodo seleccionado. Tocá “Todo el histórico” para verla.
-              </p>
-            </div>
-          ) : (
-            <ComparacionCarga
-              comparativo={comparativo}
-              periodoActual={periodoLabel}
-              onVerDetalle={abrirDetalle}
-            />
-          )}
+              {clavesSeleccionadas[0] === PERIODO_SIN_FECHA ? (
+                <div className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex items-start gap-2">
+                  <i className="ri-information-line text-gray-400 mt-0.5"></i>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    Estas POs no tienen Fecha Asignación Agente de Carga, así que no se pueden comparar contra un
+                    periodo anterior.
+                  </p>
+                </div>
+              ) : (
+                <ComparacionCarga
+                  comparativo={comparativo}
+                  periodoActual={periodoLabel}
+                  onVerDetalle={abrirDetalle}
+                />
+              )}
 
-          <DistribucionCarga analisis={analisis} onVerDetalle={abrirDetalle} />
+              <DistribucionCarga analisis={analisis} onVerDetalle={abrirDetalle} />
 
-          <div className="bg-teal-50 border border-teal-100 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <span className="w-10 h-10 flex items-center justify-center rounded-lg bg-teal-600 text-white flex-shrink-0">
-                <i className="ri-information-line text-lg"></i>
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-teal-900">¿Cambió la asignación de carga?</p>
-                <p className="text-xs text-teal-700 mt-0.5 max-w-xl">
-                  Sube el Excel actualizado. Como el archivo trae el histórico completo, la carga anterior se
-                  reemplaza por completo y se guarda como referencia para la comparación.
-                </p>
+              <div className="bg-teal-50 border border-teal-100 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <span className="w-10 h-10 flex items-center justify-center rounded-lg bg-teal-600 text-white flex-shrink-0">
+                    <i className="ri-information-line text-lg"></i>
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-teal-900">¿Cambió la asignación de carga?</p>
+                    <p className="text-xs text-teal-700 mt-0.5 max-w-xl">
+                      Sube el Excel actualizado. Se actualizan las POs que vienen en el archivo y el detalle
+                      histórico de los meses anteriores se conserva completo.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setModalCarga(true)}
+                  className="px-4 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer self-start sm:self-auto"
+                >
+                  <i className="ri-upload-2-line mr-1.5"></i>Cargar Excel
+                </button>
               </div>
-            </div>
-            <button
-              onClick={() => setModalCarga(true)}
-              className="px-4 py-2.5 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors whitespace-nowrap cursor-pointer self-start sm:self-auto"
-            >
-              <i className="ri-upload-2-line mr-1.5"></i>Cargar Excel
-            </button>
-          </div>
             </>
           )}
         </>
@@ -364,12 +480,12 @@ export default function AnalisisAgenteCarga({ usuario }: AnalisisAgenteCargaProp
       {modalCarga && (
         <ModalCargarExcel
           usuario={usuario}
-          totalActual={pos.length}
+          totalActual={totalHistorico}
           metaActual={meta}
           onClose={() => setModalCarga(false)}
           onGuardado={async () => {
             setModalCarga(false);
-            await cargar();
+            await recargarTodo(periodo);
           }}
         />
       )}

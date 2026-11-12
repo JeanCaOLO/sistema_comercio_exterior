@@ -6,6 +6,8 @@ import CargandoRepositorio from '@/pages/home/components/repositorio/CargandoRep
 import TablaRepositorio from '@/pages/home/components/repositorio/TablaRepositorio';
 import { useRepositorio } from '@/pages/home/components/repositorio/useRepositorio';
 import { obtenerCargador } from '@/pages/home/components/repositorio/utils';
+import AvisoSoloLectura from '@/components/feature/AvisoSoloLectura';
+import { useSoloLectura } from '@/hooks/useSoloLectura';
 import {
   ESTADOS_TODOS,
   REGISTROS_POR_PAGINA,
@@ -13,6 +15,7 @@ import {
 
 export default function RepositorioDocumentacion() {
   const repo = useRepositorio();
+  const soloLectura = useSoloLectura();
 
   if (repo.cargando && repo.registros.length === 0) {
     return <CargandoRepositorio />;
@@ -35,6 +38,10 @@ export default function RepositorioDocumentacion() {
           </div>
         </div>
       </div>
+
+      {soloLectura && (
+        <AvisoSoloLectura detalle="Puedes buscar, revisar y descargar documentos. No puedes editar los registros del repositorio." />
+      )}
 
       {repo.error && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
@@ -136,8 +143,10 @@ export default function RepositorioDocumentacion() {
           </div>
 
           <p className="text-xs text-gray-400 mb-2 flex items-center gap-1.5">
-            <i className="ri-cursor-line"></i>
-            Hacé clic en cualquier fila para editar el registro. Los botones de Historial y el desplegable de archivos siguen funcionando aparte.
+            <i className={soloLectura ? 'ri-lock-line' : 'ri-cursor-line'}></i>
+            {soloLectura
+              ? 'Hacé clic en el desplegable de archivos para ver y descargar los documentos. La edición está deshabilitada en modo consulta.'
+              : 'Hacé clic en cualquier fila para editar el registro. Los botones de Historial y el desplegable de archivos siguen funcionando aparte.'}
           </p>
 
           <TablaRepositorio
@@ -146,6 +155,7 @@ export default function RepositorioDocumentacion() {
             downloadingId={repo.downloadingId}
             cargando={repo.cargando}
             hayFiltrosActivos={repo.hayFiltrosActivos}
+            soloLectura={soloLectura}
             onToggleExpandir={repo.toggleExpandir}
             onDescargar={repo.descargar}
             onEditar={repo.abrirEdicion}
@@ -163,7 +173,7 @@ export default function RepositorioDocumentacion() {
         </>
       )}
 
-      {repo.registroEditando && (
+      {repo.registroEditando && !soloLectura && (
         <EditarDocumentoModal
           isOpen={repo.editModalOpen}
           onClose={repo.cerrarEdicion}

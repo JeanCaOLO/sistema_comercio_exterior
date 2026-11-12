@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNotificaciones } from '@/hooks/useNotificaciones';
-import { getIconoColor, getTipoLabel, timeAgo, esNotificacionEtd, esNotificacionFechas, esNotificacionRagaDatos, type Notificacion } from '@/lib/notificaciones';
+import { puedeVerEtapaPo } from '@/lib/permisos';
+import { getIconoColor, getTipoLabel, timeAgo, esNotificacionEtd, esNotificacionFechas, esNotificacionRagaDatos, esNotificacionEtapa, type Notificacion } from '@/lib/notificaciones';
 import ToastNotificaciones from './ToastNotificacion';
 
 interface CampanitaNotificacionesProps {
@@ -17,13 +18,23 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
 
   const {
     notificaciones,
-    noLeidas,
     cargando,
     toasts,
     cerrarToast,
     marcarLeida,
     marcarTodasLeidas,
   } = useNotificaciones(usuarioId, usuarioEmail, usuarioRoles);
+
+  // Los avisos del módulo de Cambios de Etapa PO solo los ve el usuario
+  // autorizado; el resto del equipo no debe enterarse de esas solicitudes.
+  const autorizadoEtapa = puedeVerEtapaPo({ email: usuarioEmail, id: usuarioId });
+  const notificacionesVisibles = autorizadoEtapa
+    ? notificaciones
+    : notificaciones.filter((n) => !esNotificacionEtapa(n.tipo));
+  const toastsVisibles = autorizadoEtapa
+    ? toasts
+    : toasts.filter((t) => !esNotificacionEtapa(t.tipo));
+  const noLeidasVisibles = notificacionesVisibles.filter((n) => !n.leida).length;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -51,6 +62,14 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
     if (esNotificacionRagaDatos(notif.tipo) && notif.expediente_id) {
       window.dispatchEvent(
         new CustomEvent('abrirExpedienteRaga', { detail: { id: notif.expediente_id } })
+      );
+      setAbierto(false);
+      return;
+    }
+
+    if (esNotificacionEtapa(notif.tipo) && notif.expediente_id) {
+      window.dispatchEvent(
+        new CustomEvent('abrirSolicitudEtapa', { detail: { id: notif.expediente_id, tipo: notif.tipo } })
       );
       setAbierto(false);
       return;
@@ -88,9 +107,9 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
           title="Notificaciones"
         >
           <i className="ri-notification-3-line text-2xl"></i>
-          {noLeidas > 0 && (
+          {noLeidasVisibles > 0 && (
             <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1.5 flex items-center justify-center bg-red-500 text-white text-xs font-bold rounded-full leading-none border-2 border-white">
-              {noLeidas > 99 ? '99+' : noLeidas}
+              {noLeidasVisibles > 99 ? '99+' : noLeidasVisibles}
             </span>
           )}
         </button>
@@ -105,10 +124,10 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
               <div>
                 <h3 className="text-sm font-bold text-gray-900">Notificaciones</h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {noLeidas > 0 ? `${noLeidas} sin leer` : 'Todo al día'}
+                  {noLeidasVisibles > 0 ? `${noLeidasVisibles} sin leer` : 'Todo al día'}
                 </p>
               </div>
-              {noLeidas > 0 && (
+              {noLeidasVisibles > 0 && (
                 <button
                   type="button"
                   onClick={marcarTodasLeidas}
@@ -124,7 +143,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
                 <div className="flex items-center justify-center py-12">
                   <div className="w-6 h-6 border-2 border-gray-200 border-t-teal-600 rounded-full animate-spin"></div>
                 </div>
-              ) : notificaciones.length === 0 ? (
+              ) : notificacionesVisibles.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 px-4">
                   <div className="w-12 h-12 flex items-center justify-center bg-gray-100 rounded-full mb-3">
                     <i className="ri-notification-off-line text-2xl text-gray-400"></i>
@@ -136,7 +155,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {notificaciones.map((notif) => (
+                  {notificacionesVisibles.map((notif) => (
                     <div
                       key={notif.id}
                       onClick={() => abrirNotificacion(notif)}
@@ -163,7 +182,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
                           <p className="text-sm text-gray-800 leading-snug">{notif.mensaje}</p>
                           <div className="flex items-center justify-between mt-1.5">
                             <span className="text-xs text-gray-400">{timeAgo(notif.created_at)}</span>
-                            {(esNotificacionEtd(notif.tipo) || esNotificacionFechas(notif.tipo)) && notif.expediente_id ? (
+                            {(esNotificacionEtd(notif.tipo) || esNotificacionFechas(notif.tipo) || esNotificacionEtapa(notif.tipo)) && notif.expediente_id ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full whitespace-nowrap">
                                 Ver solicitud
                                 <i className="ri-arrow-right-s-line"></i>
@@ -198,7 +217,7 @@ export default function CampanitaNotificaciones({ usuarioId, usuarioNombre, usua
       </div>
 
       {/* Toasts flotantes en la esquina inferior derecha */}
-      <ToastNotificaciones toasts={toasts} onCerrar={cerrarToast} onAbrir={abrirNotificacion} />
+      <ToastNotificaciones toasts={toastsVisibles} onCerrar={cerrarToast} onAbrir={abrirNotificacion} />
     </>
   );
 }

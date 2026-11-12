@@ -24,6 +24,7 @@ import AnalisisControlFechas from './components/control-fechas/AnalisisControlFe
 import ComparadorDocumentos from './components/herramientas/ComparadorDocumentos';
 import GestionBlContenedor from './components/bl-contenedor/GestionBlContenedor';
 import type { VistaBlContenedor } from './components/bl-contenedor/types';
+import GestionEtapaPo, { type VistaEtapaPo } from './components/etapa-po/GestionEtapaPo';
 import { verificarSolicitudesEtdAtrasadas, verificarCambiosCampoAtrasados, verificarFechasAtrasadas } from '@/lib/notificaciones';
 import { useSincronizacionRaga } from '@/hooks/useSincronizacionRaga';
 import { useSincronizacionBandeja } from '@/hooks/useSincronizacionBandeja';
@@ -63,6 +64,19 @@ const VISTA_PO_TRACKING_A_MODULO: Record<VistaPoTracking, string> = {
   historial: 'po-sin-tracking-historial',
 };
 
+// Vistas del módulo "Cambios de Etapa PO".
+const VISTAS_ETAPA: Record<string, VistaEtapaPo> = {
+  'etapa-solicitar': 'solicitar',
+  'etapa-aprobaciones': 'aprobaciones',
+  'etapa-historial': 'historial',
+};
+
+const VISTA_ETAPA_A_MODULO: Record<VistaEtapaPo, string> = {
+  solicitar: 'etapa-solicitar',
+  aprobaciones: 'etapa-aprobaciones',
+  historial: 'etapa-historial',
+};
+
 // Vistas del módulo "Agentes de Carga · BL y Contenedor".
 const VISTAS_BL: Record<string, VistaBlContenedor> = {
   'carga-bl-dashboard': 'dashboard',
@@ -85,12 +99,17 @@ export default function Home() {
   const [matrizPermisos, setMatrizPermisos] = useState<Record<string, string[]>>(PERMISOS_DEFAULT);
   const [solicitudEtdObjetivo, setSolicitudEtdObjetivo] = useState<string | null>(null);
   const [solicitudFechasObjetivo, setSolicitudFechasObjetivo] = useState<string | null>(null);
+  const [solicitudEtapaObjetivo, setSolicitudEtapaObjetivo] = useState<string | null>(null);
   const [expedienteRagaObjetivo, setExpedienteRagaObjetivo] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user, perfil, loading, signOut } = useAuth();
 
   const userRoles = perfil?.roles || [];
-  const modulosPermitidos = obtenerModulosPermitidos(userRoles, matrizPermisos);
+  const modulosPermitidos = obtenerModulosPermitidos(userRoles, matrizPermisos, {
+    email: perfil?.email || user?.email || '',
+    nombre: perfil?.nombre || '',
+    id: perfil?.id || '',
+  });
   // Un usuario cuyo acceso se limita al módulo de Agentes de Carga (BL y
   // Contenedor) no recibe campanita ni avisos operativos del resto del sistema.
   const clientePuro = modulosPermitidos.length > 0 && modulosPermitidos.every((id) => esModuloAgentesCarga(id));
@@ -191,10 +210,21 @@ export default function Home() {
       setExpedienteRagaObjetivo(id);
     };
 
+    // Al hacer clic en una notificación de etapa se abre la solicitud:
+    // las pendientes van a Aprobaciones y los resultados al Historial.
+    const handleAbrirSolicitudEtapa = (event: any) => {
+      const id = event.detail?.id;
+      const tipo = String(event.detail?.tipo || '');
+      const esPendiente = tipo === 'etapa_solicitud_pendiente';
+      setActiveView(esPendiente ? 'etapa-aprobaciones' : 'etapa-historial');
+      setSolicitudEtapaObjetivo(typeof id === 'string' && id ? id : null);
+    };
+
     window.addEventListener('openFormularioExpediente', handleOpenFormulario);
     window.addEventListener('navigateTo', handleNavigateTo);
     window.addEventListener('abrirSolicitudEtd', handleAbrirSolicitudEtd);
     window.addEventListener('abrirSolicitudFechas', handleAbrirSolicitudFechas);
+    window.addEventListener('abrirSolicitudEtapa', handleAbrirSolicitudEtapa);
     window.addEventListener('abrirExpedienteRaga', handleAbrirExpedienteRaga);
 
     return () => {
@@ -202,6 +232,7 @@ export default function Home() {
       window.removeEventListener('navigateTo', handleNavigateTo);
       window.removeEventListener('abrirSolicitudEtd', handleAbrirSolicitudEtd);
       window.removeEventListener('abrirSolicitudFechas', handleAbrirSolicitudFechas);
+      window.removeEventListener('abrirSolicitudEtapa', handleAbrirSolicitudEtapa);
       window.removeEventListener('abrirExpedienteRaga', handleAbrirExpedienteRaga);
     };
   }, []);
@@ -261,6 +292,7 @@ export default function Home() {
   const vistaCambiosActual: VistaCambios = VISTAS_CAMBIOS[activeView] || 'dashboard';
   const vistaPoTrackingActual: VistaPoTracking = VISTAS_PO_TRACKING[activeView] || 'dashboard';
   const vistaBlActual: VistaBlContenedor = VISTAS_BL[activeView] || 'dashboard';
+  const vistaEtapaActual: VistaEtapaPo = VISTAS_ETAPA[activeView] || 'solicitar';
 
   // Contexto de navegación para la barra superior (solo visual)
   const grupoActual = grupoDeVista(activeView);
@@ -362,6 +394,14 @@ export default function Home() {
                 <GestionBlContenedor
                   vista={vistaBlActual}
                   onCambiarVista={(vista) => setActiveView(VISTA_BL_A_MODULO[vista])}
+                />
+              )}
+              {VISTAS_ETAPA[activeView] && (
+                <GestionEtapaPo
+                  vista={vistaEtapaActual}
+                  onCambiarVista={(vista) => setActiveView(VISTA_ETAPA_A_MODULO[vista])}
+                  solicitudObjetivoId={solicitudEtapaObjetivo}
+                  onObjetivoConsumido={() => setSolicitudEtapaObjetivo(null)}
                 />
               )}
             </>

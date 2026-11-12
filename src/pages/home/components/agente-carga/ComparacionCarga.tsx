@@ -94,10 +94,10 @@ export default function ComparacionCarga({ comparativo, periodoActual, onVerDeta
             <i className="ri-arrow-left-right-line text-lg"></i>
           </span>
           <div>
-            <h3 className="text-sm font-bold text-gray-900">Comparación con la carga anterior</h3>
+            <h3 className="text-sm font-bold text-gray-900">Comparación con el periodo anterior</h3>
             <p className="text-xs text-gray-500 mt-1 max-w-2xl leading-relaxed">
-              Todavía no hay una carga previa guardada para comparar. En cuanto subas el próximo Excel, acá vas a ver
-              cómo se movió cada proveedor de servicio entre países respecto a esta carga.
+              Todavía no hay un periodo anterior con detalle guardado para comparar. En cuanto exista otro mes con
+              asignaciones, acá vas a ver cómo se movió cada proveedor de servicio entre países respecto a este periodo.
             </p>
           </div>
         </div>
@@ -113,10 +113,10 @@ export default function ComparacionCarga({ comparativo, periodoActual, onVerDeta
             <span className="w-8 h-8 flex items-center justify-center rounded-lg bg-teal-50 text-teal-600 flex-shrink-0">
               <i className="ri-arrow-left-right-line"></i>
             </span>
-            <h3 className="text-base font-bold text-gray-900">Comparación con la carga anterior</h3>
+            <h3 className="text-base font-bold text-gray-900">Comparación con el periodo anterior</h3>
           </div>
           <p className="text-xs text-gray-500 mt-1.5 leading-relaxed max-w-2xl">
-            Movimiento de cada Proveedor de Servicio entre países respecto a la carga anterior
+            Movimiento de cada Proveedor de Servicio entre países respecto al periodo anterior
             {comparativo.metaAnterior ? (
               <>
                 {' '}(<span className="font-medium text-gray-700">{comparativo.metaAnterior.archivo}</span> del{' '}
@@ -125,7 +125,7 @@ export default function ComparacionCarga({ comparativo, periodoActual, onVerDeta
             ) : (
               '.'
             )}
-            {' '}El número es la carga actual y la etiqueta de color es la diferencia.
+            {' '}El número es la carga del periodo actual y la etiqueta de color es la diferencia.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
@@ -265,7 +265,7 @@ export default function ComparacionCarga({ comparativo, periodoActual, onVerDeta
               <tr>
                 <td colSpan={comparativo.columnas.length + 3} className="px-4 py-12 text-center text-gray-400">
                   <i className="ri-checkbox-circle-line text-3xl mb-2 block text-teal-500"></i>
-                  Ningún proveedor se movió entre países respecto a la carga anterior.
+                  Ningún proveedor se movió entre países respecto al periodo anterior.
                 </td>
               </tr>
             )}
@@ -306,7 +306,7 @@ export default function ComparacionCarga({ comparativo, periodoActual, onVerDeta
 
       <div className="px-5 py-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-white">
         <p className="text-[11px] text-gray-500 italic">
-          El número superior es la carga actual; el valor en color es la diferencia contra la carga anterior.
+          El número superior es la carga del periodo; el valor en color es la diferencia contra el periodo anterior.
         </p>
         <p className="text-[11px] text-gray-500 whitespace-nowrap">
           {formatearEntero(comparativo.totalAnterior)} → {formatearEntero(comparativo.totalActual)} POs

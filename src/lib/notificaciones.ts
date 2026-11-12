@@ -652,6 +652,100 @@ export async function notificarResultadoCambio({
   }
 }
 
+// ============================================================
+// CAMBIO DE ETAPA (ESTADO DE KANBAN) DE UNA PO
+// Mismo circuito de avisos: los administradores reciben la nueva
+// solicitud y el solicitante recibe el resultado.
+// ============================================================
+
+interface NotificarNuevaSolicitudEtapaParams {
+  orderNumber: string;
+  tradingCompany: string;
+  solicitanteNombre: string;
+  solicitanteId?: string | null;
+  etapaAnterior: string;
+  etapaNueva: string;
+  apiEnv: 'production' | 'qa';
+  solicitudId?: string | null;
+}
+
+export async function notificarNuevaSolicitudEtapa({
+  orderNumber,
+  tradingCompany,
+  solicitanteNombre,
+  solicitanteId,
+  etapaAnterior,
+  etapaNueva,
+  apiEnv,
+  solicitudId,
+}: NotificarNuevaSolicitudEtapaParams): Promise<void> {
+  try {
+    // El módulo de Cambios de Etapa PO está reservado a un único usuario:
+    // solo él recibe el aviso de las nuevas solicitudes (producción y QA).
+    const { data: autorizados } = await supabase
+      .from('usuarios')
+      .select('id, nombre')
+      .in('email', ['jalvarez@ologistics.com']);
+    const destinatarios = (autorizados || []).map((u: any) => ({ id: u.id, nombre: u.nombre }));
+
+    const finales = destinatarios.filter((u) => u.id !== solicitanteId);
+    if (finales.length === 0) return;
+
+    const prefijo = apiEnv === 'qa' ? '[QA] ' : '';
+    const mensaje =
+      `${prefijo}Nueva solicitud de cambio de etapa para la PO ${orderNumber}` +
+      `${tradingCompany ? ` (${tradingCompany})` : ''}. Etapa: ${etapaAnterior} → ${etapaNueva}. ` +
+      `Solicitado por: ${solicitanteNombre || 'Usuario'}. Requiere aprobación.`;
+
+    const notificaciones = finales.map((u) => ({
+      usuario_id: u.id,
+      mensaje,
+      tipo: 'etapa_solicitud_pendiente',
+      expediente_id: solicitudId ?? null,
+      po_tiquetera: orderNumber,
+      usuario_genero: 'Sistema',
+      icono: 'ri-kanban-view',
+      leida: false,
+    }));
+
+    const { error } = await supabase.from('notificaciones').insert(notificaciones);
+    if (error) console.error('[Notificaciones] Error al insertar (solicitud de etapa):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (solicitud de etapa):', err.message || err);
+  }
+}
+
+interface NotificarResultadoEtapaParams {
+  usuarioId: string | null;
+  poTiquetera: string;
+  mensaje: string;
+  tipo: 'etapa_aprobada' | 'etapa_rechazada';
+}
+
+export async function notificarResultadoEtapa({
+  usuarioId,
+  poTiquetera,
+  mensaje,
+  tipo,
+}: NotificarResultadoEtapaParams): Promise<void> {
+  if (!usuarioId) return;
+  try {
+    const { error } = await supabase.from('notificaciones').insert([{
+      usuario_id: usuarioId,
+      mensaje,
+      tipo,
+      expediente_id: null,
+      po_tiquetera: poTiquetera,
+      usuario_genero: 'Sistema',
+      icono: tipo === 'etapa_aprobada' ? 'ri-checkbox-circle-line' : 'ri-close-circle-line',
+      leida: false,
+    }]);
+    if (error) console.error('[Notificaciones] Error al insertar (resultado de etapa):', error.message);
+  } catch (err: any) {
+    console.error('[Notificaciones] Error (resultado de etapa):', err.message || err);
+  }
+}
+
 interface CambioPendienteAtrasado {
   id: string;
   order_number: string;
@@ -1008,6 +1102,10 @@ export function esNotificacionRagaDatos(tipo: string): boolean {
   return tipo === 'raga_datos_actualizados';
 }
 
+export function esNotificacionEtapa(tipo: string): boolean {
+  return ['etapa_solicitud_pendiente', 'etapa_aprobada', 'etapa_rechazada'].includes(tipo);
+}
+
 export function esNotificacionFechas(tipo: string): boolean {
   return TIPOS_NOTIFICACION_FECHAS.includes(tipo);
 }
@@ -1180,6 +1278,12 @@ export function getIconoColor(tipo: string): string {
       return 'text-emerald-600 bg-emerald-100';
     case 'cambio_rechazada':
       return 'text-red-600 bg-red-100';
+    case 'etapa_solicitud_pendiente':
+      return 'text-amber-600 bg-amber-100';
+    case 'etapa_aprobada':
+      return 'text-emerald-600 bg-emerald-100';
+    case 'etapa_rechazada':
+      return 'text-red-600 bg-red-100';
     case 'fechas_solicitud_pendiente':
       return 'text-amber-600 bg-amber-100';
     case 'fechas_recordatorio':
@@ -1227,6 +1331,12 @@ export function getTipoLabel(tipo: string): string {
       return 'Cambio aprobado';
     case 'cambio_rechazada':
       return 'Cambio rechazado';
+    case 'etapa_solicitud_pendiente':
+      return 'Nueva solicitud de etapa';
+    case 'etapa_aprobada':
+      return 'Cambio de etapa aprobado';
+    case 'etapa_rechazada':
+      return 'Cambio de etapa rechazado';
     case 'fechas_solicitud_pendiente':
       return 'Nueva solicitud de fechas PO';
     case 'fechas_recordatorio':

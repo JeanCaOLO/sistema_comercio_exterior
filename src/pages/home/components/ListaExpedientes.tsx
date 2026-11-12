@@ -2,6 +2,8 @@
 // La lógica vive en ./lista (hook, servicios, utilidades y componentes).
 
 import ModalDocumentosExpediente from '@/pages/home/components/ModalDocumentosExpediente';
+import AvisoSoloLectura from '@/components/feature/AvisoSoloLectura';
+import { useSoloLectura } from '@/hooks/useSoloLectura';
 import { useListaExpedientes } from './lista/useListaExpedientes';
 import CargandoLista from './lista/CargandoLista';
 import FiltrosLista from './lista/FiltrosLista';
@@ -10,6 +12,7 @@ import ModalHistorialLista from './lista/ModalHistorialLista';
 import ModalDetalleLista from './lista/ModalDetalleLista';
 
 export default function ListaExpedientes() {
+  const soloLectura = useSoloLectura();
   const {
     expedientes,
     loading,
@@ -79,6 +82,10 @@ export default function ListaExpedientes() {
           Vista completa de todos los expedientes (Dropship y ZF) ordenados por fecha de creación
         </p>
       </div>
+
+      {soloLectura && (
+        <AvisoSoloLectura detalle="Puedes consultar todos los expedientes, abrir su detalle, historial y documentos. No puedes editar ni eliminar registros." />
+      )}
 
       {showSuccess && (
         <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">
@@ -157,6 +164,7 @@ export default function ListaExpedientes() {
           uploadingFiles={uploadingFiles}
           rutas={rutas}
           responsables={responsables}
+          soloLectura={soloLectura}
           onClose={cerrarModal}
           onEdit={() => setEditMode(true)}
           onCancelarEdicion={cancelarEdicion}

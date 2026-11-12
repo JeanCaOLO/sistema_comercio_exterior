@@ -70,7 +70,43 @@ export const ROLES: Rol[] = [
   { nombre: 'Expedientes', descripcion: 'Gestión de Dropship, ZF, Lista de Expedientes y Repositorio Docs', color: 'bg-indigo-100 text-indigo-800' },
   { nombre: 'Solicitante', descripcion: 'Solicitudes y carga de documentos', color: 'bg-rose-100 text-rose-800' },
   { nombre: 'Cliente', descripcion: 'Solo el módulo BL y Contenedor (Agentes de Carga)', color: 'bg-amber-100 text-amber-800' },
+  { nombre: 'Cliente Consulta', descripcion: 'Solo lectura de Expedientes (no puede editar)', color: 'bg-slate-200 text-slate-800' },
 ];
+
+// ─────────────────────────────────────────────────────────────
+// Rol "Cliente Consulta"
+// Decisión de negocio: ve todos los módulos de Expedientes, pero en modo
+// consulta. No puede crear, editar, eliminar, aprobar ni subir archivos, y
+// no tiene acceso a Orders, Herramientas ni Configuración.
+// ─────────────────────────────────────────────────────────────
+export const ROL_CLIENTE_CONSULTA = 'Cliente Consulta';
+
+export const MODULOS_EXPEDIENTES: string[] = [
+  'dashboard',
+  'gestion-dropship',
+  'gestion-zf',
+  'lista-expedientes',
+  'reportes',
+  'carga-caa',
+  'documentacion',
+  'repositorio',
+  'facturas',
+];
+
+// El usuario tiene el rol Cliente Consulta (aunque además tenga otros roles).
+export function esRolClienteConsulta(roles: string[]): boolean {
+  return (roles || []).some((rol) => normalizarRol(rol) === 'cliente consulta');
+}
+
+// Modo consulta: puede navegar los módulos de Expedientes, pero las acciones
+// de escritura quedan ocultas en toda la interfaz.
+export function esSoloLectura(roles: string[]): boolean {
+  if (!roles || roles.length === 0) return false;
+  const rolesNorm = roles.map(normalizarRol);
+  // Un administrador conserva su acceso completo aunque tenga otros roles.
+  if (rolesNorm.includes('administrador')) return false;
+  return rolesNorm.includes('cliente consulta');
+}
 
 // ─────────────────────────────────────────────────────────────
 // Módulo "Agentes de Carga · BL y Contenedor"
@@ -82,6 +118,43 @@ export const MODULOS_AGENTES_CARGA: string[] = [
   'carga-bl-actualizar',
   'carga-bl-historial',
 ];
+
+// ─────────────────────────────────────────────────────────────
+// Módulo "Cambios de Etapa PO"
+// Decisión de negocio: el módulo NO se asigna por rol. Solo lo puede ver
+// un usuario puntual, sin importar el rol que tenga.
+// ─────────────────────────────────────────────────────────────
+export const MODULOS_ETAPA_PO: string[] = [
+  'etapa-solicitar',
+  'etapa-aprobaciones',
+  'etapa-historial',
+];
+
+// Usuarios autorizados a ver el módulo de Cambios de Etapa PO.
+const USUARIOS_ETAPA_PO = {
+  emails: ['jalvarez@ologistics.com'],
+  ids: ['53ca3f42-a033-4ea1-8b0d-e9b5f91e2b4f'],
+};
+
+export interface IdentidadUsuario {
+  email?: string | null;
+  nombre?: string | null;
+  id?: string | null;
+}
+
+export function esModuloEtapaPo(moduloId: string): boolean {
+  return MODULOS_ETAPA_PO.includes(moduloId);
+}
+
+// Indica si la identidad corresponde a un usuario autorizado del módulo de Etapa PO.
+export function puedeVerEtapaPo(identidad?: IdentidadUsuario | null): boolean {
+  if (!identidad) return false;
+  const email = (identidad.email || '').trim().toLowerCase();
+  const id = (identidad.id || '').trim().toLowerCase();
+  if (email && USUARIOS_ETAPA_PO.emails.includes(email)) return true;
+  if (id && USUARIOS_ETAPA_PO.ids.includes(id)) return true;
+  return false;
+}
 
 const ROLES_AGENTES_CARGA = ['administrador', 'cliente'];
 
@@ -105,9 +178,14 @@ export function esSoloCliente(roles: string[]): boolean {
 // - El Administrador siempre tiene todo.
 // - Los módulos de Agentes de Carga solo se pueden asignar al rol Cliente.
 // - El rol Cliente solo puede tener los módulos de Agentes de Carga.
+// - Los módulos de Etapa PO no se asignan por rol: son de un usuario puntual.
+// - El rol Cliente Consulta solo puede tener módulos de Expedientes.
 export function permisoBloqueado(rol: string, moduloId: string): boolean {
   const rolNorm = normalizarRol(rol);
+  if (esModuloEtapaPo(moduloId)) return true;
   if (rolNorm === 'administrador') return true;
+  // El rol Cliente Consulta solo puede tener módulos de Expedientes.
+  if (rolNorm === 'cliente consulta') return !MODULOS_EXPEDIENTES.includes(moduloId);
   if (esModuloAgentesCarga(moduloId)) return rolNorm !== 'cliente';
   return rolNorm === 'cliente';
 }
@@ -118,18 +196,20 @@ export const PERMISOS_DEFAULT: MatrizPermisos = {
     'reportes', 'carga-caa', 'documentacion', 'repositorio', 'facturas', 'configuracion',
     'etd-solicitar', 'etd-aprobaciones', 'etd-historial', 'etd-dashboard',
     'carga-lista-solicitar', 'incoterm-solicitar',
+    'etapa-solicitar', 'etapa-aprobaciones', 'etapa-historial',
     'po-sin-tracking-dashboard', 'po-sin-tracking-solicitar', 'po-sin-tracking-aprobaciones', 'po-sin-tracking-historial',
     'carga-bl-dashboard', 'carga-bl-actualizar', 'carga-bl-historial',
     'agente-carga', 'control-fechas',
     'comparador-documentos'
   ],
-  'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
-  'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas'],
+  'Gestor Dropship': ['dashboard', 'gestion-dropship', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas', 'etapa-solicitar', 'etapa-historial'],
+  'Gestor ZF': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas', 'etapa-solicitar', 'etapa-historial'],
   'Bodega': ['dashboard', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio'],
-  'Documentos': ['dashboard', 'lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial', 'carga-lista-solicitar', 'incoterm-solicitar', 'po-sin-tracking-dashboard', 'po-sin-tracking-solicitar', 'po-sin-tracking-historial', 'agente-carga', 'control-fechas', 'comparador-documentos'],
-  'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas', 'comparador-documentos'],
+  'Documentos': ['dashboard', 'lista-expedientes', 'carga-caa', 'repositorio', 'facturas', 'etd-dashboard', 'etd-solicitar', 'etd-historial', 'carga-lista-solicitar', 'incoterm-solicitar', 'po-sin-tracking-dashboard', 'po-sin-tracking-solicitar', 'po-sin-tracking-historial', 'agente-carga', 'control-fechas', 'comparador-documentos', 'etapa-solicitar', 'etapa-historial'],
+  'Expedientes': ['gestion-dropship', 'gestion-zf', 'lista-expedientes', 'documentacion', 'repositorio', 'facturas', 'comparador-documentos', 'etapa-solicitar', 'etapa-historial'],
   'Solicitante': ['carga-caa', 'documentacion', 'repositorio', 'facturas'],
   'Cliente': ['carga-bl-dashboard', 'carga-bl-actualizar', 'carga-bl-historial'],
+  'Cliente Consulta': ['dashboard', 'gestion-dropship', 'gestion-zf', 'lista-expedientes', 'reportes', 'carga-caa', 'documentacion', 'repositorio', 'facturas'],
 };
 
 const CLAVE_PERMISOS = 'matriz_permisos';
@@ -204,7 +284,19 @@ function normalizarRol(valor: string): string {
 }
 
 // Devuelve los módulos a los que un usuario puede acceder según sus roles
-export function obtenerModulosPermitidos(roles: string[], matriz: MatrizPermisos): string[] {
+export function obtenerModulosPermitidos(
+  roles: string[],
+  matriz: MatrizPermisos,
+  identidad?: IdentidadUsuario | null
+): string[] {
+  const permitidosBase = calcularModulosPorRol(roles, matriz);
+  // El módulo de Cambios de Etapa PO solo lo ve el usuario autorizado,
+  // sin importar el rol que tenga (ni siquiera Administrador).
+  if (puedeVerEtapaPo(identidad)) return permitidosBase;
+  return permitidosBase.filter((id) => !esModuloEtapaPo(id));
+}
+
+function calcularModulosPorRol(roles: string[], matriz: MatrizPermisos): string[] {
   if (!roles || roles.length === 0) return [];
   const rolesNorm = roles.map(normalizarRol);
   if (rolesNorm.includes('administrador')) {
@@ -231,6 +323,12 @@ export function obtenerModulosPermitidos(roles: string[], matriz: MatrizPermisos
   // El rol Cliente solo ve el módulo de Agentes de Carga y nada más.
   if (esSoloCliente(roles)) {
     resultado = [...MODULOS_AGENTES_CARGA];
+  }
+
+  // El rol Cliente Consulta solo accede a los módulos de Expedientes,
+  // sin importar lo que diga la matriz guardada.
+  if (rolesNorm.includes('cliente consulta')) {
+    resultado = resultado.filter((id) => MODULOS_EXPEDIENTES.includes(id));
   }
 
   return resultado;

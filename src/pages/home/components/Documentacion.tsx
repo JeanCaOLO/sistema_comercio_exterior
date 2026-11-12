@@ -11,10 +11,13 @@ import { useDocumentacion } from '@/pages/home/components/documentacion/useDocum
 import { contarListosParaConsolidar } from '@/pages/home/components/documentacion/utils';
 import { useSincronizacionBandeja } from '@/hooks/useSincronizacionBandeja';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSoloLectura } from '@/hooks/useSoloLectura';
+import AvisoSoloLectura from '@/components/feature/AvisoSoloLectura';
 
 export default function Documentacion() {
   const doc = useDocumentacion();
   const { perfil } = useAuth();
+  const soloLectura = useSoloLectura();
   const esAdministrador = perfil?.roles?.includes('Administrador') ?? false;
   const sync = useSincronizacionBandeja({
     activo: !doc.loading,
@@ -39,6 +42,10 @@ export default function Documentacion() {
           </div>
         </div>
       </div>
+
+      {soloLectura && (
+        <AvisoSoloLectura detalle="Puedes revisar los documentos en bandeja y abrir sus archivos. No puedes consolidar tickets, eliminar registros ni sincronizar con Raga." />
+      )}
 
       {doc.showSuccess && (
         <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">
@@ -98,7 +105,8 @@ export default function Documentacion() {
             hayFiltrosActivos={doc.hayFiltrosActivos}
             pagina={doc.paginacion.paginaSegura}
             totalPaginas={doc.paginacion.totalPaginas}
-            puedeEliminar={doc.puedeEliminar}
+            puedeEliminar={doc.puedeEliminar && !soloLectura}
+            soloLectura={soloLectura}
             onEliminar={() => doc.setShowDeleteConfirm(true)}
             onGenerar={() => doc.setShowMCGPrompt(true)}
             generando={doc.generando}

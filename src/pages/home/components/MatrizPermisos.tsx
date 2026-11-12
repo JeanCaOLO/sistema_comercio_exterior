@@ -11,6 +11,7 @@ import {
   guardarRolesAprobacionEtd,
   ROLES_APROBACION_ETD_DEFAULT,
   permisoBloqueado,
+  esModuloEtapaPo,
   type MatrizPermisos as MatrizPermisosType,
 } from '@/lib/permisos';
 
@@ -68,7 +69,7 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
   };
 
   const toggleRolAprobacion = (rol: string) => {
-    if (!esAdmin || rol === 'Administrador') return;
+    if (!esAdmin || rol === 'Administrador' || rol === 'Cliente Consulta') return;
     setRolesAprob((prev) =>
       prev.includes(rol) ? prev.filter((r) => r !== rol) : [...prev, rol]
     );
@@ -182,6 +183,22 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
         </span>
       </div>
 
+      <div className="mb-4 px-4 py-3 bg-slate-100 border border-slate-300 rounded-lg text-sm text-slate-800 flex items-start gap-2">
+        <i className="ri-eye-line mt-0.5"></i>
+        <span>
+          El rol <strong>Cliente Consulta</strong> solo puede ver los módulos de <strong>Expedientes</strong> y
+          siempre en modo lectura: no crea, edita, elimina, aprueba ni sube archivos.
+        </span>
+      </div>
+
+      <div className="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2">
+        <i className="ri-user-star-line mt-0.5"></i>
+        <span>
+          Los módulos de <strong>Cambios de Etapa PO</strong> no se asignan por rol: están reservados
+          al usuario <strong>J. Alvarez (jalvarez@ologistics.com)</strong>, sin importar el rol que tenga.
+        </span>
+      </div>
+
       {/* Leyenda */}
       <div className="flex items-center gap-6 mb-6">
         <div className="flex items-center gap-2">
@@ -256,7 +273,11 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
                           onClick={() => togglePermiso(rol.nombre, modulo.id)}
                           disabled={bloqueado || !esAdmin}
                           title={
-                            esAdminRol
+                            esModuloEtapaPo(modulo.id)
+                              ? 'Reservado al usuario J. Alvarez (jalvarez@ologistics.com)'
+                              : rol.nombre === 'Cliente Consulta'
+                              ? 'El rol Cliente Consulta solo puede acceder a módulos de Expedientes'
+                              : esAdminRol
                               ? 'El Administrador tiene acceso completo'
                               : bloqueado
                               ? 'Este módulo está reservado al Administrador y al rol Cliente'
@@ -299,7 +320,7 @@ export default function MatrizPermisos({ onPermisosActualizados }: MatrizPermiso
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {ROLES.map((rol) => {
             const activo = rolesAprob.includes(rol.nombre);
-            const bloqueado = rol.nombre === 'Administrador' || !esAdmin;
+            const bloqueado = rol.nombre === 'Administrador' || rol.nombre === 'Cliente Consulta' || !esAdmin;
             return (
               <button
                 key={rol.nombre}
