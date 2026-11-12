@@ -11,6 +11,7 @@ import {
   obtenerPendienteFechas,
   detectarCamposFecha,
   columnasSimplesPo,
+  esCampoRutaLogistica,
   esValorFecha,
   MOTIVOS_CAMBIO_FECHAS,
   type CambioFecha,
@@ -22,6 +23,8 @@ interface SolicitarCambioFechasProps {
   usuarioId: string;
   usuarioNombre: string;
   puedeElegirEntorno?: boolean;
+  // Solo administradores pueden modificar datos que no son fechas (ruta logística).
+  puedeCambiarRuta?: boolean;
 }
 
 function mostrarValor(valor: string): string {
@@ -52,6 +55,7 @@ export default function SolicitarCambioFechas({
   usuarioId,
   usuarioNombre,
   puedeElegirEntorno = false,
+  puedeCambiarRuta = false,
 }: SolicitarCambioFechasProps) {
   const [entorno, setEntorno] = useState<RagaEnv>('production');
   const entornoActivo: RagaEnv = puedeElegirEntorno ? entorno : 'production';
@@ -77,7 +81,9 @@ export default function SolicitarCambioFechas({
 
   const construirFilas = (payload: Record<string, any> | null, todas: boolean, previas: FilaFecha[]): FilaFecha[] => {
     const catalogo = detectarCamposFecha(payload);
-    const base = todas ? columnasSimplesPo(payload) : catalogo;
+    const base = todas
+      ? columnasSimplesPo(payload, { incluirRutaLogistica: puedeCambiarRuta })
+      : catalogo;
     const clavesFecha = new Set(catalogo.map((c) => c.clave).filter(Boolean));
     return base.map((c) => {
       // Se conserva lo que el usuario ya había marcado, buscando por clave
@@ -95,6 +101,7 @@ export default function SolicitarCambioFechas({
         esFechaDetectada: c.clave ? clavesFecha.has(c.clave) : false,
         disponible: c.disponible,
         columnaNueva: 'columnaNueva' in c ? Boolean((c as { columnaNueva?: boolean }).columnaNueva) : false,
+        tipoDato: c.tipoDato === 'texto' ? 'texto' : 'fecha',
       };
     });
   };
@@ -187,6 +194,13 @@ export default function SolicitarCambioFechas({
     if (!orderNumber) return 'No hay una PO válida seleccionada.';
     const seleccionadasValidas = filas.filter((f) => f.incluida && f.disponible);
     if (seleccionadasValidas.length === 0) return 'Selecciona al menos una fecha para cambiar.';
+    // Defensa adicional: la ruta logística no se envía si el usuario no está autorizado.
+    if (!puedeCambiarRuta) {
+      const ruta = seleccionadasValidas.filter((f) => esCampoRutaLogistica(f.clave || ''));
+      if (ruta.length > 0) {
+        return 'Solo un administrador puede modificar la ruta logística de la PO. Desmarcá esa columna para continuar.';
+      }
+    }
     const sinValor = seleccionadasValidas.filter((f) => !f.nuevo);
     if (sinValor.length > 0) {
       return `Indica la nueva fecha de: ${sinValor.map((f) => f.etiqueta).join(', ')}.`;
@@ -388,6 +402,15 @@ export default function SolicitarCambioFechas({
               <p className="mt-1 text-sm font-semibold text-gray-900">{seleccionadas.length}</p>
             </div>
           </div>
+
+          {mostrarTodas && !puedeCambiarRuta && (
+            <div className="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 flex items-start gap-2">
+              <i className="ri-lock-line text-sky-600 mt-0.5"></i>
+              <p className="text-xs text-sky-800">
+                Solo un administrador puede modificar la <strong>ruta logística</strong> y otros datos que no son fechas. Las columnas de ruta no se muestran en esta lista.
+              </p>
+            </div>
+          )}
 
           <TablaFechasPo
             filas={filas}

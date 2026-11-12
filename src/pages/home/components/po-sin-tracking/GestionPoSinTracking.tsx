@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { cargarRolesAprobacionEtd } from '@/lib/permisos';
+import { cargarRolesAprobacionEtd, puedeCambiarRutaLogisticaPo } from '@/lib/permisos';
 import { contarPendientesFechas } from '@/lib/cambiosFechasPo';
 import { puedeVerQaEtd } from '@/lib/etdCambios';
 import SolicitarCambioFechas from './SolicitarCambioFechas';
@@ -40,6 +40,12 @@ export default function GestionPoSinTracking({
   const incluirQa = puedeElegirEntorno;
   const esAdministrador = roles.some((r) => r.trim().toLowerCase() === 'administrador');
   const puedeAprobarPropias = esAdministrador || puedeElegirEntorno;
+  // La ruta logística solo la modifican usuarios autorizados (administradores).
+  const puedeCambiarRuta = puedeCambiarRutaLogisticaPo(roles, {
+    email: perfil?.email,
+    id: perfil?.id,
+    nombre: perfil?.nombre,
+  });
 
   useEffect(() => {
     cargarRolesAprobacionEtd().then(setRolesAprobacion);
@@ -111,6 +117,7 @@ export default function GestionPoSinTracking({
           usuarioId={usuarioId}
           usuarioNombre={usuarioNombre}
           puedeElegirEntorno={puedeElegirEntorno}
+          puedeCambiarRuta={puedeCambiarRuta}
         />
       )}
 
@@ -123,6 +130,7 @@ export default function GestionPoSinTracking({
             puedeAprobar={puedeAprobar}
             puedeAprobarPropias={puedeAprobarPropias}
             incluirQa={incluirQa}
+            puedeCambiarRuta={puedeCambiarRuta}
             onRefrescarContador={refrescarPendientes}
             solicitudObjetivoId={solicitudObjetivoId}
             onObjetivoConsumido={onObjetivoConsumido}
@@ -145,6 +153,7 @@ export default function GestionPoSinTracking({
           usuarioNombre={usuarioNombre}
           puedeAprobar={puedeAprobar}
           puedeAprobarPropias={puedeAprobarPropias}
+          puedeCambiarRuta={puedeCambiarRuta}
           incluirQa={incluirQa}
         />
       )}

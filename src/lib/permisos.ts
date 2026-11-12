@@ -156,6 +156,30 @@ export function puedeVerEtapaPo(identidad?: IdentidadUsuario | null): boolean {
   return false;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Ruta logística en "Cambios PO sin Tracking"
+// Decisión de negocio: la ruta logística (y demás datos que no son fechas)
+// solo la puede modificar un Administrador o un usuario puntual autorizado.
+// ─────────────────────────────────────────────────────────────
+const USUARIOS_RUTA_LOGISTICA_PO = {
+  emails: [] as string[],
+  ids: [] as string[],
+};
+
+// Indica si el usuario puede editar datos que no son fechas en el módulo de
+// PO sin Tracking (ruta logística, carrier, naviera, puerto, incoterm, etc.).
+export function puedeCambiarRutaLogisticaPo(
+  roles: string[],
+  identidad?: IdentidadUsuario | null
+): boolean {
+  if ((roles || []).some((rol) => normalizarRol(rol) === 'administrador')) return true;
+  const email = (identidad?.email || '').trim().toLowerCase();
+  const id = (identidad?.id || '').trim().toLowerCase();
+  if (email && USUARIOS_RUTA_LOGISTICA_PO.emails.includes(email)) return true;
+  if (id && USUARIOS_RUTA_LOGISTICA_PO.ids.includes(id)) return true;
+  return false;
+}
+
 const ROLES_AGENTES_CARGA = ['administrador', 'cliente'];
 
 export function esModuloAgentesCarga(moduloId: string): boolean {

@@ -17,6 +17,8 @@ interface ModalDetalleFechasProps {
   solicitud: SolicitudCambioFechas;
   puedeAprobar: boolean;
   puedeAprobarPropias?: boolean;
+  // Solo un usuario autorizado puede aprobar cambios de ruta logística.
+  puedeCambiarRuta?: boolean;
   usuarioId: string;
   usuarioNombre: string;
   onClose: () => void;
@@ -53,6 +55,7 @@ export default function ModalDetalleFechas({
   solicitud,
   puedeAprobar,
   puedeAprobarPropias = false,
+  puedeCambiarRuta = false,
   usuarioId,
   usuarioNombre,
   onClose,
@@ -84,6 +87,7 @@ export default function ModalDetalleFechas({
       solicitud,
       aprobadorId: usuarioId,
       aprobadorNombre: usuarioNombre,
+      puedeCambiarRuta,
     });
     setProcesando(false);
     if (res.ok) {

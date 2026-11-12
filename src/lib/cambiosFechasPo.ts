@@ -28,6 +28,8 @@ export interface CampoFechaPo {
   disponible: boolean;
   // true cuando la PO no trae esta fecha y se completa por primera vez.
   columnaNueva?: boolean;
+  // Tipo de dato: define el control de edición (fecha o texto libre).
+  tipoDato?: 'fecha' | 'texto';
 }
 
 export interface CambioFecha {
@@ -163,6 +165,35 @@ export function esValorFecha(valor: string): boolean {
 
 // Campos de auditoría: nunca se ofrecen para modificación.
 const PATRON_CLAVE_AUDITORIA = /^(date_)?(created|updated|deleted)(_at)?$/i;
+
+// ── Ruta logística ───────────────────────────────────────────
+// Datos que no son fechas y describen el trayecto de la orden. El módulo
+// trabaja con fechas, así que estos campos solo los puede modificar un
+// administrador (ver puedeCambiarRutaLogisticaPo).
+const PALABRAS_RUTA_LOGISTICA = [
+  'ruta', 'route', 'routing', 'logistic', 'carrier', 'navier', 'puerto',
+  'port', 'incoterm', 'transport', 'forwarder', 'vessel', 'buque', 'agencia',
+  'agente', 'aerolinea', 'airline', 'shipping_line', 'modalidad', 'polyline',
+];
+
+// ¿La columna pertenece a la ruta logística de la PO?
+export function esCampoRutaLogistica(clave: string): boolean {
+  const normalizada = (clave || '').trim().toLowerCase();
+  if (!normalizada) return false;
+  const tokens = normalizada.split(/[^a-z0-9]+/).filter(Boolean);
+  return PALABRAS_RUTA_LOGISTICA.some((p) => (
+    p.length > 3 ? normalizada.includes(p) : tokens.includes(p)
+  ));
+}
+
+// ¿La columna guarda una fecha?
+function esClaveFecha(clave: string): boolean {
+  const normalizada = (clave || '').trim().toLowerCase();
+  if (!normalizada) return false;
+  if (esCampoRutaLogistica(normalizada)) return false;
+  if (/(^|_)(date|fecha|fechas)(_|$)/.test(normalizada)) return true;
+  return normalizada.endsWith('_at');
+}
 
 // ── Catálogo de fechas que se pueden enviar a actualizar ─────
 // Estas son las únicas fechas del módulo y se muestran siempre, aunque la PO
@@ -346,6 +377,7 @@ export function detectarCamposFecha(po: Record<string, any> | null | undefined):
     valor: '',
     disponible: true,
     columnaNueva: true,
+    tipoDato: 'fecha' as const,
   }));
 
   if (!po || typeof po !== 'object') return vacio();
@@ -391,6 +423,7 @@ export function detectarCamposFecha(po: Record<string, any> | null | undefined):
         valor: textoValor(po[clave]),
         disponible: true,
         columnaNueva: false,
+        tipoDato: 'fecha' as const,
       };
     }
 
@@ -404,21 +437,32 @@ export function detectarCamposFecha(po: Record<string, any> | null | undefined):
       valor: '',
       disponible: true,
       columnaNueva: true,
+      tipoDato: 'fecha' as const,
     };
   });
 }
 
 // Todas las columnas simples de la PO que el usuario podría mapear a mano.
-export function columnasSimplesPo(po: Record<string, any> | null | undefined): CampoFechaPo[] {
+// La ruta logística solo se incluye cuando el usuario está autorizado.
+export function columnasSimplesPo(
+  po: Record<string, any> | null | undefined,
+  opciones?: { incluirRutaLogistica?: boolean }
+): CampoFechaPo[] {
   if (!po || typeof po !== 'object') return [];
+  const incluirRuta = opciones?.incluirRutaLogistica === true;
   return clavesDePoCompletas(po)
-    .filter((clave) => !esClaveExcluida(clave) && typeof po[clave] !== 'boolean')
+    .filter((clave) => {
+      if (esClaveExcluida(clave) || typeof po[clave] === 'boolean') return false;
+      if (!incluirRuta && esCampoRutaLogistica(clave)) return false;
+      return true;
+    })
     .map((clave) => ({
       id: clave,
       clave,
       etiqueta: humanizarClave(clave),
       valor: textoValor(po[clave]),
       disponible: true,
+      tipoDato: (esClaveFecha(clave) ? 'fecha' : 'texto') as 'fecha' | 'texto',
     }));
 }
 
@@ -637,11 +681,23 @@ export async function aprobarSolicitudFechas(params: {
   solicitud: SolicitudCambioFechas;
   aprobadorId: string;
   aprobadorNombre: string;
+  // Solo un usuario autorizado puede aplicar cambios de ruta logística.
+  puedeCambiarRuta?: boolean;
 }): Promise<ResultadoResolucionFechas> {
   const { solicitud, aprobadorId, aprobadorNombre } = params;
 
   if (solicitud.cambios.length === 0) {
     return { ok: false, error: 'La solicitud no tiene fechas para actualizar.' };
+  }
+
+  // La ruta logística (y otros datos que no son fechas) queda reservada a
+  // administradores, incluso si la solicitud ya existía.
+  const cambiosRuta = solicitud.cambios.filter((c) => esCampoRutaLogistica(c.campo));
+  if (cambiosRuta.length > 0 && params.puedeCambiarRuta === false) {
+    return {
+      ok: false,
+      error: `La solicitud incluye datos de la ruta logística (${cambiosRuta.map((c) => c.etiqueta).join(', ')}). Solo un administrador puede aprobar ese cambio.`,
+    };
   }
 
   // 1) Verificar que siga pendiente.

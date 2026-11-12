@@ -13,6 +13,8 @@ export interface FilaFecha {
   disponible: boolean;
   // La PO no trae esta fecha: se carga por primera vez.
   columnaNueva?: boolean;
+  // 'texto' para datos que no son fechas (ruta logística, carrier, etc.).
+  tipoDato?: 'fecha' | 'texto';
 }
 
 interface TablaFechasPoProps {
@@ -99,7 +101,7 @@ export default function TablaFechasPo({
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase w-12"> </th>
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase">Fecha</th>
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase">Valor actual</th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase">Nueva fecha</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600 uppercase">Nuevo valor</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -148,13 +150,25 @@ export default function TablaFechasPo({
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <input
-                    type="date"
-                    value={fila.nuevo}
-                    disabled={!fila.incluida || !fila.disponible}
-                    onChange={(e) => onCambiarNuevo(fila.id, e.target.value)}
-                    className="w-full max-w-[190px] px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent cursor-pointer disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-                  />
+                  {fila.tipoDato === 'texto' ? (
+                    <input
+                      type="text"
+                      value={fila.nuevo}
+                      disabled={!fila.incluida || !fila.disponible}
+                      onChange={(e) => onCambiarNuevo(fila.id, e.target.value)}
+                      placeholder="Nuevo valor"
+                      maxLength={120}
+                      className="w-full max-w-[190px] px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    />
+                  ) : (
+                    <input
+                      type="date"
+                      value={fila.nuevo}
+                      disabled={!fila.incluida || !fila.disponible}
+                      onChange={(e) => onCambiarNuevo(fila.id, e.target.value)}
+                      className="w-full max-w-[190px] px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent cursor-pointer disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    />
+                  )}
                 </td>
               </tr>
             ))}

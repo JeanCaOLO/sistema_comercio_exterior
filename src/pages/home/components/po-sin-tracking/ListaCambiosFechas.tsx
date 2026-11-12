@@ -16,6 +16,8 @@ interface ListaCambiosFechasProps {
   usuarioNombre: string;
   puedeAprobar: boolean;
   puedeAprobarPropias?: boolean;
+  // Solo usuario autorizado puede aprobar cambios de ruta logística.
+  puedeCambiarRuta?: boolean;
   incluirQa?: boolean;
   onRefrescarContador?: () => void;
   solicitudObjetivoId?: string | null;
@@ -30,6 +32,7 @@ export default function ListaCambiosFechas({
   usuarioNombre,
   puedeAprobar,
   puedeAprobarPropias = false,
+  puedeCambiarRuta = false,
   incluirQa = false,
   onRefrescarContador,
   solicitudObjetivoId = null,
@@ -399,6 +402,7 @@ export default function ListaCambiosFechas({
           solicitud={seleccionada}
           puedeAprobar={puedeAprobar && seleccionada.status === 'PENDING'}
           puedeAprobarPropias={puedeAprobarPropias}
+          puedeCambiarRuta={puedeCambiarRuta}
           usuarioId={usuarioId}
           usuarioNombre={usuarioNombre}
           onClose={() => setSeleccionada(null)}
