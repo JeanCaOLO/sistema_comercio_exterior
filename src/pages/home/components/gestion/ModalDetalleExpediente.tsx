@@ -966,7 +966,7 @@ export default function ModalDetalleExpediente({
                       </button>
                     </>
                   )}
-                  {esAdmin && !soloLectura && expediente.estado_expediente === 'No Asignado' && (
+                  {esAdmin && !soloLectura && (
                     <button
                       type="button"
                       onClick={onDevolver}

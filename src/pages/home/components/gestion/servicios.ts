@@ -382,6 +382,8 @@ export const devolverTicketADocumentacion = async (
   }
 
   const ahora = new Date().toISOString();
+  // Etapa desde la que se devuelve el ticket (puede ser cualquier estado).
+  const estadoOrigen = expediente.estado_expediente || 'No Asignado';
 
   // Obtener usuario actual
   const {
@@ -475,6 +477,30 @@ export const devolverTicketADocumentacion = async (
     }
   }
 
+  // Cerrar el cronómetro de la etapa en la que estaba el ticket, para que no
+  // quede un registro de tiempo abierto apuntando a un ticket que ya no existe.
+  try {
+    const { data: registrosAbiertos } = await supabase
+      .from('expedientes_tiempos_estados')
+      .select('id, fecha_inicio')
+      .eq('expediente_id', expediente.id)
+      .is('fecha_fin', null);
+
+    for (const registro of registrosAbiertos || []) {
+      const inicioMs = new Date(registro.fecha_inicio).getTime();
+      const minutos = Number.isNaN(inicioMs)
+        ? null
+        : Math.max(0, Math.round((Date.now() - inicioMs) / (1000 * 60)));
+
+      await supabase
+        .from('expedientes_tiempos_estados')
+        .update({ fecha_fin: ahora, minutos_transcurridos: minutos })
+        .eq('id', registro.id);
+    }
+  } catch (err) {
+    console.warn('No se pudo cerrar el cronómetro de la etapa al devolver:', err);
+  }
+
   // Quitar el ticket del kanban (expedientes)
   const { error: deleteError } = await supabase
     .from('expedientes')
@@ -490,11 +516,15 @@ export const devolverTicketADocumentacion = async (
     {
       expediente_id: expediente.id,
       campo_modificado: 'Estado',
-      valor_anterior: 'No Asignado',
+      valor_anterior: estadoOrigen,
       valor_nuevo: 'Documentación',
       usuario: nombreUsuario,
       usuario_email: emailUsuario,
       fecha_cambio: ahora,
+      detalle: {
+        devueltoDesde: estadoOrigen,
+        devueltoADocumentacion: true,
+      },
     },
   ]);
 
@@ -507,9 +537,13 @@ export const devolverTicketADocumentacion = async (
     usuarioGenero: nombreUsuario,
     tipo: 'documento_modificado',
     mensaje:
-      gruposOriginales.length > 1
-        ? `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación, separado en ${totalFilas} POs con sus documentos`
-        : `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación`,
+      estadoOrigen !== 'No Asignado'
+        ? `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación desde la etapa ${estadoOrigen}${
+            gruposOriginales.length > 1 ? `, separado en ${totalFilas} POs con sus documentos` : ''
+          }`
+        : gruposOriginales.length > 1
+          ? `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación, separado en ${totalFilas} POs con sus documentos`
+          : `${nombreUsuario} devolvió el ticket ${expediente.po_tiquetera} a Documentación`,
     icono: 'ri-arrow-go-back-line',
     expedienteId: expediente.id,
   });
