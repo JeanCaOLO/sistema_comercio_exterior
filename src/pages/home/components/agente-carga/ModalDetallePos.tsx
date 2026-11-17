@@ -27,7 +27,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
     const texto = busqueda.trim().toLowerCase();
     if (!texto) return pos;
     return pos.filter((p) =>
-      [p.po, p.proveedor, p.etapa, p.rutaLogistica]
+      [p.po, p.proveedor, p.etapa, p.rutaLogistica, p.tipoContenedor]
         .join(' ')
         .toLowerCase()
         .includes(texto)
@@ -47,6 +47,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
         'País Destino': PAISES_INFO[p.paisDestino]?.nombre || p.paisDestino,
         'Puerto de Arribo': p.puertoArribo,
         'Ruta Logística': p.rutaLogistica,
+        'Tipo de Contenedor': p.tipoContenedor || '',
         Etapa: p.etapa,
         'ETD Inicial': p.etdInicial || '',
         'Fecha Asignación': p.fechaAsignacion || '',
@@ -107,6 +108,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">PO</th>
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">Proveedor de Servicio</th>
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">País</th>
+                <th className="px-4 py-2.5 font-semibold whitespace-nowrap">Tipo Cont.</th>
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">Etapa</th>
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">ETD Inicial</th>
                 <th className="px-4 py-2.5 font-semibold whitespace-nowrap">Fecha Asignación</th>
@@ -125,6 +127,15 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
                       {PAISES_INFO[p.paisDestino]?.abbr || p.paisDestino}
                     </span>
                   </td>
+                  <td className="px-4 py-2.5 whitespace-nowrap">
+                    {p.tipoContenedor ? (
+                      <span className="inline-flex items-center rounded bg-teal-50 text-teal-800 text-[11px] font-semibold px-1.5 py-0.5 font-mono">
+                        {p.tipoContenedor}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-gray-600 text-xs whitespace-nowrap">{p.etapa || '—'}</td>
                   <td className="px-4 py-2.5 text-gray-600 text-xs whitespace-nowrap">{p.etdInicial || '—'}</td>
                   <td className="px-4 py-2.5 text-gray-600 text-xs whitespace-nowrap">{p.fechaAsignacion || '—'}</td>
@@ -135,7 +146,7 @@ export default function ModalDetallePos({ titulo, subtitulo, pos, onClose }: Mod
               ))}
               {filtradas.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
                     <i className="ri-inbox-line text-3xl mb-2 block"></i>
                     No hay POs que coincidan con la búsqueda.
                   </td>

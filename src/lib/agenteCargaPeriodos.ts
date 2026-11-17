@@ -45,6 +45,7 @@ interface FilaSupabase {
   ruta_logistica: string | null;
   puerto_arribo: string | null;
   pais_destino: string;
+  tipo_contenedor: string | null;
   monto_total: number | null;
   etd_inicial: string | null;
   eta_inicial: string | null;
@@ -124,7 +125,7 @@ export async function cargarCargaPorPeriodo(periodo: string): Promise<DetallePer
   for (let desde = 0; ; desde += TAMANO_PAGINA) {
     const { data, error } = await supabase
       .from('agente_carga_pos')
-      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, monto_total, etd_inicial, eta_inicial, fecha_asignacion, archivo_origen, cargado_por, cargado_at, periodo')
+      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, tipo_contenedor, monto_total, etd_inicial, eta_inicial, fecha_asignacion, archivo_origen, cargado_por, cargado_at, periodo')
       .eq('periodo', periodo)
       .order('proveedor_servicio', { ascending: true })
       .range(desde, desde + TAMANO_PAGINA - 1);
@@ -146,6 +147,7 @@ export async function cargarCargaPorPeriodo(periodo: string): Promise<DetallePer
     rutaLogistica: f.ruta_logistica || '',
     puertoArribo: f.puerto_arribo || '',
     paisDestino: f.pais_destino,
+    tipoContenedor: f.tipo_contenedor || '',
     montoTotal: f.monto_total,
     etdInicial: f.etd_inicial,
     etaInicial: f.eta_inicial,
@@ -251,6 +253,7 @@ export async function guardarDetalleCarga(
       ruta_logistica: p.rutaLogistica || null,
       puerto_arribo: p.puertoArribo || null,
       pais_destino: p.paisDestino,
+      tipo_contenedor: p.tipoContenedor || null,
       monto_total: p.montoTotal,
       etd_inicial: p.etdInicial,
       eta_inicial: p.etaInicial,

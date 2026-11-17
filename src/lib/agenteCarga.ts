@@ -32,6 +32,8 @@ export interface PoCarga {
   rutaLogistica: string;
   puertoArribo: string;
   paisDestino: string;
+  /** Tipo de contenedor de la PO (20", 40", 40HC, 45"...). */
+  tipoContenedor: string;
   montoTotal: number | null;
   etdInicial: string | null;
   etaInicial: string | null;
@@ -138,6 +140,22 @@ function aTexto(valor: unknown): string {
   return texto;
 }
 
+/**
+ * Normaliza el tipo de contenedor: "40" → 40", "40hc" → 40HC.
+ * Si la columna no viene o está vacía, devuelve cadena vacía.
+ */
+export function normalizarTipoContenedor(valor: unknown): string {
+  const texto = aTexto(valor)
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .replace(/^TIPO\s*(DE\s*)?CONTENEDOR\s*[:\-]?\s*/i, '')
+    .trim();
+  if (!texto || texto === '-- N/A --') return '';
+  if (/^\d{2}$/.test(texto)) return `${texto}'`;
+  if (/^\d{2}(HC|HQ|DV|RF|OT)$/.test(texto)) return texto;
+  return texto;
+}
+
 function aNumero(valor: unknown): number | null {
   if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
   const texto = aTexto(valor).replace(/[^\d,.-]/g, '');
@@ -241,6 +259,14 @@ const COLUMNAS_BUSCADAS: Record<string, string[]> = {
   agenteCarga: ['agente de carga'],
   rutaLogistica: ['ruta logistica'],
   puertoArribo: ['puerto de arribo'],
+  tipoContenedor: [
+    'tipo de contenedor',
+    'tipo contenedor',
+    'tipo de contenedores',
+    'tipo contenedor (teu)',
+    'tipo de contenedor (teu)',
+    'container type',
+  ],
   montoTotal: ['monto total'],
   etdInicial: ['etd inicial'],
   etaInicial: ['eta inicial'],
@@ -330,6 +356,9 @@ export async function parsearArchivoExcel(archivo: File): Promise<ResultadoParse
   if (indices.rutaLogistica < 0 && indices.puertoArribo < 0) {
     advertencias.push('No se detectaron columnas de destino; todas las POs quedaron en "OTROS".');
   }
+  if (indices.tipoContenedor < 0) {
+    advertencias.push('No se detectó la columna "Tipo de Contenedor", así que esa información va a quedar vacía.');
+  }
   if (indices.fechaAsignacion < 0) {
     advertencias.push(
       'No se detectó la columna "Fecha Asignación Agente de Carga", así que el filtro por periodo de asignación va a quedar sin fechas.'
@@ -370,6 +399,7 @@ export async function parsearArchivoExcel(archivo: File): Promise<ResultadoParse
       rutaLogistica: ruta,
       puertoArribo: puerto,
       paisDestino: inferirPaisDestino(ruta, puerto),
+      tipoContenedor: normalizarTipoContenedor(valor(fila, 'tipoContenedor')),
       montoTotal: aNumero(valor(fila, 'montoTotal')),
       etdInicial: aFechaIso(valor(fila, 'etdInicial')),
       etaInicial: aFechaIso(valor(fila, 'etaInicial')),
@@ -498,6 +528,7 @@ interface FilaSupabase {
   ruta_logistica: string | null;
   puerto_arribo: string | null;
   pais_destino: string;
+  tipo_contenedor: string | null;
   monto_total: number | null;
   etd_inicial: string | null;
   eta_inicial: string | null;
@@ -819,7 +850,7 @@ export async function cargarCargaPorPeriodo(
   for (let desde = 0; ; desde += TAMANO_PAGINA) {
     const { data, error: errorFilas } = await supabase
       .from('agente_carga_pos')
-      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, monto_total, etd_inicial, eta_inicial, fecha_asignacion, archivo_origen, cargado_por, cargado_at, periodo')
+      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, tipo_contenedor, monto_total, etd_inicial, eta_inicial, fecha_asignacion, archivo_origen, cargado_por, cargado_at, periodo')
       .eq('carga_id', cargaId)
       .order('proveedor_servicio', { ascending: true })
       .range(desde, desde + TAMANO_PAGINA - 1);
@@ -840,6 +871,7 @@ export async function cargarCargaPorPeriodo(
     rutaLogistica: f.ruta_logistica || '',
     puertoArribo: f.puerto_arribo || '',
     paisDestino: f.pais_destino,
+    tipoContenedor: f.tipo_contenedor || '',
     montoTotal: f.monto_total,
     etdInicial: f.etd_inicial,
     etaInicial: f.eta_inicial,
@@ -882,6 +914,7 @@ export async function guardarCargaPeriodo(
     ruta_logistica: p.rutaLogistica || null,
     puerto_arribo: p.puertoArribo || null,
     pais_destino: p.paisDestino,
+    tipo_contenedor: p.tipoContenedor || null,
     monto_total: p.montoTotal,
     etd_inicial: p.etdInicial,
     eta_inicial: p.etaInicial,
@@ -988,7 +1021,7 @@ export async function cargarCargaVigente(): Promise<{ pos: PoCarga[]; meta: Meta
   for (let desde = 0; ; desde += TAMANO_PAGINA) {
     const { data, error } = await supabase
       .from('agente_carga_pos')
-      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, monto_total, etd_inicial, eta_inicial, fecha_asignacion, archivo_origen, cargado_por, cargado_at')
+      .select('po, etapa, proveedor, proveedor_servicio, agente_carga, ruta_logistica, puerto_arribo, pais_destino, tipo_contenedor, monto_total, etd_inicial, eta_inicial, fecha_asignacion, archivo_origen, cargado_por, cargado_at')
       .eq('carga_id', metaVigente.cargaId)
       .order('proveedor_servicio', { ascending: true })
       .range(desde, desde + TAMANO_PAGINA - 1);
@@ -1008,6 +1041,7 @@ export async function cargarCargaVigente(): Promise<{ pos: PoCarga[]; meta: Meta
     rutaLogistica: f.ruta_logistica || '',
     puertoArribo: f.puerto_arribo || '',
     paisDestino: f.pais_destino,
+    tipoContenedor: f.tipo_contenedor || '',
     montoTotal: f.monto_total,
     etdInicial: f.etd_inicial,
     etaInicial: f.eta_inicial,
@@ -1156,6 +1190,7 @@ export async function guardarCargaVigente(
     ruta_logistica: p.rutaLogistica || null,
     puerto_arribo: p.puertoArribo || null,
     pais_destino: p.paisDestino,
+    tipo_contenedor: p.tipoContenedor || null,
     monto_total: p.montoTotal,
     etd_inicial: p.etdInicial,
     eta_inicial: p.etaInicial,
